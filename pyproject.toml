@@ -1,0 +1,54 @@
+# @TASK P0-T0.1 - 프로젝트 초기화 (uv 기반 패키지 설정)
+# @SPEC docs/planning/06-tasks.md#P0-T0.1
+[project]
+name = "thinktank"
+version = "0.1.0"
+description = "Automated voice-note pipeline: ingest -> VAD -> transcribe -> extract -> organize"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "python-dotenv>=1.0.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.4.3",
+    "ruff>=0.1.9",
+]
+audio = [
+    "silero-vad>=5.1",
+    "pydub>=0.25.1",
+    "faster-whisper>=1.0.3",
+    # Python 3.13 에서 stdlib audioop 제거됨 -> pydub 용 백포트
+    "audioop-lts; python_version >= '3.13'",
+]
+# faster-whisper(CTranslate2) GPU 가속용 CUDA 라이브러리 (torch CUDA 불필요;
+# WHISPER_DEVICE=cuda 로 강제). Windows/Linux CUDA 12.x GPU 필요.
+gpu = [
+    "nvidia-cublas-cu12",
+    "nvidia-cudnn-cu12>=9",
+]
+llm = [
+    "anthropic>=0.25.0",
+]
+# LAN 수신기 TLS용 자체서명 인증서 생성 (앱이 공개키를 피닝하므로 CA 불필요).
+tls = [
+    "cryptography>=42",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/thinktank"]
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+testpaths = ["tests"]
+# 평소 `pytest` 는 real 테스트를 제외한다(실제 claude 호출/모델 로딩 방지).
+# 실물 검증은 명시적으로 `pytest -m real` 로만 실행한다.
+addopts = "-m 'not real'"
+markers = [
+    "real: 실물 의존성(torch/whisper/claude)과 입력이 있어야 실행되는 스모크 테스트. 평소 pytest 에서는 제외되고 `pytest -m real` 로만 실행.",
+]

@@ -1,0 +1,26 @@
+# Local secrets, caches, and generated build outputs
+.DS_Store
+.env
+.venv/
+.pytest_cache/
+.ruff_cache/
+__pycache__/
+*.py[cod]
+
+android-app/.gradle/
+android-app/**/build/
+android-app/local.properties
+*.iml
+.idea/
+
+# Release candidates are reproducible build artifacts. Keep only the currently
+# documented QA candidate in this source snapshot; never commit v4 sidecars.
+release/*.apk
+!release/thinktank-recorder-next-1.0.0-qa-debug-signed-r11.apk
+release/*.idsig
+
+# Volatile SQLite sidecars captured from local/emulator QA sessions.
+docs/qa/device-db/*-shm
+docs/qa/device-db/*-wal
+docs/qa/emulator-db/*-shm
+docs/qa/emulator-db/*-wal

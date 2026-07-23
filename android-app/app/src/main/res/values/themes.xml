@@ -1,0 +1,11 @@
+<resources>
+    <style name="Theme.ThinkTank" parent="android:style/Theme.Material.NoActionBar">
+        <item name="android:fontFamily">sans</item>
+        <item name="android:windowLightStatusBar">false</item>
+        <item name="android:statusBarColor">@color/archive_ink</item>
+        <item name="android:navigationBarColor">@color/archive_ink</item>
+        <item name="android:colorAccent">@color/archive_copper</item>
+        <item name="android:windowActionModeOverlay">true</item>
+    </style>
+</resources>
+

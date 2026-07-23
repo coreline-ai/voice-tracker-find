@@ -1,0 +1,298 @@
+openapi: 3.1.0
+info:
+  title: ThinkTank Receiver API
+  version: 1.0.0
+  description: |
+    Compose Android 클라이언트와 기존 receiver가 함께 사용하는 additive V1 계약이다.
+    기존 `/upload`, `/notes`, `/apk/info`, `/apk` 경로는 migration 기간에 유지한다.
+servers:
+  - url: https://recorder.example.com
+security:
+  - bearerAuth: []
+paths:
+  /api/v1/health:
+    get:
+      security: []
+      operationId: health
+      responses:
+        "200":
+          description: Receiver 상태
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [status, apiVersion, requestId]
+                properties:
+                  status: {type: string, const: ok}
+                  apiVersion: {type: string, const: v1}
+                  requestId: {$ref: "#/components/schemas/RequestId"}
+  /api/v1/upload/{userId}/{filename}:
+    put:
+      operationId: uploadRecordingChunk
+      parameters:
+        - {$ref: "#/components/parameters/UserId"}
+        - name: filename
+          in: path
+          required: true
+          schema: {type: string, pattern: '^[^/\\]+\\.(m4a|mp3|wav|ogg)$'}
+        - name: Idempotency-Key
+          in: header
+          required: true
+          schema: {$ref: "#/components/schemas/Uuid"}
+        - name: X-Recording-ID
+          in: header
+          required: true
+          schema: {$ref: "#/components/schemas/Uuid"}
+        - name: X-Chunk-ID
+          in: header
+          required: true
+          schema: {$ref: "#/components/schemas/Uuid"}
+        - name: X-Content-SHA256
+          in: header
+          required: true
+          schema: {$ref: "#/components/schemas/Sha256"}
+        - name: Content-Length
+          in: header
+          required: true
+          schema: {type: integer, minimum: 1}
+      requestBody:
+        required: true
+        content:
+          audio/mp4:
+            schema: {type: string, contentEncoding: binary}
+      responses:
+        "201":
+          description: 처음 저장한 청크
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/UploadReceipt"}
+        "200":
+          description: 같은 식별자와 hash의 멱등 재전송
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/UploadReceipt"}
+        "400": {$ref: "#/components/responses/Error"}
+        "401": {$ref: "#/components/responses/Error"}
+        "409": {$ref: "#/components/responses/Error"}
+        "411": {$ref: "#/components/responses/Error"}
+        "413": {$ref: "#/components/responses/Error"}
+        "422": {$ref: "#/components/responses/Error"}
+        "507": {$ref: "#/components/responses/Error"}
+  /api/v1/notes/{userId}:
+    get:
+      operationId: listNotes
+      parameters:
+        - {$ref: "#/components/parameters/UserId"}
+      responses:
+        "200":
+          description: 모바일에 노출할 노트
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [notes, requestId]
+                properties:
+                  notes:
+                    type: array
+                    items: {$ref: "#/components/schemas/Note"}
+                  requestId: {$ref: "#/components/schemas/RequestId"}
+        "401": {$ref: "#/components/responses/Error"}
+    post:
+      operationId: createNote
+      parameters:
+        - {$ref: "#/components/parameters/UserId"}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [folder, name, content]
+              properties:
+                folder: {type: string, enum: ["1 wiki", "10-daily", "30-ideas"]}
+                name: {type: string, pattern: '^[^/\\]+\\.md$'}
+                content: {type: string}
+      responses:
+        "201":
+          description: 생성됨. ETag과 Location 헤더 포함.
+          headers:
+            ETag: {$ref: "#/components/headers/ETag"}
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/Note"}
+        "400": {$ref: "#/components/responses/Error"}
+        "401": {$ref: "#/components/responses/Error"}
+        "409": {$ref: "#/components/responses/Error"}
+  /api/v1/notes/{userId}/{noteId}:
+    parameters:
+      - {$ref: "#/components/parameters/UserId"}
+      - name: noteId
+        in: path
+        required: true
+        schema: {$ref: "#/components/schemas/Uuid"}
+    get:
+      operationId: getNote
+      responses:
+        "200":
+          description: 노트
+          headers:
+            ETag: {$ref: "#/components/headers/ETag"}
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/Note"}
+        "404": {$ref: "#/components/responses/Error"}
+    put:
+      operationId: updateNote
+      parameters:
+        - {$ref: "#/components/parameters/IfMatch"}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [content]
+              properties:
+                content: {type: string}
+      responses:
+        "200":
+          description: 수정됨
+          headers:
+            ETag: {$ref: "#/components/headers/ETag"}
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/Note"}
+        "412": {$ref: "#/components/responses/Error"}
+        "428": {$ref: "#/components/responses/Error"}
+    delete:
+      operationId: archiveNote
+      parameters:
+        - {$ref: "#/components/parameters/IfMatch"}
+      responses:
+        "200":
+          description: archive 완료 또는 같은 요청의 멱등 결과
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [id, archived, status, archivedAt, requestId]
+                properties:
+                  id: {$ref: "#/components/schemas/Uuid"}
+                  archived: {type: boolean, const: true}
+                  status: {type: string, const: archived}
+                  archivedAt: {type: string, format: date-time}
+                  archiveName: {type: string}
+                  requestId: {$ref: "#/components/schemas/RequestId"}
+        "412": {$ref: "#/components/responses/Error"}
+        "428": {$ref: "#/components/responses/Error"}
+  /api/v1/apk/info:
+    get:
+      operationId: apkInfo
+      responses:
+        "200":
+          description: 내부 배포 APK 메타데이터
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/ApkInfo"}
+        "401": {$ref: "#/components/responses/Error"}
+        "404": {$ref: "#/components/responses/Error"}
+  /api/v1/apk:
+    get:
+      operationId: downloadApk
+      description: |
+        Bearer 인증이 있는 내부 배포용 endpoint다. V1 Android 앱은 자동 다운로드·
+        자동 설치하지 않고 `/apk/info`로 versionCode만 확인한다.
+      responses:
+        "200":
+          description: APK bytes
+          content:
+            application/vnd.android.package-archive:
+              schema: {type: string, contentEncoding: binary}
+        "401": {$ref: "#/components/responses/Error"}
+        "404": {$ref: "#/components/responses/Error"}
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+  parameters:
+    UserId:
+      name: userId
+      in: path
+      required: true
+      description: 토큰 소유자와 일치해야 한다. 서버는 path만 신뢰하지 않는다.
+      schema: {type: string, minLength: 1}
+    IfMatch:
+      name: If-Match
+      in: header
+      required: true
+      schema: {type: string, pattern: '^"[0-9a-f]{64}"$'}
+  headers:
+    ETag:
+      schema: {type: string, pattern: '^"[0-9a-f]{64}"$'}
+  schemas:
+    Uuid:
+      type: string
+      format: uuid
+    Sha256:
+      type: string
+      pattern: '^[0-9a-f]{64}$'
+    RequestId:
+      type: string
+      minLength: 1
+      maxLength: 128
+    UploadReceipt:
+      type: object
+      required:
+        [uploadId, idempotencyKey, recordingId, chunkId, filename, size,
+         sha256, status, receivedAt, requestId]
+      properties:
+        uploadId: {$ref: "#/components/schemas/Uuid"}
+        idempotencyKey: {$ref: "#/components/schemas/Uuid"}
+        recordingId: {$ref: "#/components/schemas/Uuid"}
+        chunkId: {$ref: "#/components/schemas/Uuid"}
+        filename: {type: string}
+        size: {type: integer, minimum: 1}
+        sha256: {$ref: "#/components/schemas/Sha256"}
+        status: {type: string, enum: [created, already_exists]}
+        receivedAt: {type: string, format: date-time}
+        requestId: {$ref: "#/components/schemas/RequestId"}
+    Note:
+      type: object
+      required: [id, folder, name, content, revision, updatedAt]
+      properties:
+        id: {$ref: "#/components/schemas/Uuid"}
+        folder: {type: string}
+        name: {type: string}
+        content: {type: string}
+        revision: {$ref: "#/components/schemas/Sha256"}
+        updatedAt: {type: string, format: date-time}
+    ApkInfo:
+      type: object
+      required:
+        [versionCode, versionName, sha256, size, releaseNotes, downloadUrl, requestId]
+      properties:
+        versionCode: {type: integer, minimum: 0}
+        versionName: {type: string}
+        sha256: {$ref: "#/components/schemas/Sha256"}
+        size: {type: integer, minimum: 1}
+        releaseNotes: {type: string}
+        downloadUrl: {type: string}
+        requestId: {$ref: "#/components/schemas/RequestId"}
+    Error:
+      type: object
+      required: [error, requestId]
+      properties:
+        error:
+          type: object
+          required: [code, message]
+          properties:
+            code: {type: string}
+            message: {type: string}
+        requestId: {$ref: "#/components/schemas/RequestId"}
+  responses:
+    Error:
+      description: 구조화 오류
+      content:
+        application/json:
+          schema: {$ref: "#/components/schemas/Error"}

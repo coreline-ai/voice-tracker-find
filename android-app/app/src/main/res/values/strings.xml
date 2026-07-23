@@ -1,0 +1,10 @@
+<resources>
+    <string name="app_name">ThinkTank Recorder</string>
+    <string name="recording_channel_name">녹음</string>
+    <string name="recording_channel_description">진행 중인 음성 기록 상태</string>
+    <string name="recording_notification_title">ThinkTank에서 기록 중</string>
+    <string name="recording_notification_stop">녹음 정지</string>
+    <string name="sync_channel_name">동기화</string>
+    <string name="sync_channel_description">업로드와 노트 동기화 결과</string>
+</resources>
+

@@ -1,0 +1,94 @@
+{
+  "version": 1,
+  "generatedAt": "2026-07-23T21:01:00+09:00",
+  "generator": "OpenAI built-in image generation",
+  "totalRasterBytes": 243686,
+  "budgetBytes": 1572864,
+  "hardLimitBytes": 2621440,
+  "assets": [
+    {
+      "file": "hero_recording_chamber.webp",
+      "sourceId": "call_6W1hiasWED8z8qNipN9M7uTv",
+      "author": "ThinkTank project / OpenAI built-in image generation",
+      "license": "Project-generated output; see ASSET_LICENSES.md",
+      "prompt": "Generation brief: quiet archival recording desk, warm low-key editorial light, abstract and generic objects only, no people, logos, brands, app screens, or third-party artwork.",
+      "purpose": "recording hero",
+      "dimensions": "1080x1080",
+      "bytes": 39604,
+      "sha256": "91d6359e934fd3f21ca9a0ce070d1d9edaf0eb7fe012d70c4b75a400d1097e79",
+      "modification": "resize and WebP q78"
+    },
+    {
+      "file": "empty_notes_desk.webp",
+      "sourceId": "call_QpkotxiGVpO1hhiUsKESRS4n",
+      "author": "ThinkTank project / OpenAI built-in image generation",
+      "license": "Project-generated output; see ASSET_LICENSES.md",
+      "prompt": "Generation brief: calm empty writing desk with archival paper and subtle texture, premium editorial still life, no people, logos, brands, app screens, or third-party artwork.",
+      "purpose": "notes empty state",
+      "dimensions": "960x720",
+      "bytes": 37558,
+      "sha256": "0c146c05856139fa766f97aefc3e5ad422c83c44f9628475dd954443d66df731",
+      "modification": "resize and WebP q78"
+    },
+    {
+      "file": "empty_sync_bridge.webp",
+      "sourceId": "call_Xq67rKv2DMbWH3XBVgZbZYc8",
+      "author": "ThinkTank project / OpenAI built-in image generation",
+      "license": "Project-generated output; see ASSET_LICENSES.md",
+      "prompt": "Generation brief: restrained abstract bridge of paper and thread suggesting safe synchronization, dark quiet archive palette, no people, logos, brands, app screens, or third-party artwork.",
+      "purpose": "sync empty state",
+      "dimensions": "960x720",
+      "bytes": 18566,
+      "sha256": "13acaf465af3e95063708d7ac5a3550ea61f2b6a7f4b6918786d3d60b397608e",
+      "modification": "resize and WebP q76"
+    },
+    {
+      "file": "error_server_offline.webp",
+      "sourceId": "call_x6piBnRHin89BvjmxJvZ4g89",
+      "author": "ThinkTank project / OpenAI built-in image generation",
+      "license": "Project-generated output; see ASSET_LICENSES.md",
+      "prompt": "Generation brief: understated offline archive desk detail with warm shadow and no alarmist visual language, no people, logos, brands, app screens, or third-party artwork.",
+      "purpose": "server error state",
+      "dimensions": "960x720",
+      "bytes": 26026,
+      "sha256": "1eb1529acec7d54c2063cad09bfbdc3b5738698fcec97c53565e75a25de885f9",
+      "modification": "resize and WebP q78"
+    },
+    {
+      "file": "texture_archive_paper.webp",
+      "sourceId": "call_Z6tTAUAIfzXy2rFmYdfxpz1T",
+      "author": "ThinkTank project / OpenAI built-in image generation",
+      "license": "Project-generated output; see ASSET_LICENSES.md",
+      "prompt": "Generation brief: seamless neutral handmade archival paper texture, subtle grain only, no text, people, logos, brands, app screens, or third-party artwork.",
+      "purpose": "note paper texture",
+      "dimensions": "512x512",
+      "bytes": 1742,
+      "sha256": "b11f4c9a43caa240f8a9e85387496fc0532531fa4ce625796e60815fca459768",
+      "modification": "resize and WebP q68"
+    },
+    {
+      "file": "onboarding_record.webp",
+      "sourceId": "call_g75I0Hybj8GOgKlXeake66Ou",
+      "author": "ThinkTank project / OpenAI built-in image generation",
+      "license": "Project-generated output; see ASSET_LICENSES.md",
+      "prompt": "Generation brief: vertical quiet archive recording still life, layered paper and a generic microphone silhouette, warm cinematic low-key editorial light, no people, logos, brands, app screens, or third-party artwork.",
+      "purpose": "record onboarding",
+      "dimensions": "1080x1350",
+      "bytes": 28036,
+      "sha256": "feca414911f237a8b9e1e08ffa5d7dd228170a3b0318bf0956b2620eb7811502",
+      "modification": "resize and WebP q76"
+    },
+    {
+      "file": "onboarding_archive.webp",
+      "sourceId": "call_cXn14CyFrHPyn61Qa7xVbChW",
+      "author": "ThinkTank project / OpenAI built-in image generation",
+      "license": "Project-generated output; see ASSET_LICENSES.md",
+      "prompt": "Generation brief: vertical quiet archive note-taking still life with folded paper and thread, warm cinematic low-key editorial light, no people, logos, brands, app screens, or third-party artwork.",
+      "purpose": "archive onboarding",
+      "dimensions": "1080x1350",
+      "bytes": 92154,
+      "sha256": "d96d339dd45a417057833a675b2eeb5cb7834a1001472fa128298d4396160942",
+      "modification": "resize and WebP q76"
+    }
+  ]
+}
