@@ -77,35 +77,21 @@ def _is_daily_important(path: Path) -> bool:
     return path.stem.endswith("_중요") or path.stem.endswith("_일정")
 
 
-def _is_transcript_archive(path: Path) -> bool:
-    """파이프라인이 만든 전사 원본만 폰에 노출한다.
-
-    폰에서 사용자가 보관한 일반 노트도 같은 ``90-archive`` 폴더로 이동한다.
-    그것까지 다시 내려보내면 삭제한 노트가 되살아나므로, 아카이브 frontmatter의
-    ``type: archive``가 있는 전사 원본만 전송한다.
-    """
-    try:
-        with path.open(encoding="utf-8") as note:
-            header = note.read(4096)
-    except OSError:
-        return False
-    return header.startswith("---\n") and "\ntype: archive\n" in header
-
-
 # 폰으로 내려보낼 노트: (폴더, 상한, 파일명 필터). 필터 None = 폴더 전부.
 #
 # - 주제 노트(20-notes)는 폰에 보내지 않는다. 1000+개라 목록을 독식하고, 볼트에만
 #   남겨 허브(1 wiki)의 [[링크]]로 접근한다.
 # - wiki(허브)·ideas(창발) 가 가장 중요 → 넉넉히 전부.
 # - daily 는 '중요'·'일정' 구분 노트만(아이디어·기타·색인 제외).
-# - archive 는 원본 전사 확인용이므로 최근 100개를 폰에서도 바로 열 수 있게 한다.
-#   단, 사용자가 앱에서 보관한 일반 노트는 다시 노출하지 않는다.
+# - archive 는 원본 전사와 앱에서 보관한 일반 노트를 함께 최근 100개까지
+#   휴대폰의 읽기 전용 보관함으로 보여 준다. 원래 폴더로 되살리는 동기화가 아니라
+#   ``90-archive`` 소속으로 내려오므로, 보관 동작이 되돌려지는 일은 없다.
 NoteFilter = Callable[[Path], bool]
 NOTE_SPECS: list[tuple[str, int, NoteFilter | None]] = [
     ("1 wiki", 100, None),
     ("30-ideas", 200, None),
     ("10-daily", 60, _is_daily_important),
-    ("90-archive", 100, _is_transcript_archive),
+    ("90-archive", 100, None),
 ]
 NOTE_FOLDERS = [folder for folder, _limit, _match in NOTE_SPECS]
 

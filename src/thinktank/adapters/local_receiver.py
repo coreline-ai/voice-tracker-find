@@ -682,6 +682,12 @@ class LocalReceiverV1Adapter:
                     "status": "archived",
                     "archivedAt": identity["archived_at"],
                 }
+            if identity["folder"] == archive_dir:
+                raise V1Error(
+                    409,
+                    "ARCHIVE_READ_ONLY",
+                    "Archived notes are read-only and cannot be archived again",
+                )
             source = self._note_path(
                 user, identity["folder"], identity["name"], must_exist=True
             )

@@ -1,5 +1,6 @@
 package com.thinktank.recorder.next.ui.notes
 
+import com.thinktank.recorder.next.data.local.NoteEntity
 import java.time.ZoneId
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -78,8 +79,61 @@ class MarkdownParserTest {
     }
 
     @Test
-    fun `keeps transcript archives read only`() {
-        assertTrue(isTranscriptArchive("90-archive"))
-        assertFalse(isTranscriptArchive("20-daily"))
+    fun `separates transcript archives from ordinary archived notes`() {
+        val transcript = NoteEntity(
+            serverId = "transcript",
+            folder = "90-archive",
+            name = "rec_20260724_054245_sample.md",
+            content = "---\ntype: archive\n---\n# 전사 원본",
+            revision = "1",
+            updatedAt = "2026-07-24T00:00:00Z",
+        )
+        val archivedNote = NoteEntity(
+            serverId = "archived-note",
+            folder = "90-archive",
+            name = "keep.md",
+            content = "# 보관한 노트",
+            revision = "1",
+            updatedAt = "2026-07-24T00:00:00Z",
+        )
+
+        assertTrue(isArchiveFolder(transcript.folder))
+        assertTrue(isTranscriptArchive(transcript))
+        assertFalse(isTranscriptArchive(archivedNote))
+        assertEquals("보관한 노트", noteTitle(archivedNote))
+        assertEquals("원문 전사 보관함", noteFolderLabel("90-archive"))
+        assertTrue(NoteListFilter.TRANSCRIPTS.matches(transcript))
+        assertFalse(NoteListFilter.TRANSCRIPTS.matches(archivedNote.copy(folder = "30-ideas")))
+    }
+
+    @Test
+    fun `resolves a transcript link after its archive filename gained a suffix`() {
+        val transcript = NoteEntity(
+            serverId = "archive-id",
+            folder = "90-archive",
+            name = "rec_20260724_063807_sample_2026-07-24_2.md",
+            content = """
+                ---
+                type: archive
+                date: 2026-07-24
+                source_file: rec_20260724_063807_sample.m4a
+                ---
+                # 전사 원본
+            """.trimIndent(),
+            revision = "1",
+            updatedAt = "2026-07-24T00:00:00Z",
+        )
+
+        assertEquals(
+            "rec_20260724_063807_sample_2026-07-24",
+            transcriptWikiTarget(transcript),
+        )
+        assertEquals(
+            transcript.serverId,
+            findWikiLinkedNote(
+                listOf(transcript),
+                "rec_20260724_063807_sample_2026-07-24",
+            )?.serverId,
+        )
     }
 }

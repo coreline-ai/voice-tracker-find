@@ -543,10 +543,14 @@ def test_v1_notes_have_stable_id_revision_and_updated_at_across_restart(
         assert second_note["revision"] == first_note["revision"]
 
 
-def test_v1_notes_expose_recent_archive_transcripts_to_mobile(receiver: Receiver) -> None:
+def test_v1_notes_expose_archive_contents_to_mobile(receiver: Receiver) -> None:
     (receiver.vault / "90-archive").mkdir(parents=True)
     (receiver.vault / "90-archive" / "recording.md").write_text(
         "---\ntype: archive\ndate: 2026-07-24\n---\n# 전사 원본\n\n[00:00-00:01]\n확인용 전사",
+        encoding="utf-8",
+    )
+    (receiver.vault / "90-archive" / "archived-note.md").write_text(
+        "# 보관한 노트\n\n사용자가 보관한 일반 노트",
         encoding="utf-8",
     )
 
@@ -557,6 +561,9 @@ def test_v1_notes_expose_recent_archive_transcripts_to_mobile(receiver: Receiver
     assert archive["content"] == (
         "---\ntype: archive\ndate: 2026-07-24\n---\n# 전사 원본\n\n[00:00-00:01]\n확인용 전사"
     )
+    archived_note = next(note for note in notes if note["name"] == "archived-note.md")
+    assert archived_note["folder"] == "90-archive"
+    assert archived_note["content"] == "# 보관한 노트\n\n사용자가 보관한 일반 노트"
 
 
 def test_v1_notes_keep_same_name_in_separate_folders_as_distinct_notes(
@@ -709,6 +716,29 @@ def test_v1_note_archive_delete_is_idempotent(receiver: Receiver) -> None:
     assert replay_payload.get("status") == "archived"
     assert replay_payload.get("archivedAt") == first_payload.get("archivedAt")
     assert list((receiver.vault / "90-archive").glob("existing*.md")) == archived_files
+
+
+def test_v1_note_archive_rejects_an_already_archived_source(receiver: Receiver) -> None:
+    archive = receiver.vault / "90-archive"
+    archive.mkdir(parents=True, exist_ok=True)
+    original = archive / "transcript.md"
+    original.write_text(
+        "---\ntype: archive\nsource_file: recording.m4a\n---\n# 전사 원본",
+        encoding="utf-8",
+    )
+
+    items = _note_items(_request(_v1_notes_url(receiver)).json())
+    note = next(item for item in items if item["name"] == "transcript.md")
+    response = _request(
+        f"{_v1_notes_url(receiver)}/{quote(str(note['id']), safe='')}",
+        method="DELETE",
+        headers={"If-Match": f'"{note["revision"]}"'},
+    )
+
+    assert response.status == 409
+    _assert_structured_error(response, "ARCHIVE_READ_ONLY")
+    assert original.is_file()
+    assert not (archive / "transcript_2.md").exists()
 
 
 def test_v1_apk_info_and_download_are_authenticated_and_hashed(tmp_path: Path) -> None:

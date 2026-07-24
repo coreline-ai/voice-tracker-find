@@ -3,6 +3,7 @@ package com.thinktank.recorder.next.ui.recording
 import android.Manifest
 import android.content.pm.PackageManager
 import android.media.AudioDeviceInfo
+import android.media.AudioAttributes
 import android.media.AudioManager
 import android.media.MediaPlayer
 import android.os.Build
@@ -251,8 +252,20 @@ private fun RecentRecordings(chunks: List<ChunkEntity>) {
 
     var player by remember { mutableStateOf<MediaPlayer?>(null) }
     var playingId by remember { mutableStateOf<String?>(null) }
-    DisposableEffect(player) {
+    var playbackError by remember { mutableStateOf<String?>(null) }
+    DisposableEffect(Unit) {
         onDispose { player?.release() }
+    }
+
+    fun stopPlayback() {
+        player?.let { activePlayer ->
+            runCatching {
+                if (activePlayer.isPlaying) activePlayer.stop()
+            }
+            activePlayer.release()
+        }
+        player = null
+        playingId = null
     }
 
     chunks.forEach { chunk ->
@@ -284,22 +297,34 @@ private fun RecentRecordings(chunks: List<ChunkEntity>) {
                 enabled = isStoredOnDevice,
                 onClick = {
                     if (playingId == chunk.id) {
-                        player = null
-                        playingId = null
+                        stopPlayback()
                     } else {
+                        stopPlayback()
+                        playbackError = null
+                        val next = MediaPlayer()
                         runCatching {
-                            MediaPlayer().apply {
-                                setDataSource(chunk.path)
-                                prepare()
-                                setOnCompletionListener {
+                            next.setAudioAttributes(
+                                AudioAttributes.Builder()
+                                    .setUsage(AudioAttributes.USAGE_MEDIA)
+                                    .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
+                                    .build(),
+                            )
+                            next.setDataSource(chunk.path)
+                            next.setOnCompletionListener {
+                                if (player === next) {
                                     player = null
                                     playingId = null
                                 }
-                                start()
+                                next.release()
                             }
-                        }.onSuccess { next ->
+                            next.prepare()
+                            next.start()
+                        }.onSuccess {
                             player = next
                             playingId = chunk.id
+                        }.onFailure {
+                            next.release()
+                            playbackError = it.message ?: "녹음을 재생할 수 없습니다"
                         }
                     }
                 },
@@ -310,6 +335,14 @@ private fun RecentRecordings(chunks: List<ChunkEntity>) {
                 )
             }
         }
+    }
+    playbackError?.let {
+        Text(
+            it,
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.error,
+            modifier = Modifier.padding(top = 8.dp),
+        )
     }
 }
 

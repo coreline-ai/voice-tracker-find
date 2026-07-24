@@ -80,6 +80,9 @@ fun NotesScreen(
     modifier: Modifier = Modifier,
 ) {
     var showCreate by remember { mutableStateOf(false) }
+    var noteFilter by remember { mutableStateOf(NoteListFilter.ALL) }
+    val archiveCount = state.notes.count { it.folder == ARCHIVE_FOLDER }
+    val filteredNotes = state.notes.filter { noteFilter.matches(it) }
     Column(modifier.fillMaxSize()) {
         Row(
             Modifier
@@ -89,12 +92,12 @@ fun NotesScreen(
         ) {
             Column(Modifier.weight(1f)) {
                 Text(
-                    "아카이브",
+                    "노트",
                     style = MaterialTheme.typography.headlineLarge,
                     modifier = Modifier.padding(bottom = 8.dp),
                 )
                 Text(
-                    "기록에서 정리된 노트를 확인합니다",
+                    "정리된 메모와 원문 전사를 함께 확인합니다",
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -142,7 +145,37 @@ fun NotesScreen(
                 },
             )
         } else {
-            val grouped = state.notes.groupBy(NoteEntity::folder).toSortedMap()
+            Row(
+                Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 20.dp, vertical = 6.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                NoteListFilter.entries.forEach { filter ->
+                    FilterChip(
+                        selected = noteFilter == filter,
+                        onClick = { noteFilter = filter },
+                        label = {
+                            Text(
+                                when (filter) {
+                                    NoteListFilter.ALL -> "전체 ${state.notes.size}"
+                                    NoteListFilter.MEMOS -> "정리 노트 ${state.notes.size - archiveCount}"
+                                    NoteListFilter.TRANSCRIPTS -> "원문 전사 $archiveCount"
+                                },
+                            )
+                        },
+                    )
+                }
+            }
+            if (filteredNotes.isEmpty()) {
+                Text(
+                    "이 분류에 보관된 항목이 없습니다.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(20.dp),
+                )
+            } else {
+                val grouped = filteredNotes.groupBy(NoteEntity::folder)
             LazyColumn(
                 contentPadding = androidx.compose.foundation.layout.PaddingValues(
                     start = 20.dp,
@@ -150,14 +183,16 @@ fun NotesScreen(
                     bottom = 32.dp,
                 ),
             ) {
-                grouped.forEach { (folder, notes) ->
+                grouped.keys.sortedBy(::noteFolderOrder).forEach { folder ->
+                    val notes = grouped.getValue(folder)
                     item(key = "header:$folder") {
-                        SectionLabel(folder, Modifier.padding(top = 22.dp))
+                        SectionLabel(noteFolderLabel(folder), Modifier.padding(top = 22.dp))
                     }
                     items(notes, key = NoteEntity::serverId) { note ->
                         NoteRow(note = note, onClick = { onOpen(note.serverId) })
                     }
                 }
+            }
             }
         }
     }
@@ -306,7 +341,7 @@ fun NoteDetailScreen(
                     }
                 },
                 actions = {
-                    if (note != null && !isTranscriptArchive(note.folder)) {
+                    if (note != null && !isArchiveFolder(note.folder)) {
                         IconButton(
                             onClick = {
                                 if (editing) {
@@ -363,9 +398,13 @@ fun NoteDetailScreen(
                             modifier = Modifier.padding(bottom = 16.dp),
                         )
                     }
-                    if (isTranscriptArchive(note.folder)) {
+                    if (isArchiveFolder(note.folder)) {
                         StatusPill(
-                            text = "원문 전사 · 읽기 전용",
+                            text = if (isTranscriptArchive(note)) {
+                                "원문 전사 · 읽기 전용"
+                            } else {
+                                "보관 노트 · 읽기 전용"
+                            },
                             modifier = Modifier.padding(bottom = 16.dp),
                         )
                     }
@@ -381,9 +420,7 @@ fun NoteDetailScreen(
                         MarkdownDocument(
                             content = note.content,
                             onWikiLink = { target ->
-                                allNotes.firstOrNull {
-                                    it.name.removeSuffix(".md") == target.removeSuffix(".md")
-                                }?.let { onOpen(it.serverId) }
+                                findWikiLinkedNote(allNotes, target)?.let { onOpen(it.serverId) }
                             },
                         )
                     }
@@ -464,7 +501,7 @@ internal fun noteDisplayTitle(name: String, content: String): String =
         .ifBlank { name.removeSuffix(".md").replace('_', ' ') }
 
 internal fun noteTitle(note: NoteEntity): String =
-    if (isTranscriptArchive(note.folder)) {
+    if (isTranscriptArchive(note)) {
         archiveRecordingTitle(note.name)
     } else if (isRecordingMemo(note)) {
         recordingMemoTitle(note.name)
@@ -472,7 +509,66 @@ internal fun noteTitle(note: NoteEntity): String =
         noteDisplayTitle(note.name, note.content)
     }
 
-internal fun isTranscriptArchive(folder: String): Boolean = folder == "90-archive"
+private const val ARCHIVE_FOLDER = "90-archive"
+
+internal enum class NoteListFilter {
+    ALL,
+    MEMOS,
+    TRANSCRIPTS;
+
+    fun matches(note: NoteEntity): Boolean = when (this) {
+        ALL -> true
+        MEMOS -> note.folder != ARCHIVE_FOLDER
+        TRANSCRIPTS -> note.folder == ARCHIVE_FOLDER
+    }
+}
+
+internal fun isArchiveFolder(folder: String): Boolean = folder == ARCHIVE_FOLDER
+
+internal fun isTranscriptArchive(note: NoteEntity): Boolean =
+    isArchiveFolder(note.folder) && "\ntype: archive\n" in note.content
+
+private val FRONTMATTER_VALUE = Regex("""(?m)^([A-Za-z_]+):\s*(.+?)\s*$""")
+
+/**
+ * A transcript can acquire a `_2` suffix when a prior client tried to archive
+ * it again. Resolve memo links from immutable frontmatter instead of relying
+ * on the mutable archive filename.
+ */
+internal fun transcriptWikiTarget(note: NoteEntity): String? {
+    if (!isTranscriptArchive(note)) return null
+    val values = FRONTMATTER_VALUE.findAll(note.content).associate {
+        it.groupValues[1] to it.groupValues[2]
+    }
+    val sourceFile = values["source_file"] ?: return null
+    val date = values["date"] ?: return null
+    return "${sourceFile.substringBeforeLast('.', sourceFile)}_$date"
+}
+
+internal fun findWikiLinkedNote(allNotes: List<NoteEntity>, target: String): NoteEntity? {
+    val normalizedTarget = target.removeSuffix(".md")
+    return allNotes.firstOrNull {
+        it.name.removeSuffix(".md") == normalizedTarget
+    } ?: allNotes.firstOrNull {
+        transcriptWikiTarget(it) == normalizedTarget
+    }
+}
+
+internal fun noteFolderLabel(folder: String): String = when (folder) {
+    "30-ideas" -> "정리된 음성 메모"
+    ARCHIVE_FOLDER -> "원문 전사 보관함"
+    "10-daily" -> "오늘의 기록"
+    "1 wiki" -> "연결된 주제"
+    else -> folder
+}
+
+private fun noteFolderOrder(folder: String): Int = when (folder) {
+    "30-ideas" -> 0
+    ARCHIVE_FOLDER -> 1
+    "10-daily" -> 2
+    "1 wiki" -> 3
+    else -> 4
+}
 
 internal fun isRecordingMemo(note: NoteEntity): Boolean =
     note.folder == "30-ideas" && "\ntype: recording_memo\n" in note.content
