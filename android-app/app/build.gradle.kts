@@ -20,6 +20,9 @@ fun secret(name: String): String? =
         ?: localProperties.getProperty(name)
 
 val releaseStore = secret("THINKTANK_RELEASE_STORE_FILE")
+// The physical-device debug build talks to the Mac mini receiver over LAN.
+// Override this with THINKTANK_DEBUG_SERVER_URL for an emulator or another host.
+val debugServerUrl = secret("THINKTANK_DEBUG_SERVER_URL") ?: "http://192.168.0.71:8765"
 val hasReleaseSigning = listOf(
     releaseStore,
     secret("THINKTANK_RELEASE_STORE_PASSWORD"),
@@ -62,7 +65,7 @@ android {
             buildConfigField(
                 "String",
                 "DEFAULT_SERVER_URL",
-                "\"http://10.0.2.2:8787\"",
+                "\"${debugServerUrl}\"",
             )
         }
         release {

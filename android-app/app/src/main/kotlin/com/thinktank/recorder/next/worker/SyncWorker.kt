@@ -40,7 +40,14 @@ class SyncWorker @AssistedInject constructor(
                         .build(),
                 )
             }
-            is SyncRunResult.Retry -> Result.retry()
+            is SyncRunResult.Retry -> {
+                setProgress(
+                    Data.Builder()
+                        .putString(KEY_ERROR, outcome.reason)
+                        .build(),
+                )
+                Result.retry()
+            }
             is SyncRunResult.Failure -> Result.failure(
                 Data.Builder().putString(KEY_ERROR, outcome.reason).build(),
             )

@@ -8,6 +8,7 @@ from thinktank.notes.renderer import (
     daily_filename,
     emerged_idea_filename,
     normalize_filename,
+    recording_memo_filename,
     render_frontmatter,
     render_wikilink,
 )
@@ -83,7 +84,7 @@ class TestRenderFrontmatter:
             render_frontmatter({"type": "daily", "date": "2025/01/15"})
 
     @pytest.mark.parametrize(
-        "note_type", ["daily", "topic", "emerged_idea", "archive", "log"]
+        "note_type", ["daily", "topic", "emerged_idea", "recording_memo", "archive", "log"]
     )
     def test_accepts_all_note_types(self, note_type):
         result = render_frontmatter({"type": note_type, "date": "2025-01-15"})
@@ -102,6 +103,12 @@ class TestFilenameGenerators:
 
     def test_archive_filename_without_extension(self):
         assert archive_filename("design", "2025-01-15") == "design_2025-01-15.md"
+
+    def test_recording_memo_filename_uses_source_and_date(self):
+        assert (
+            recording_memo_filename("file_1.m4a", "2025-01-15")
+            == "file_1_2025-01-15_memo.md"
+        )
 
     def test_daily_filename_invalid_date_raises(self):
         with pytest.raises(ValueError):

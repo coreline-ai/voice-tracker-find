@@ -136,6 +136,14 @@ class TestFullPipelineFlow:
         assert archive_note.exists()
         assert "회의를 시작합니다." in archive_note.read_text(encoding="utf-8")
 
+        memo_note = (
+            settings.obsidian_vault
+            / IDEAS_SUBDIR
+            / "20250115_090000_meeting_2025-01-15_memo.md"
+        )
+        assert memo_note.exists()
+        assert "# 음성 메모" in memo_note.read_text(encoding="utf-8")
+
         # 노트는 실행일이 아니라 녹음일(파일명 20250115)로 묶인다.
         # 반면 _pipeline.md 는 처리 기록이라 실행일 그대로다.
         run_date = _today()
@@ -212,6 +220,27 @@ class TestIdempotency:
 
         organized = get_recordings(settings.db_path, Status.ORGANIZED)
         assert len(organized) == 1
+
+    def test_rerun_backfills_a_missing_recording_memo(self, settings: Settings):
+        _write_audio(settings.ingest_dir, "20250115_090000_meeting.m4a")
+        kwargs = dict(
+            detect_speech=_fake_detect_speech,
+            cut_audio=_fake_cut_audio,
+            transcribe_fn=_make_transcribe_fn(),
+            extract_fn=_make_extract_fn(["파이프라인"]),
+            emerge_fn=_fake_emerge_fn,
+        )
+        memo = (
+            settings.obsidian_vault
+            / IDEAS_SUBDIR
+            / "20250115_090000_meeting_2025-01-15_memo.md"
+        )
+
+        run_pipeline(settings, **kwargs)
+        memo.unlink()
+        run_pipeline(settings, **kwargs)
+
+        assert memo.exists()
 
 
 # ---------------------------------------------------------------------------
@@ -426,7 +455,7 @@ class TestEmergeIntegration:
             today="2025-02-01",
         )
 
-        idea_files = list((settings.obsidian_vault / IDEAS_SUBDIR).glob("*.md"))
+        idea_files = list((settings.obsidian_vault / IDEAS_SUBDIR).glob("*_idea_*.md"))
         assert len(idea_files) == 1
         assert "새로운 통찰" in idea_files[0].read_text(encoding="utf-8")
         assert run.run_date == "2025-02-01"
@@ -448,6 +477,8 @@ class TestEmergeIntegration:
             today="2025-02-01",
         )
 
+        # 이 테스트는 입력 녹음 없이 창발 조건만 확인한다. 전사 완료 건이 없으므로
+        # 녹음별 메모도 만들지 않는다.
         assert not (settings.obsidian_vault / IDEAS_SUBDIR).exists()
 
 

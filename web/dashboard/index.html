@@ -1,0 +1,188 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="theme-color" content="#f4f0e8">
+    <title>ThinkTank Receiver · LAN Console</title>
+    <link rel="stylesheet" href="/dashboard/styles.css">
+    <script defer src="/dashboard/app.js"></script>
+  </head>
+  <body>
+    <div class="grain" aria-hidden="true"></div>
+    <div class="app-shell">
+      <header class="topbar">
+        <a class="brand" href="/dashboard" aria-label="ThinkTank Receiver 대시보드">
+          <span class="brand-mark">T</span>
+          <span>
+            <strong>THINKTANK</strong>
+            <small>RECEIVER / LAN CONSOLE</small>
+          </span>
+        </a>
+        <div class="topbar-actions">
+          <span class="connection-pill" id="connectionPill">
+            <span class="status-dot"></span>
+            <span id="connectionText">연결 대기</span>
+          </span>
+          <button class="icon-button" id="refreshButton" type="button" title="상태 새로고침">
+            <span aria-hidden="true">↻</span>
+            <span>새로고침</span>
+          </button>
+        </div>
+      </header>
+
+      <main>
+        <section class="hero-grid">
+          <div class="hero-copy">
+            <p class="eyebrow">LOCAL RECEIVER <span>•</span> PRIVATE LAN</p>
+            <h1>음성 수집 파이프라인을<br><em>한 화면에서 확인</em></h1>
+            <p class="hero-lede">
+              맥미니 수신기의 현재 상태, 처리 대기 중인 녹음과 최근 노트를<br class="wide-only">
+              별도 클라우드 없이 이 서버에서 바로 확인합니다.
+            </p>
+            <div class="endpoint-line">
+              <span class="endpoint-label">CURRENT ENDPOINT</span>
+              <code id="endpointValue">—</code>
+            </div>
+          </div>
+
+          <aside class="auth-card" id="authCard">
+            <div class="card-kicker"><span class="lock-mark">⌑</span> AUTHENTICATED VIEW</div>
+            <h2 id="authTitle">수신기 토큰으로 연결</h2>
+            <p id="authDescription">앱과 같은 <code>RECEIVER_TOKEN</code>을 입력하면 이 브라우저 세션에서만 상태를 조회합니다.</p>
+            <form id="tokenForm">
+              <label class="sr-only" for="tokenInput">Receiver token</label>
+              <div class="token-input-wrap">
+                <input id="tokenInput" name="token" type="password" autocomplete="off" spellcheck="false" placeholder="Bearer token" required>
+                <button type="submit">연결 <span aria-hidden="true">→</span></button>
+              </div>
+            </form>
+            <button class="disconnect-button" id="disconnectButton" type="button">이 세션에서 토큰 지우기</button>
+          </aside>
+        </section>
+
+        <div class="error-banner" id="errorBanner" role="alert" hidden>
+          <span class="error-symbol">!</span>
+          <span id="errorText">수신기 상태를 확인하지 못했습니다. 다시 시도해 주세요.</span>
+          <button id="dismissError" type="button" aria-label="오류 닫기">×</button>
+        </div>
+
+        <section class="metric-grid" aria-label="핵심 지표">
+          <article class="metric-card metric-primary">
+            <div class="metric-topline"><span>RECEIVER STATUS</span><span class="metric-index">01</span></div>
+            <div class="metric-value status-value" id="receiverMetric">연결 대기</div>
+            <div class="metric-caption" id="receiverCaption">토큰을 입력해 수신기 상태를 확인하세요.</div>
+          </article>
+          <article class="metric-card">
+            <div class="metric-topline"><span>INBOX FILES</span><span class="metric-index">02</span></div>
+            <div class="metric-value" id="queueMetric">—</div>
+            <div class="metric-caption" id="queueCaption">수신 보관 중인 오디오</div>
+          </article>
+          <article class="metric-card">
+            <div class="metric-topline"><span>EXPOSED NOTES</span><span class="metric-index">03</span></div>
+            <div class="metric-value" id="notesMetric">—</div>
+            <div class="metric-caption">앱에 노출되는 최신 노트</div>
+          </article>
+          <article class="metric-card">
+            <div class="metric-topline"><span>DISK AVAILABLE</span><span class="metric-index">04</span></div>
+            <div class="metric-value" id="diskMetric">—</div>
+            <div class="metric-caption" id="diskCaption">수집 폴더가 있는 볼륨</div>
+          </article>
+        </section>
+
+        <section class="content-grid">
+          <article class="panel queue-panel">
+            <div class="panel-heading">
+              <div>
+                <p class="section-label">01 / INBOX</p>
+                <h2>수신 파일</h2>
+              </div>
+              <span class="panel-badge" id="queueBadge">—</span>
+            </div>
+            <p class="panel-intro">자동 처리 완료 후에도 보존 기간 동안 남아 있는 수신 오디오입니다. M4A는 여기서 바로 들을 수 있습니다.</p>
+            <div class="table-wrap">
+              <table>
+                <thead><tr><th>파일</th><th>크기</th><th>도착</th><th>재생</th></tr></thead>
+                <tbody id="queueTable"><tr><td colspan="4" class="empty-cell">연결 후 수신 파일을 표시합니다.</td></tr></tbody>
+              </table>
+            </div>
+          </article>
+
+          <article class="panel notes-panel">
+            <div class="panel-heading">
+              <div>
+                <p class="section-label">02 / VAULT</p>
+                <h2>최근 노트</h2>
+              </div>
+              <span class="panel-badge" id="notesBadge">—</span>
+            </div>
+            <p class="panel-intro">모바일 앱에 동기화 대상으로 공개된 폴더의 최신 변경입니다.</p>
+            <ul class="notes-list" id="notesList">
+              <li class="empty-list">연결 후 최근 노트를 표시합니다.</li>
+            </ul>
+          </article>
+        </section>
+
+        <section class="viewer-grid" aria-label="노트와 오디오 내용 확인">
+          <article class="panel viewer-panel">
+            <div class="panel-heading compact">
+              <div><p class="section-label">03 / NOTE VIEWER</p><h2 id="noteViewerTitle">노트 내용 보기</h2></div>
+              <span class="panel-badge" id="noteViewerFolder">READ ONLY</span>
+            </div>
+            <p class="panel-intro" id="noteViewerDescription">최근 노트에서 <strong>보기</strong>를 누르면 원본 Markdown을 안전하게 표시합니다.</p>
+            <pre class="markdown-viewer" id="noteViewerContent" tabindex="0">선택한 노트 내용이 이곳에 표시됩니다.</pre>
+          </article>
+
+          <article class="panel audio-panel">
+            <div class="panel-heading compact">
+              <div><p class="section-label">04 / AUDIO PLAYER</p><h2>M4A 듣기</h2></div>
+              <span class="panel-badge" id="audioState">대기</span>
+            </div>
+            <p class="panel-intro" id="audioDescription">수신 파일의 M4A에서 <strong>듣기</strong>를 누르면 이 브라우저에서만 재생합니다.</p>
+            <audio id="audioPlayer" controls preload="metadata" hidden></audio>
+            <button class="secondary-button" id="stopAudioButton" type="button" disabled>재생 중지</button>
+          </article>
+        </section>
+
+        <section class="bottom-grid">
+          <article class="panel runtime-panel">
+            <div class="panel-heading compact">
+              <div><p class="section-label">03 / RUNTIME</p><h2>수신기 런타임</h2></div>
+              <span class="live-stamp" id="lastChecked">LAST CHECK —</span>
+            </div>
+            <dl class="runtime-list">
+              <div><dt>접속 사용자</dt><dd id="runtimeUser">—</dd></div>
+              <div><dt>포트</dt><dd id="runtimePort">—</dd></div>
+              <div><dt>시작 시각</dt><dd id="runtimeStarted">—</dd></div>
+              <div><dt>자동 처리</dt><dd id="runtimeAuto">—</dd></div>
+              <div><dt>전송 보안</dt><dd id="runtimeTls">—</dd></div>
+            </dl>
+          </article>
+
+          <article class="panel storage-panel">
+            <div class="panel-heading compact">
+              <div><p class="section-label">04 / STORAGE</p><h2>디스크 여유</h2></div>
+              <span class="storage-percent" id="storagePercent">—</span>
+            </div>
+            <div class="storage-track"><span id="storageBar"></span></div>
+            <div class="storage-values"><span id="storageUsed">사용량 —</span><strong id="storageFree">여유 —</strong></div>
+            <p class="panel-footnote">파일 수집 폴더가 위치한 로컬 볼륨 기준입니다.</p>
+          </article>
+
+          <article class="panel action-panel" id="actionPanel">
+            <div class="panel-heading compact">
+              <div><p class="section-label">05 / ACTION</p><h2>권장 조치</h2></div>
+              <span class="action-state" id="actionState">연결 필요</span>
+            </div>
+            <p id="actionText">수신기 토큰을 입력하면 현재 상태와 확인할 항목을 안내합니다.</p>
+          </article>
+        </section>
+      </main>
+
+      <footer class="footer">
+        <span>THINKTANK / RECEIVER V1</span>
+        <span id="footerMeta">동일 서버 · 읽기 전용 대시보드 · 자동 갱신 10초</span>
+      </footer>
+    </div>
+  </body>
+</html>

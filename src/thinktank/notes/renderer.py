@@ -17,7 +17,15 @@ from typing import Any
 # frontmatter.type 허용값 (specs/shared/types.yaml NoteType)
 # daily_section: 일일 노트를 구분별(아이디어/일정/중요/기타)로 나눈 노트.
 VALID_NOTE_TYPES = frozenset(
-    {"daily", "daily_section", "topic", "emerged_idea", "archive", "log"}
+    {
+        "daily",
+        "daily_section",
+        "topic",
+        "emerged_idea",
+        "recording_memo",
+        "archive",
+        "log",
+    }
 )
 
 
@@ -147,3 +155,10 @@ def archive_filename(source_filename: str, date_str: str) -> str:
     _validate_date(date_str)
     stem = Path(source_filename).stem
     return f"{stem}_{date_str}.md"
+
+
+def recording_memo_filename(source_filename: str, date_str: str) -> str:
+    """녹음별 메모 파일명(`{filename}_{YYYY-MM-DD}_memo.md`)을 생성한다."""
+    _validate_date(date_str)
+    stem = Path(source_filename).stem
+    return f"{stem}_{date_str}_memo.md"

@@ -407,9 +407,9 @@ def test_v1_upload_returns_structured_507_before_writing(
     receiver: Receiver,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    import thinktank.receiver as receiver_module
-
-    monkeypatch.setattr(receiver_module, "_has_room_for", lambda *_: False)
+    monkeypatch.setattr(
+        "thinktank.adapters.local_receiver.has_room_for", lambda *_: False
+    )
     response = _upload(receiver, "no-space.m4a", b"audio")
     assert response.status == 507
     _assert_structured_error(response, "INSUFFICIENT_STORAGE")
@@ -541,6 +541,22 @@ def test_v1_notes_have_stable_id_revision_and_updated_at_across_restart(
         second_note = second_items[0]
         assert second_note["id"] == first_note["id"]
         assert second_note["revision"] == first_note["revision"]
+
+
+def test_v1_notes_expose_recent_archive_transcripts_to_mobile(receiver: Receiver) -> None:
+    (receiver.vault / "90-archive").mkdir(parents=True)
+    (receiver.vault / "90-archive" / "recording.md").write_text(
+        "---\ntype: archive\ndate: 2026-07-24\n---\n# 전사 원본\n\n[00:00-00:01]\n확인용 전사",
+        encoding="utf-8",
+    )
+
+    notes = _note_items(_request(_v1_notes_url(receiver)).json())
+
+    archive = next(note for note in notes if note["name"] == "recording.md")
+    assert archive["folder"] == "90-archive"
+    assert archive["content"] == (
+        "---\ntype: archive\ndate: 2026-07-24\n---\n# 전사 원본\n\n[00:00-00:01]\n확인용 전사"
+    )
 
 
 def test_v1_notes_keep_same_name_in_separate_folders_as_distinct_notes(

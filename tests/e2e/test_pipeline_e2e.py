@@ -568,7 +568,9 @@ class TestEmergeCycleE2E:
         for _, _, topic in files:
             assert (settings.obsidian_vault / "20-notes" / f"{topic}.md").exists()
 
-        idea_files = list((settings.obsidian_vault / IDEAS_SUBDIR).glob("*.md"))
+        # 녹음별 메모도 같은 30-ideas 폴더에 들어가므로, 이 검증은 창발 노트만
+        # 분리한다.
+        idea_files = list((settings.obsidian_vault / IDEAS_SUBDIR).glob("*_idea_*.md"))
         assert len(idea_files) == 1
         idea_text = idea_files[0].read_text(encoding="utf-8")
         assert "세 주제의 교차 통찰" in idea_text

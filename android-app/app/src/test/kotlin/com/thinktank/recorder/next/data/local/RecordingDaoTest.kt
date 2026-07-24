@@ -135,6 +135,38 @@ class RecordingDaoTest {
     }
 
     @Test
+    fun uploadedRecordingRemainsInLocalHistoryAfterSync() = runBlocking {
+        dao.upsertSession(
+            RecordingSessionEntity("session", RecordingState.STOPPED, startedAt = 1),
+        )
+        dao.insertChunk(
+            ChunkEntity(
+                id = "uploaded",
+                sessionId = "session",
+                uploadId = "uploaded-upload",
+                path = "/tmp/uploaded.m4a",
+                state = ChunkState.UPLOADED,
+                createdAt = 2,
+                sha256 = "d".repeat(64),
+            ),
+        )
+        dao.insertChunk(
+            ChunkEntity(
+                id = "recording",
+                sessionId = "session",
+                uploadId = "recording-upload",
+                path = "/tmp/recording.m4a",
+                state = ChunkState.RECORDING,
+                createdAt = 3,
+            ),
+        )
+
+        val history = dao.observeRecentChunks(5).first()
+
+        assertEquals(listOf("uploaded"), history.map { it.id })
+    }
+
+    @Test
     fun updatingNoteDoesNotDeleteItsPersistedConflict() = runBlocking {
         val original = NoteEntity(
             serverId = "note",

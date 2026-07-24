@@ -47,6 +47,20 @@ abstract class RecordingDao {
     @Query("SELECT * FROM chunks ORDER BY createdAt DESC LIMIT 1")
     abstract fun observeLatestChunk(): Flow<ChunkEntity?>
 
+    /**
+     * Completed local recordings stay on the device after upload. Keep them visible so
+     * sync completion is never mistaken for deletion.
+     */
+    @Query(
+        """
+        SELECT * FROM chunks
+        WHERE state NOT IN ('RECORDING', 'FINALIZING')
+        ORDER BY createdAt DESC
+        LIMIT :limit
+        """,
+    )
+    abstract fun observeRecentChunks(limit: Int): Flow<List<ChunkEntity>>
+
     @Query("SELECT COUNT(*) FROM chunks WHERE state IN ('READY','RETRY','CLAIMED','UPLOADING')")
     abstract fun observePendingCount(): Flow<Int>
 

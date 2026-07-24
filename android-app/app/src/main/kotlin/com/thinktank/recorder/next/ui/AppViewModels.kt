@@ -2,6 +2,7 @@ package com.thinktank.recorder.next.ui
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import androidx.work.WorkInfo
 import com.thinktank.recorder.next.data.local.ChunkEntity
 import com.thinktank.recorder.next.data.local.NoteEntity
 import com.thinktank.recorder.next.data.local.RecordingSessionEntity
@@ -14,6 +15,7 @@ import com.thinktank.recorder.next.data.settings.AppPreferences
 import com.thinktank.recorder.next.data.settings.UserSettings
 import com.thinktank.recorder.next.recording.RecorderController
 import com.thinktank.recorder.next.worker.SyncScheduler
+import com.thinktank.recorder.next.worker.SyncWorker
 import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
 import kotlinx.coroutines.delay
@@ -28,6 +30,7 @@ import kotlinx.coroutines.launch
 data class RecordingUiState(
     val session: RecordingSessionEntity? = null,
     val chunk: ChunkEntity? = null,
+    val recentChunks: List<ChunkEntity> = emptyList(),
     val pendingUploads: Int = 0,
     val amplitude: Float = 0f,
     val elapsedMs: Long = 0,
@@ -50,26 +53,35 @@ class RecordingViewModel @Inject constructor(
     private val tick = MutableStateFlow(System.currentTimeMillis())
     private val commandError = MutableStateFlow<String?>(null)
 
-    private val recordingState = combine(
+    private val baseRecordingState = combine(
         repository.latestSession,
         repository.latestChunk,
+        repository.recentChunks,
         repository.pendingUploads,
         repository.amplitude,
-        tick,
-    ) { session, chunk, pending, amplitude, now ->
+    ) { session, chunk, recentChunks, pending, amplitude ->
         RecordingUiState(
             session = session,
             chunk = chunk,
+            recentChunks = recentChunks,
             pendingUploads = pending,
             amplitude = amplitude,
+        )
+    }
+
+    private val recordingState = combine(baseRecordingState, tick) { state, now ->
+        state.copy(
             elapsedMs = if (
-                session != null &&
-                session.state != RecordingState.STOPPED &&
-                session.state != RecordingState.FAILED
+                state.session != null &&
+                state.session.state != RecordingState.STOPPED &&
+                state.session.state != RecordingState.FAILED
             ) {
-                (now - session.startedAt).coerceAtLeast(0)
+                (now - state.session.startedAt).coerceAtLeast(0)
             } else {
-                session?.stoppedAt?.minus(session.startedAt)?.coerceAtLeast(0) ?: 0
+                state.session?.stoppedAt
+                    ?.minus(state.session.startedAt)
+                    ?.coerceAtLeast(0)
+                    ?: 0
             },
         )
     }
@@ -106,13 +118,30 @@ class RecordingViewModel @Inject constructor(
 data class NotesUiState(
     val notes: List<NoteEntity> = emptyList(),
     val busy: Boolean = false,
+    val syncing: Boolean = false,
     val message: String? = null,
 )
+
+/** A retry that is waiting for WorkManager backoff is actionable, not an active transfer. */
+internal fun isManualSyncInProgress(
+    state: WorkInfo.State?,
+    runAttemptCount: Int,
+): Boolean =
+    state == WorkInfo.State.RUNNING ||
+        (state == WorkInfo.State.ENQUEUED && runAttemptCount == 0)
+
+internal fun manualSyncConfigurationMessage(isServerConfigured: Boolean): String? =
+    if (isServerConfigured) {
+        null
+    } else {
+        "서버 설정이 없습니다. 설정 탭에서 수신기 주소, 사용자 ID, Receiver token을 저장하세요."
+    }
 
 @HiltViewModel
 class NotesViewModel @Inject constructor(
     private val repository: NotesRepository,
     private val scheduler: SyncScheduler,
+    private val preferences: AppPreferences,
 ) : ViewModel() {
     private val busy = MutableStateFlow(false)
     private val message = MutableStateFlow<String?>(null)
@@ -121,12 +150,28 @@ class NotesViewModel @Inject constructor(
         repository.notes,
         busy,
         message,
-    ) { notes, isBusy, text -> NotesUiState(notes, isBusy, text) }
+        scheduler.manualWorkInfo,
+    ) { notes, isBusy, text, work ->
+        NotesUiState(
+            notes = notes,
+            busy = isBusy,
+            syncing = isManualSyncInProgress(work?.state, work?.runAttemptCount ?: 0),
+            // A direct action such as the missing-settings preflight must not be
+            // hidden behind the previous WorkManager terminal result.
+            message = text ?: work?.syncMessage(),
+        )
+    }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), NotesUiState())
 
     fun sync() {
-        scheduler.enqueueManual()
-        message.value = "동기화를 예약했습니다"
+        viewModelScope.launch {
+            manualSyncConfigurationMessage(preferences.current().isServerConfigured)?.let {
+                message.value = it
+                return@launch
+            }
+            message.value = null
+            scheduler.enqueueManual()
+        }
     }
 
     fun create(folder: String, name: String, content: String, onCreated: (String) -> Unit) {
@@ -170,6 +215,24 @@ class NotesViewModel @Inject constructor(
             busy.value = false
         }
     }
+
+    private fun WorkInfo.syncMessage(): String = when (state) {
+        WorkInfo.State.ENQUEUED -> if (runAttemptCount > 0) {
+            "서버 연결을 재시도 중입니다${progress.getString(SyncWorker.KEY_ERROR)?.let { " · $it" }.orEmpty()}"
+        } else {
+            "동기화를 대기 중입니다"
+        }
+        WorkInfo.State.RUNNING -> "동기화 중입니다"
+        WorkInfo.State.SUCCEEDED -> {
+            val uploaded = outputData.getInt(SyncWorker.KEY_UPLOADED, 0)
+            val notes = outputData.getInt(SyncWorker.KEY_NOTES, 0)
+            "동기화 완료 · 녹음 ${uploaded}개 전송 · 노트 ${notes}개 확인"
+        }
+        WorkInfo.State.FAILED ->
+            "동기화 실패 · ${outputData.getString(SyncWorker.KEY_ERROR) ?: "서버 설정과 네트워크를 확인하세요"}"
+        WorkInfo.State.CANCELLED -> "동기화가 취소되었습니다"
+        WorkInfo.State.BLOCKED -> "동기화를 대기 중입니다"
+    }
 }
 
 data class SettingsUiState(
@@ -179,6 +242,20 @@ data class SettingsUiState(
     val connectionMessage: String? = null,
     val apkInfo: ApkInfo? = null,
 )
+
+internal suspend fun validateAndCommitServer(
+    candidate: UserSettings,
+    test: Boolean,
+    health: suspend (UserSettings) -> Boolean,
+    authenticatedProbe: suspend (UserSettings) -> Unit,
+    commit: suspend (UserSettings) -> Unit,
+) {
+    if (test) {
+        check(health(candidate)) { "서버 health 확인 실패" }
+        authenticatedProbe(candidate)
+    }
+    commit(candidate)
+}
 
 @HiltViewModel
 class SettingsViewModel @Inject constructor(
@@ -212,12 +289,20 @@ class SettingsViewModel @Inject constructor(
         viewModelScope.launch {
             testing.value = test
             runCatching {
-                preferences.updateServer(url, userId, token)
-                if (test) {
-                    val saved = preferences.current()
-                    check(api.health(saved)) { "서버 health 확인 실패" }
-                    api.listNotes(saved)
-                }
+                val candidate = preferences.serverCandidate(url, userId, token)
+                validateAndCommitServer(
+                    candidate = candidate,
+                    test = test,
+                    health = api::health,
+                    authenticatedProbe = { api.listNotes(it) },
+                    commit = {
+                        preferences.updateServer(
+                            it.serverUrl,
+                            it.userId,
+                            it.token,
+                        )
+                    },
+                )
             }.onSuccess {
                 message.value = if (test) "서버와 안전하게 연결되었습니다" else "서버 설정을 저장했습니다"
             }.onFailure {

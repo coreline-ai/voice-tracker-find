@@ -4,6 +4,7 @@ import android.Manifest
 import android.content.pm.PackageManager
 import android.media.AudioDeviceInfo
 import android.media.AudioManager
+import android.media.MediaPlayer
 import android.os.Build
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -25,10 +26,14 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.CloudUpload
 import androidx.compose.material.icons.outlined.Folder
 import androidx.compose.material.icons.outlined.GraphicEq
+import androidx.compose.material.icons.outlined.PlayArrow
+import androidx.compose.material.icons.outlined.Stop
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -43,6 +48,8 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import com.thinktank.recorder.next.R
+import com.thinktank.recorder.next.data.local.ChunkEntity
+import com.thinktank.recorder.next.data.local.ChunkState
 import com.thinktank.recorder.next.data.local.RecordingState
 import com.thinktank.recorder.next.ui.RecordingUiState
 import com.thinktank.recorder.next.ui.common.RecordControl
@@ -52,6 +59,7 @@ import com.thinktank.recorder.next.ui.common.StatusPill
 import com.thinktank.recorder.next.ui.common.formatDuration
 import com.thinktank.recorder.next.ui.theme.ArchiveInk
 import com.thinktank.recorder.next.ui.theme.ArchivePaper
+import java.io.File
 
 @Composable
 fun RecordingScreen(
@@ -198,6 +206,16 @@ fun RecordingScreen(
                 )
             }
             Spacer(Modifier.height(42.dp))
+            SectionLabel("기기 보관함")
+            Text(
+                "동기화가 끝나도 녹음 원본은 이 기기에 유지됩니다.",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(top = 8.dp),
+            )
+            Spacer(Modifier.height(12.dp))
+            RecentRecordings(state.recentChunks)
+            Spacer(Modifier.height(42.dp))
             SectionLabel("기록 상태")
             Spacer(Modifier.height(12.dp))
             DiagnosticRow(
@@ -218,6 +236,92 @@ fun RecordingScreen(
             Spacer(Modifier.height(40.dp))
         }
     }
+}
+
+@Composable
+private fun RecentRecordings(chunks: List<ChunkEntity>) {
+    if (chunks.isEmpty()) {
+        Text(
+            "아직 기기에 보관된 녹음이 없습니다.",
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        return
+    }
+
+    var player by remember { mutableStateOf<MediaPlayer?>(null) }
+    var playingId by remember { mutableStateOf<String?>(null) }
+    DisposableEffect(player) {
+        onDispose { player?.release() }
+    }
+
+    chunks.forEach { chunk ->
+        val file = File(chunk.path)
+        val isStoredOnDevice = file.isFile
+        Row(
+            Modifier
+                .fillMaxWidth()
+                .padding(vertical = 4.dp)
+                .clip(RoundedCornerShape(10.dp))
+                .background(MaterialTheme.colorScheme.surface)
+                .padding(start = 14.dp, end = 6.dp, top = 10.dp, bottom = 10.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Icon(Icons.Outlined.Folder, contentDescription = null)
+            Column(Modifier.weight(1f)) {
+                Text(
+                    "녹음 · ${formatDuration(chunk.durationMs ?: 0)}",
+                    style = MaterialTheme.typography.labelLarge,
+                )
+                Text(
+                    chunkStorageLabel(chunk.state, isStoredOnDevice),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            IconButton(
+                enabled = isStoredOnDevice,
+                onClick = {
+                    if (playingId == chunk.id) {
+                        player = null
+                        playingId = null
+                    } else {
+                        runCatching {
+                            MediaPlayer().apply {
+                                setDataSource(chunk.path)
+                                prepare()
+                                setOnCompletionListener {
+                                    player = null
+                                    playingId = null
+                                }
+                                start()
+                            }
+                        }.onSuccess { next ->
+                            player = next
+                            playingId = chunk.id
+                        }
+                    }
+                },
+            ) {
+                Icon(
+                    if (playingId == chunk.id) Icons.Outlined.Stop else Icons.Outlined.PlayArrow,
+                    contentDescription = if (playingId == chunk.id) "재생 정지" else "녹음 재생",
+                )
+            }
+        }
+    }
+}
+
+private fun chunkStorageLabel(state: String, isStoredOnDevice: Boolean): String = when {
+    !isStoredOnDevice -> "기기 원본을 찾을 수 없음"
+    state == ChunkState.UPLOADED -> "업로드됨 · 기기에 보관됨"
+    state in setOf(ChunkState.READY, ChunkState.RETRY) -> "업로드 대기 · 기기에 보관됨"
+    state in setOf(ChunkState.CLAIMED, ChunkState.UPLOADING) -> "업로드 중 · 기기에 보관됨"
+    state == ChunkState.CONFLICT -> "업로드 확인 필요 · 기기에 보관됨"
+    state == ChunkState.FAILED -> "업로드 실패 · 기기에 보관됨"
+    state == ChunkState.QUARANTINED -> "확인 필요 · 기기에 보관됨"
+    else -> "기기에 보관됨"
 }
 
 private fun hasUsableAudioInput(audioManager: AudioManager): Boolean =

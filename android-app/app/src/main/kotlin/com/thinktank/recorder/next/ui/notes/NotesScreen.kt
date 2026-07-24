@@ -28,6 +28,7 @@ import androidx.compose.material.icons.filled.Save
 import androidx.compose.material.icons.filled.Sync
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
@@ -65,6 +66,10 @@ import com.thinktank.recorder.next.ui.common.StatusPill
 import com.thinktank.recorder.next.ui.theme.ArchiveInk
 import com.thinktank.recorder.next.ui.theme.ArchiveNoteCopper
 import com.thinktank.recorder.next.ui.theme.ArchivePaper
+import java.time.LocalDateTime
+import java.time.ZoneId
+import java.time.ZoneOffset
+import java.time.format.DateTimeFormatter
 
 @Composable
 fun NotesScreen(
@@ -83,15 +88,27 @@ fun NotesScreen(
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Column(Modifier.weight(1f)) {
-                Text("아카이브", style = MaterialTheme.typography.headlineLarge)
+                Text(
+                    "아카이브",
+                    style = MaterialTheme.typography.headlineLarge,
+                    modifier = Modifier.padding(bottom = 8.dp),
+                )
                 Text(
                     "기록에서 정리된 노트를 확인합니다",
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
-            IconButton(onClick = onSync, modifier = Modifier.sizeIn(48.dp, 48.dp)) {
-                Icon(Icons.Default.Sync, contentDescription = "지금 동기화")
+            IconButton(
+                onClick = onSync,
+                enabled = !state.syncing,
+                modifier = Modifier.sizeIn(48.dp, 48.dp),
+            ) {
+                if (state.syncing) {
+                    CircularProgressIndicator(strokeWidth = 2.dp, modifier = Modifier.sizeIn(20.dp, 20.dp))
+                } else {
+                    Icon(Icons.Default.Sync, contentDescription = "지금 동기화")
+                }
             }
             IconButton(onClick = { showCreate = true }, modifier = Modifier.sizeIn(48.dp, 48.dp)) {
                 Icon(Icons.Default.Add, contentDescription = "새 노트")
@@ -113,9 +130,14 @@ fun NotesScreen(
                 title = "아직 도착한 노트가 없습니다",
                 body = "녹음을 마친 뒤 동기화하면 서버가 정리한 노트가 이곳에 쌓입니다.",
                 action = {
-                    Button(onClick = onSync) {
-                        Icon(Icons.Default.Sync, contentDescription = null)
-                        Text(" 동기화")
+                    Button(onClick = onSync, enabled = !state.syncing) {
+                        if (state.syncing) {
+                            CircularProgressIndicator(strokeWidth = 2.dp, modifier = Modifier.sizeIn(18.dp, 18.dp))
+                            Text(" 동기화 중")
+                        } else {
+                            Icon(Icons.Default.Sync, contentDescription = null)
+                            Text(" 동기화")
+                        }
                     }
                 },
             )
@@ -156,13 +178,9 @@ fun NotesScreen(
 
 @Composable
 private fun NoteRow(note: NoteEntity, onClick: () -> Unit) {
-    val title = note.content.lineSequence()
-        .firstOrNull { it.startsWith("# ") }
-        ?.removePrefix("# ")
-        ?.trim()
-        .orEmpty()
-        .ifBlank { note.name.removeSuffix(".md") }
-    val preview = note.content.lineSequence()
+    val visibleContent = stripLeadingFrontMatter(note.content)
+    val title = noteTitle(note)
+    val preview = visibleContent.lineSequence()
         .filterNot { it.startsWith("#") || it.isBlank() }
         .take(2)
         .joinToString(" ")
@@ -266,28 +284,33 @@ fun NoteDetailScreen(
     onArchive: (String, () -> Unit) -> Unit,
 ) {
     var editing by remember(note?.serverId) { mutableStateOf(false) }
-    var content by remember(note?.serverId, note?.content) { mutableStateOf(note?.content.orEmpty()) }
+    var content by remember(note?.serverId, note?.content) {
+        mutableStateOf(stripLeadingFrontMatter(note?.content.orEmpty()))
+    }
     Scaffold(
         topBar = {
             TopAppBar(
                 title = {
                     Text(
-                        note?.name?.removeSuffix(".md") ?: "노트",
+                        note?.let(::noteTitle) ?: "노트",
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
                     )
                 },
                 navigationIcon = {
-                    IconButton(onClick = onBack) {
+                    IconButton(
+                        onClick = onBack,
+                        modifier = Modifier.sizeIn(minWidth = 48.dp, minHeight = 48.dp),
+                    ) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "뒤로")
                     }
                 },
                 actions = {
-                    if (note != null) {
+                    if (note != null && !isTranscriptArchive(note.folder)) {
                         IconButton(
                             onClick = {
                                 if (editing) {
-                                    onSave(note.serverId, content)
+                                    onSave(note.serverId, restoreLeadingFrontMatter(note.content, content))
                                     editing = false
                                 } else {
                                     editing = true
@@ -337,6 +360,12 @@ fun NoteDetailScreen(
                             note.lastError ?: "편집 충돌이 있습니다",
                             color = MaterialTheme.colorScheme.error,
                             style = MaterialTheme.typography.labelLarge,
+                            modifier = Modifier.padding(bottom = 16.dp),
+                        )
+                    }
+                    if (isTranscriptArchive(note.folder)) {
+                        StatusPill(
+                            text = "원문 전사 · 읽기 전용",
                             modifier = Modifier.padding(bottom = 16.dp),
                         )
                     }
@@ -412,6 +441,63 @@ internal sealed interface MarkdownBlock {
     data class Table(val rows: List<List<String>>) : MarkdownBlock
     data object Divider : MarkdownBlock
 }
+
+private val leadingFrontMatter = Regex(
+    """\A---[ \t]*\r?\n[\s\S]*?\r?\n---[ \t]*(?:\r?\n)?""",
+)
+
+internal fun stripLeadingFrontMatter(content: String): String =
+    leadingFrontMatter.replaceFirst(content, "")
+
+internal fun restoreLeadingFrontMatter(originalContent: String, editedBody: String): String {
+    val frontMatter = leadingFrontMatter.find(originalContent)?.value.orEmpty()
+    return frontMatter + editedBody.trimStart('\r', '\n')
+}
+
+internal fun noteDisplayTitle(name: String, content: String): String =
+    stripLeadingFrontMatter(content)
+        .lineSequence()
+        .firstOrNull { it.startsWith("# ") }
+        ?.removePrefix("# ")
+        ?.trim()
+        .orEmpty()
+        .ifBlank { name.removeSuffix(".md").replace('_', ' ') }
+
+internal fun noteTitle(note: NoteEntity): String =
+    if (isTranscriptArchive(note.folder)) {
+        archiveRecordingTitle(note.name)
+    } else if (isRecordingMemo(note)) {
+        recordingMemoTitle(note.name)
+    } else {
+        noteDisplayTitle(note.name, note.content)
+    }
+
+internal fun isTranscriptArchive(folder: String): Boolean = folder == "90-archive"
+
+internal fun isRecordingMemo(note: NoteEntity): Boolean =
+    note.folder == "30-ideas" && "\ntype: recording_memo\n" in note.content
+
+private val ARCHIVE_RECORDING_FILENAME = Regex(
+    """^rec_(\d{4})(\d{2})(\d{2})_(\d{2})(\d{2})(\d{2})_""",
+)
+private val ARCHIVE_SOURCE_TIME = DateTimeFormatter.ofPattern("yyyyMMddHHmmss")
+private val ARCHIVE_DISPLAY_TIME = DateTimeFormatter.ofPattern("yyyy.MM.dd HH:mm")
+
+internal fun archiveRecordingTitle(name: String, zone: ZoneId = ZoneId.systemDefault()): String {
+    val filename = name.removeSuffix(".md")
+    val match = ARCHIVE_RECORDING_FILENAME.find(filename)
+        ?: return "녹음 전사 · $filename"
+    val recordedAt = runCatching {
+        LocalDateTime.parse(match.groupValues.drop(1).joinToString(""), ARCHIVE_SOURCE_TIME)
+            .atOffset(ZoneOffset.UTC)
+            .atZoneSameInstant(zone)
+            .format(ARCHIVE_DISPLAY_TIME)
+    }.getOrNull() ?: return "녹음 전사 · $filename"
+    return "녹음 전사 · $recordedAt"
+}
+
+internal fun recordingMemoTitle(name: String, zone: ZoneId = ZoneId.systemDefault()): String =
+    archiveRecordingTitle(name, zone).replaceFirst("녹음 전사", "음성 메모")
 
 internal fun parseMarkdown(content: String): List<MarkdownBlock> {
     val lines = content.lines()
@@ -489,7 +575,7 @@ private fun isSpecialMarkdownLine(line: String): Boolean =
 
 @Composable
 private fun MarkdownDocument(content: String, onWikiLink: (String) -> Unit) {
-    val blocks = remember(content) { parseMarkdown(content) }
+    val blocks = remember(content) { parseMarkdown(stripLeadingFrontMatter(content)) }
     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
         blocks.forEach { block ->
             when (block) {

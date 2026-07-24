@@ -7,12 +7,15 @@ import androidx.work.ExistingWorkPolicy
 import androidx.work.NetworkType
 import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.PeriodicWorkRequestBuilder
+import androidx.work.WorkInfo
 import androidx.work.WorkManager
 import com.thinktank.recorder.next.data.settings.AppPreferences
 import dagger.hilt.android.qualifiers.ApplicationContext
 import java.util.concurrent.TimeUnit
 import javax.inject.Inject
 import javax.inject.Singleton
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.map
 
 @Singleton
 class SyncScheduler @Inject constructor(
@@ -20,6 +23,10 @@ class SyncScheduler @Inject constructor(
     private val preferences: AppPreferences,
 ) {
     private val workManager = WorkManager.getInstance(context)
+
+    val manualWorkInfo: Flow<WorkInfo?> =
+        workManager.getWorkInfosForUniqueWorkFlow(MANUAL_WORK)
+            .map { infos -> infos.firstOrNull() }
 
     fun enqueueManual() {
         val request = OneTimeWorkRequestBuilder<SyncWorker>()
@@ -30,7 +37,11 @@ class SyncScheduler @Inject constructor(
             )
             .addTag(TAG_SYNC)
             .build()
-        workManager.enqueueUniqueWork(MANUAL_WORK, ExistingWorkPolicy.KEEP, request)
+        // A previous network failure may leave the unique work in backoff for
+        // a long time. A user-initiated sync must be able to start now.
+        // Uploads are idempotent by uploadId, so replacing a stale/running
+        // manual request cannot create a duplicate server record.
+        workManager.enqueueUniqueWork(MANUAL_WORK, ExistingWorkPolicy.REPLACE, request)
     }
 
     suspend fun reconcileAutoSync() {
@@ -67,4 +78,3 @@ class SyncScheduler @Inject constructor(
         const val TAG_SYNC = "thinktank-sync"
     }
 }
-

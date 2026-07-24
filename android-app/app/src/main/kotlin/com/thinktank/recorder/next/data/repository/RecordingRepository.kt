@@ -16,7 +16,11 @@ class RecordingRepository @Inject constructor(
 ) {
     val latestSession: Flow<RecordingSessionEntity?> = dao.observeLatestSession()
     val latestChunk: Flow<ChunkEntity?> = dao.observeLatestChunk()
+    val recentChunks: Flow<List<ChunkEntity>> = dao.observeRecentChunks(MAX_RECENT_CHUNKS)
     val pendingUploads: Flow<Int> = dao.observePendingCount()
     val amplitude: StateFlow<Float> = runtime.amplitude
-}
 
+    private companion object {
+        const val MAX_RECENT_CHUNKS = 5
+    }
+}

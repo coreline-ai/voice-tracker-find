@@ -76,7 +76,11 @@ fun SettingsScreen(
             .padding(horizontal = 20.dp),
     ) {
         Spacer(Modifier.height(20.dp))
-        Text("설정", style = MaterialTheme.typography.headlineLarge)
+        Text(
+            "설정",
+            style = MaterialTheme.typography.headlineLarge,
+            modifier = Modifier.padding(bottom = 8.dp),
+        )
         Text(
             "기록은 기기에, 연결 정보는 안전하게 보관합니다",
             style = MaterialTheme.typography.bodyMedium,
@@ -183,7 +187,7 @@ fun SettingsScreen(
             OutlinedTextField(
                 value = serverUrl,
                 onValueChange = { serverUrl = it },
-                label = { Text("HTTPS 서버 주소") },
+                label = { Text(if (BuildConfig.DEBUG) "서버 주소" else "HTTPS 서버 주소") },
                 placeholder = { Text("https://recorder.example.com") },
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri),
                 singleLine = true,

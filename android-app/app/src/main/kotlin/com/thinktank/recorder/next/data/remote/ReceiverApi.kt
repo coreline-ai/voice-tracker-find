@@ -14,6 +14,7 @@ import okhttp3.Request
 import okhttp3.RequestBody.Companion.asRequestBody
 import okhttp3.RequestBody.Companion.toRequestBody
 import okhttp3.HttpUrl.Companion.toHttpUrl
+import okio.Buffer
 import org.json.JSONArray
 import org.json.JSONObject
 
@@ -82,7 +83,7 @@ class ReceiverApi @Inject constructor(
             .header("Idempotency-Key", uploadId)
             .header("X-Recording-ID", recordingId)
             .header("X-Chunk-ID", chunkId)
-            .put(file.asRequestBody(AUDIO))
+            .put(file.asRequestBody(file.audioMediaType()))
             .build()
         executeJson(request) { json, response ->
             UploadReceipt(
@@ -217,7 +218,7 @@ class ReceiverApi @Inject constructor(
             if (length > MAX_JSON_BYTES) {
                 throw ApiException(413, "RESPONSE_TOO_LARGE", "서버 응답이 너무 큽니다")
             }
-            val body = responseBody?.string().orEmpty()
+            val body = readBoundedBody(responseBody)
             val json = runCatching { JSONObject(body) }.getOrElse {
                 throw ApiException(
                     response.code,
@@ -250,9 +251,39 @@ class ReceiverApi @Inject constructor(
         updatedAt = getString("updatedAt"),
     )
 
+    private fun readBoundedBody(body: okhttp3.ResponseBody?): String {
+        if (body == null) return ""
+        val source = body.source()
+        val buffer = Buffer()
+        var total = 0L
+        while (true) {
+            val read = source.read(
+                buffer,
+                minOf(8L * 1024, MAX_JSON_BYTES + 1 - total),
+            )
+            if (read == -1L) break
+            total += read
+            if (total > MAX_JSON_BYTES) {
+                throw ApiException(
+                    413,
+                    "RESPONSE_TOO_LARGE",
+                    "서버 응답이 너무 큽니다",
+                )
+            }
+        }
+        return buffer.readUtf8()
+    }
+
+    private fun File.audioMediaType() = when (extension.lowercase()) {
+        "m4a", "mp4" -> "audio/mp4"
+        "wav" -> "audio/wav"
+        "mp3" -> "audio/mpeg"
+        "ogg" -> "audio/ogg"
+        else -> "application/octet-stream"
+    }.toMediaType()
+
     private companion object {
         val JSON = "application/json; charset=utf-8".toMediaType()
-        val AUDIO = "audio/mp4".toMediaType()
         const val MAX_JSON_BYTES = 10L * 1024 * 1024
     }
 }

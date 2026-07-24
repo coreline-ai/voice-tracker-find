@@ -42,7 +42,9 @@ import ssl
 import subprocess
 import sys
 import threading
+import time
 import uuid
+from collections.abc import Callable
 from dataclasses import replace
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -50,21 +52,44 @@ from urllib.parse import parse_qs, unquote
 
 from thinktank.config import Settings, load_settings
 from thinktank.ingest import AUDIO_EXTENSIONS
+from thinktank.adapters.local_receiver import LocalReceiverV1Adapter
 from thinktank.receiver_v1 import (
-    ReceiverV1State,
     V1Error,
     etag_for,
     normalize_sha256,
 )
+from thinktank.server.contracts import (
+    MAX_V1_UPLOAD_BYTES,
+    UPLOAD_STATUS_ALREADY_EXISTS,
+    UPLOAD_STATUS_CREATED,
+    is_safe_leaf_name,
+)
+from thinktank.server.ports import ReceiverV1Persistence
 from thinktank.users import is_multi_user, load_users
+from thinktank.web_dashboard import build_dashboard_summary
 
 logger = logging.getLogger(__name__)
 
 DEFAULT_HOST = "0.0.0.0"  # noqa: S104 - LAN 의 폰이 붙어야 하므로 의도적
 
-def _is_daily_important(stem: str) -> bool:
+def _is_daily_important(path: Path) -> bool:
     """데일리 구분 노트 중 '중요'·'일정'만 (아이디어·기타·색인 제외)."""
-    return stem.endswith("_중요") or stem.endswith("_일정")
+    return path.stem.endswith("_중요") or path.stem.endswith("_일정")
+
+
+def _is_transcript_archive(path: Path) -> bool:
+    """파이프라인이 만든 전사 원본만 폰에 노출한다.
+
+    폰에서 사용자가 보관한 일반 노트도 같은 ``90-archive`` 폴더로 이동한다.
+    그것까지 다시 내려보내면 삭제한 노트가 되살아나므로, 아카이브 frontmatter의
+    ``type: archive``가 있는 전사 원본만 전송한다.
+    """
+    try:
+        with path.open(encoding="utf-8") as note:
+            header = note.read(4096)
+    except OSError:
+        return False
+    return header.startswith("---\n") and "\ntype: archive\n" in header
 
 
 # 폰으로 내려보낼 노트: (폴더, 상한, 파일명 필터). 필터 None = 폴더 전부.
@@ -73,10 +98,14 @@ def _is_daily_important(stem: str) -> bool:
 #   남겨 허브(1 wiki)의 [[링크]]로 접근한다.
 # - wiki(허브)·ideas(창발) 가 가장 중요 → 넉넉히 전부.
 # - daily 는 '중요'·'일정' 구분 노트만(아이디어·기타·색인 제외).
-NOTE_SPECS: list[tuple[str, int, object]] = [
+# - archive 는 원본 전사 확인용이므로 최근 100개를 폰에서도 바로 열 수 있게 한다.
+#   단, 사용자가 앱에서 보관한 일반 노트는 다시 노출하지 않는다.
+NoteFilter = Callable[[Path], bool]
+NOTE_SPECS: list[tuple[str, int, NoteFilter | None]] = [
     ("1 wiki", 100, None),
     ("30-ideas", 200, None),
     ("10-daily", 60, _is_daily_important),
+    ("90-archive", 100, _is_transcript_archive),
 ]
 NOTE_FOLDERS = [folder for folder, _limit, _match in NOTE_SPECS]
 
@@ -85,18 +114,11 @@ NOTE_FOLDERS = [folder for folder, _limit, _match in NOTE_SPECS]
 ARCHIVE_DIR = "90-archive"
 
 # 업로드 1건 상한. 22시간 연속 녹음(m4a)도 수백 MB 수준이라 넉넉하다.
-MAX_UPLOAD_BYTES = 2 * 1024 * 1024 * 1024
+MAX_UPLOAD_BYTES = MAX_V1_UPLOAD_BYTES
 _CHUNK_SIZE = 64 * 1024
 
 
 # 윈도우 예약 장치명. 확장자를 붙여도(CON.m4a) 여전히 장치를 가리킨다.
-_WINDOWS_RESERVED = frozenset(
-    {"CON", "PRN", "AUX", "NUL"}
-    | {f"COM{i}" for i in range(1, 10)}
-    | {f"LPT{i}" for i in range(1, 10)}
-)
-
-
 def _is_safe_name(name: str) -> bool:
     """경로 구분자/상위 탐색/윈도우 특수 이름이 없는 순수 파일명인지 검사한다.
 
@@ -109,17 +131,7 @@ def _is_safe_name(name: str) -> bool:
       선행 점을 막으면 내부 임시 파일(``.thinktank.*.part``) 흉내도 함께 막힌다.
     - 제어문자 — 로그를 오염시키고 터미널 이스케이프로 악용될 수 있다.
     """
-    if not name or name in {".", ".."}:
-        return False
-    if "/" in name or "\\" in name or ":" in name:
-        return False
-    if any(ch < " " or ch == "\x7f" for ch in name):
-        return False
-    if name != name.strip(" ."):
-        return False
-    if name.split(".", 1)[0].upper() in _WINDOWS_RESERVED:
-        return False
-    return name == Path(name).name
+    return is_safe_leaf_name(name)
 
 
 # 업로드 후 남겨둘 최소 여유 공간. 수집 폴더가 꽉 차면 파이프라인의 임시 파일
@@ -154,7 +166,7 @@ def _collect_notes(vault: Path) -> list[tuple[str, Path]]:
             continue
         files = [path for path in directory.glob("*.md") if path.is_file()]
         if name_filter is not None:
-            files = [path for path in files if name_filter(path.stem)]
+            files = [path for path in files if name_filter(path)]
         found.extend((dir_name, path) for path in _by_mtime_desc(files)[:limit])
     return found
 
@@ -310,6 +322,46 @@ class _Handler(BaseHTTPRequestHandler):
             },
         )
 
+    def _handle_dashboard_asset(self, segments: list[str]) -> None:
+        """Serve the dependency-free dashboard from the repository web folder."""
+        if len(segments) == 1:
+            asset_name = "index.html"
+        elif len(segments) == 2:
+            asset_name = segments[1]
+        else:
+            self._send(404, b"not found")
+            return
+
+        asset_types = {
+            "index.html": "text/html; charset=utf-8",
+            "styles.css": "text/css; charset=utf-8",
+            "app.js": "text/javascript; charset=utf-8",
+        }
+        content_type = asset_types.get(asset_name)
+        if content_type is None:
+            self._send(404, b"not found")
+            return
+
+        asset = Path(__file__).resolve().parents[2] / "web" / "dashboard" / asset_name
+        try:
+            body = asset.read_bytes()
+        except OSError:
+            self._send(404, b"dashboard asset not found")
+            return
+        self._send(
+            200,
+            body,
+            content_type,
+            headers={
+                "Cache-Control": "no-cache",
+                "Content-Security-Policy": (
+                    "default-src 'self'; connect-src 'self'; style-src 'self'; "
+                    "script-src 'self'; img-src 'self' data:; media-src 'self' blob:"
+                ),
+                "X-Content-Type-Options": "nosniff",
+            },
+        )
+
     def _resolve_user(self, supplied: str):  # noqa: ANN202 - User (순환 import 회피)
         """토큰으로 사용자를 찾는다 (없으면 None).
 
@@ -441,6 +493,9 @@ class _Handler(BaseHTTPRequestHandler):
 
     def do_GET(self) -> None:  # noqa: N802 - BaseHTTPRequestHandler 규약
         segments = self._segments()
+        if segments[:1] == ["dashboard"]:
+            self._handle_dashboard_asset(segments)
+            return
         if segments[:2] == ["api", "v1"]:
             self._handle_v1_get(segments[2:])
             return
@@ -514,6 +569,35 @@ class _Handler(BaseHTTPRequestHandler):
                 self._send_v1_json(
                     200, {"status": "ok", "apiVersion": "v1"}
                 )
+                return
+            if segments == ["dashboard", "summary"]:
+                user = self._authorized()
+                if user is None:
+                    raise V1Error(
+                        401, "UNAUTHORIZED", "A valid Bearer token is required"
+                    )
+                summary = build_dashboard_summary(self.server, user, NOTE_FOLDERS)
+                self._send_v1_json(
+                    200,
+                    summary,
+                    headers={"Cache-Control": "no-store"},
+                )
+                return
+            if len(segments) == 4 and segments[:2] == ["dashboard", "notes"]:
+                user = self._authorized()
+                if user is None:
+                    raise V1Error(
+                        401, "UNAUTHORIZED", "A valid Bearer token is required"
+                    )
+                self._handle_dashboard_note(user, segments[2], segments[3])
+                return
+            if len(segments) == 3 and segments[:2] == ["dashboard", "audio"]:
+                user = self._authorized()
+                if user is None:
+                    raise V1Error(
+                        401, "UNAUTHORIZED", "A valid Bearer token is required"
+                    )
+                self._handle_dashboard_audio(user, segments[2])
                 return
             if segments == ["apk", "info"]:
                 if self._authorized() is None:
@@ -709,10 +793,11 @@ class _Handler(BaseHTTPRequestHandler):
                     invalid_code,
                     f"{label} must be a UUID",
                 ) from exc
-        ingest_dir: Path = user.settings.ingest_dir
-        if not _has_room_for(ingest_dir, length):
+        try:
+            self.server.v1_state.ensure_upload_capacity(user, length)
+        except V1Error:
             self._drain(length)
-            raise V1Error(507, "INSUFFICIENT_STORAGE", "Server storage is full")
+            raise
         receipt, created = self.server.v1_state.receive_upload(
             user=user,
             filename=filename,
@@ -727,7 +812,9 @@ class _Handler(BaseHTTPRequestHandler):
             _schedule_process(self.server, user.name)
         payload = {
             **receipt.as_dict(),
-            "status": "created" if created else "already_exists",
+            "status": (
+                UPLOAD_STATUS_CREATED if created else UPLOAD_STATUS_ALREADY_EXISTS
+            ),
         }
         self._send_v1_json(201 if created else 200, payload)
 
@@ -743,6 +830,66 @@ class _Handler(BaseHTTPRequestHandler):
         self.send_header("X-Request-ID", request_id)
         self.end_headers()
         with apk.open("rb") as handle:
+            shutil.copyfileobj(handle, self.wfile, length=_CHUNK_SIZE)
+
+    def _dashboard_file(
+        self, root: Path, filename: str, *, error_code: str, error_message: str
+    ) -> Path:
+        """안전한 leaf filename을 현재 사용자 디렉터리 안의 파일로 해석한다."""
+        if not _is_safe_name(filename):
+            raise V1Error(400, error_code, error_message)
+        try:
+            resolved_root = root.resolve()
+            candidate = (resolved_root / filename).resolve()
+        except OSError as exc:
+            raise V1Error(404, "DASHBOARD_FILE_NOT_FOUND", "File was not found") from exc
+        if resolved_root not in candidate.parents or not candidate.is_file():
+            raise V1Error(404, "DASHBOARD_FILE_NOT_FOUND", "File was not found")
+        return candidate
+
+    def _handle_dashboard_note(self, user, folder: str, name: str) -> None:  # noqa: ANN001
+        """선택한 사용자 범위의 UTF-8 Markdown만 대시보드에 반환한다."""
+        if folder not in NOTE_FOLDERS:
+            raise V1Error(400, "DASHBOARD_FOLDER_INVALID", "Note folder is not exposed")
+        if not name.endswith(".md"):
+            raise V1Error(400, "DASHBOARD_NOTE_INVALID", "Note name must end with .md")
+        path = self._dashboard_file(
+            user.settings.obsidian_vault / folder,
+            name,
+            error_code="DASHBOARD_NOTE_INVALID",
+            error_message="Note name is invalid",
+        )
+        try:
+            content = path.read_text(encoding="utf-8")
+        except UnicodeDecodeError as exc:
+            raise V1Error(500, "DASHBOARD_NOTE_UNREADABLE", "Note could not be decoded") from exc
+        self._send_v1_json(
+            200,
+            {"folder": folder, "name": name, "content": content},
+            headers={"Cache-Control": "no-store"},
+        )
+
+    def _handle_dashboard_audio(self, user, filename: str) -> None:  # noqa: ANN001
+        """선택한 사용자 inbox의 M4A만 bearer 인증으로 스트리밍한다."""
+        if Path(filename).suffix.lower() != ".m4a":
+            raise V1Error(
+                400, "DASHBOARD_AUDIO_INVALID", "Only .m4a audio can be played"
+            )
+        path = self._dashboard_file(
+            user.settings.ingest_dir,
+            filename,
+            error_code="DASHBOARD_AUDIO_INVALID",
+            error_message="Audio filename is invalid",
+        )
+        request_id = self._request_id()
+        self.send_response(200)
+        self.send_header("Content-Type", "audio/mp4")
+        self.send_header("Content-Length", str(path.stat().st_size))
+        self.send_header("Cache-Control", "no-store")
+        self.send_header("X-Content-Type-Options", "nosniff")
+        self.send_header("X-Request-ID", request_id)
+        self.end_headers()
+        with path.open("rb") as handle:
             shutil.copyfileobj(handle, self.wfile, length=_CHUNK_SIZE)
 
     # --- 핸들러 -------------------------------------------------------
@@ -906,6 +1053,7 @@ def create_server(
     certfile: str | Path | None = None,
     apk_path: str | Path | None = None,
     state_db: str | Path | None = None,
+    v1_persistence: ReceiverV1Persistence | None = None,
 ) -> ThreadingHTTPServer:
     """수신기 서버를 만든다 (아직 listen 만 하고 serve 는 호출자가 시작).
 
@@ -920,6 +1068,8 @@ def create_server(
         apk_path: 폰이 내려받을 APK 경로.
         state_db: V1 upload receipt/note identity SQLite 경로. 생략하면 첫
             사용자의 pipeline DB 옆 ``receiver-v1.sqlite3`` 를 사용한다.
+        v1_persistence: cloud/test persistence 구현. 생략하면 local
+            file/SQLite adapter를 만든다. ``state_db``와 함께 줄 수 없다.
 
     Returns:
         설정이 주입된 :class:`ThreadingHTTPServer`.
@@ -927,6 +1077,13 @@ def create_server(
     Raises:
         ValueError: 사용자가 없거나 토큰이 빈 사용자가 있을 때.
     """
+    if v1_persistence is not None and state_db is not None:
+        raise ValueError("v1_persistence와 state_db는 함께 지정할 수 없습니다.")
+    use_local_persistence = v1_persistence is None
+    if v1_persistence is not None and not isinstance(
+        v1_persistence, ReceiverV1Persistence
+    ):
+        raise TypeError("v1_persistence가 ReceiverV1Persistence 계약을 구현하지 않습니다.")
     if not users:
         raise ValueError("사용자가 최소 1명 필요합니다.")
     for user in users:
@@ -935,30 +1092,40 @@ def create_server(
                 f"사용자 {user.name or '(기본)'!r} 에 토큰이 없습니다. "
                 "인증 없이 네트워크에 바인딩할 수 없습니다."
             )
-        user.settings.ingest_dir.mkdir(parents=True, exist_ok=True)
+        if use_local_persistence:
+            user.settings.ingest_dir.mkdir(parents=True, exist_ok=True)
 
     server = ThreadingHTTPServer((host, port), _Handler)
+    server.server_started_at = time.time()
     server.users = users
     server.multi_user = is_multi_user(users)
     server.apk_path = Path(apk_path).expanduser() if apk_path else None
-    if state_db is None:
-        configured = os.environ.get("RECEIVER_STATE_DB", "").strip()
-        state_db = (
-            Path(configured).expanduser()
-            if configured
-            else users[0].settings.db_path.with_name("receiver-v1.sqlite3")
+    if v1_persistence is None:
+        if state_db is None:
+            configured = os.environ.get("RECEIVER_STATE_DB", "").strip()
+            state_db = (
+                Path(configured).expanduser()
+                if configured
+                else users[0].settings.db_path.with_name("receiver-v1.sqlite3")
+            )
+        v1_persistence = LocalReceiverV1Adapter(
+            state_db,
+            NOTE_FOLDERS,
+            ingest_directories=[user.settings.ingest_dir for user in users],
         )
-    server.v1_state = ReceiverV1State(
-        state_db,
-        NOTE_FOLDERS,
-        ingest_directories=[user.settings.ingest_dir for user in users],
-    )
+    server.v1_state = v1_persistence
+    server.tls_enabled = bool(certfile)
     # 업로드 후 파이프라인 자동 트리거(디바운스 상태 + 스위치).
     # RECEIVER_AUTO_PROCESS=0 으로 끄면 예전처럼 야간/수동만 처리한다.
     server.process_lock = threading.Lock()
     server.process_timers = {}
     _auto = os.environ.get("RECEIVER_AUTO_PROCESS", "1").strip().lower()
-    server.auto_process = _auto not in ("0", "false", "no", "")
+    server.auto_process = use_local_persistence and _auto not in (
+        "0",
+        "false",
+        "no",
+        "",
+    )
 
     if certfile:
         context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)

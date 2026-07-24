@@ -54,6 +54,7 @@ from thinktank.lock import AlreadyRunning, PipelineLock
 from thinktank.notes.archive import Segment, Transcript, write_archive_note
 from thinktank.notes.daily import write_daily_note
 from thinktank.notes.emerged import IDEAS_SUBDIR, write_emerged_notes
+from thinktank.notes.recording_memo import write_recording_memo
 from thinktank.notes.pipeline_log import append_pipeline_log
 from thinktank.report import PipelineRun, build_run_report
 from thinktank.topics import merge_topics
@@ -153,6 +154,7 @@ def _organize(settings: Settings, run_date: str) -> None:
             transcript = _reconstruct_transcript(recording, settings.temp_dir)
             write_archive_note(transcript, settings.obsidian_vault)
             items = items_from_json(recording.extracted_json or "")
+            write_recording_memo(transcript, items, settings.obsidian_vault)
 
             now = datetime.now(UTC).strftime(_TIMESTAMP_FORMAT)
             update_recording_status(
@@ -197,6 +199,27 @@ def _write_daily_for(settings: Settings, date: str) -> None:
 
     stats = get_stats_recorded_on(settings.db_path, date)
     write_daily_note(date, day_items, stats, day_sources, settings.obsidian_vault)
+
+
+def _backfill_recording_memos(settings: Settings) -> None:
+    """기존 organized 녹음 중 메모가 없는 최근 전사를 한 번 보완한다.
+
+    메모 저장 함수가 기존 파일을 덮어쓰지 않으므로, 매 배치에서 호출해도 사용자가
+    수정한 메모의 mtime/content를 바꾸지 않는다. cleanup으로 전사 텍스트가 사라진
+    오래된 레코딩은 경고만 남기고 다음 건을 계속 처리한다.
+    """
+    for recording in get_recordings(settings.db_path, Status.ORGANIZED):
+        try:
+            transcript = _reconstruct_transcript(recording, settings.temp_dir)
+            items = items_from_json(recording.extracted_json or "")
+            write_recording_memo(transcript, items, settings.obsidian_vault)
+        except (OSError, ValueError) as exc:
+            logger.warning(
+                "녹음 메모 백필 건너뜀 (id=%s, filename=%s): %s",
+                recording.id,
+                recording.filename,
+                exc,
+            )
 
 
 def rebuild_daily_notes(settings: Settings) -> list[str]:
@@ -316,6 +339,7 @@ def _run_pipeline_locked(
     run_extract_batch(settings.db_path, settings.temp_dir, extract_fn)
 
     _organize(settings, run_date)
+    _backfill_recording_memos(settings)
 
     finished_at = datetime.now(UTC)
     run = build_run_report(settings.db_path, run_date, started_at, finished_at)

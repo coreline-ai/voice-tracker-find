@@ -26,9 +26,35 @@ paths:
                   status: {type: string, const: ok}
                   apiVersion: {type: string, const: v1}
                   requestId: {$ref: "#/components/schemas/RequestId"}
+  /api/v1/ready:
+    get:
+      security: []
+      operationId: readiness
+      description: DB checkout까지 확인하는 Cloud Run readiness probe다.
+      responses:
+        "200":
+          description: API와 영속 계층 준비 완료
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [status, apiVersion, requestId]
+                properties:
+                  status: {type: string, const: ready}
+                  apiVersion: {type: string, const: v1}
+                  requestId: {$ref: "#/components/schemas/RequestId"}
+        "503": {$ref: "#/components/responses/RetryableError"}
   /api/v1/upload/{userId}/{filename}:
     put:
       operationId: uploadRecordingChunk
+      description: |
+        M4A/WAV/MP3/OGG 청크를 SHA-256 검증 후 멱등 저장한다. 성공 wire status는
+        `created` 또는 `already_exists`다. 주요 오류 code는
+        `CONTENT_LENGTH_REQUIRED`, `UPLOAD_TOO_LARGE`, `CONTENT_SHA256_REQUIRED`,
+        `HASH_MISMATCH`, `IDEMPOTENCY_KEY_REQUIRED`, `RECORDING_ID_REQUIRED`,
+        `CHUNK_ID_REQUIRED`, `UPLOAD_CONFLICT`, `INSUFFICIENT_STORAGE`다.
+        모든 JSON 성공·오류 응답은 body의 `requestId`와 같은 `X-Request-ID`
+        응답 헤더를 포함한다.
       parameters:
         - {$ref: "#/components/parameters/UserId"}
         - name: filename
@@ -54,11 +80,17 @@ paths:
         - name: Content-Length
           in: header
           required: true
-          schema: {type: integer, minimum: 1}
+          schema: {type: integer, minimum: 1, maximum: 2147483648}
       requestBody:
         required: true
         content:
           audio/mp4:
+            schema: {type: string, contentEncoding: binary}
+          audio/wav:
+            schema: {type: string, contentEncoding: binary}
+          audio/mpeg:
+            schema: {type: string, contentEncoding: binary}
+          audio/ogg:
             schema: {type: string, contentEncoding: binary}
       responses:
         "201":
@@ -73,10 +105,16 @@ paths:
               schema: {$ref: "#/components/schemas/UploadReceipt"}
         "400": {$ref: "#/components/responses/Error"}
         "401": {$ref: "#/components/responses/Error"}
+        "403": {$ref: "#/components/responses/Error"}
         "409": {$ref: "#/components/responses/Error"}
         "411": {$ref: "#/components/responses/Error"}
         "413": {$ref: "#/components/responses/Error"}
+        "415": {$ref: "#/components/responses/Error"}
         "422": {$ref: "#/components/responses/Error"}
+        "429": {$ref: "#/components/responses/RetryableError"}
+        "500": {$ref: "#/components/responses/Error"}
+        "503": {$ref: "#/components/responses/RetryableError"}
+        "504": {$ref: "#/components/responses/RetryableError"}
         "507": {$ref: "#/components/responses/Error"}
   /api/v1/notes/{userId}:
     get:
@@ -97,6 +135,7 @@ paths:
                     items: {$ref: "#/components/schemas/Note"}
                   requestId: {$ref: "#/components/schemas/RequestId"}
         "401": {$ref: "#/components/responses/Error"}
+        "403": {$ref: "#/components/responses/Error"}
     post:
       operationId: createNote
       parameters:
@@ -122,7 +161,11 @@ paths:
               schema: {$ref: "#/components/schemas/Note"}
         "400": {$ref: "#/components/responses/Error"}
         "401": {$ref: "#/components/responses/Error"}
+        "403": {$ref: "#/components/responses/Error"}
         "409": {$ref: "#/components/responses/Error"}
+        "411": {$ref: "#/components/responses/Error"}
+        "413": {$ref: "#/components/responses/Error"}
+        "415": {$ref: "#/components/responses/Error"}
   /api/v1/notes/{userId}/{noteId}:
     parameters:
       - {$ref: "#/components/parameters/UserId"}
@@ -185,6 +228,57 @@ paths:
                   requestId: {$ref: "#/components/schemas/RequestId"}
         "412": {$ref: "#/components/responses/Error"}
         "428": {$ref: "#/components/responses/Error"}
+  /api/v1/dashboard/notes/{folder}/{name}:
+    get:
+      operationId: getDashboardNote
+      description: |
+        LAN 대시보드가 bearer token 소유자의 공개 노트 폴더에서 Markdown 원문을
+        읽는다. 폴더와 파일명은 서버 허용 목록 및 안전한 leaf name으로 검증된다.
+      parameters:
+        - name: folder
+          in: path
+          required: true
+          schema: {type: string, enum: ["1 wiki", "10-daily", "30-ideas", "90-archive"]}
+        - name: name
+          in: path
+          required: true
+          schema: {type: string, pattern: '^[^/\\]+\\.md$'}
+      responses:
+        "200":
+          description: 읽기 전용 Markdown
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [folder, name, content, requestId]
+                properties:
+                  folder: {type: string}
+                  name: {type: string}
+                  content: {type: string}
+                  requestId: {$ref: "#/components/schemas/RequestId"}
+        "400": {$ref: "#/components/responses/Error"}
+        "401": {$ref: "#/components/responses/Error"}
+        "404": {$ref: "#/components/responses/Error"}
+  /api/v1/dashboard/audio/{filename}:
+    get:
+      operationId: streamDashboardM4a
+      description: |
+        LAN 대시보드가 bearer token 소유자의 inbox에 있는 M4A 1개를 재생용으로
+        반환한다. token은 URL에 허용하지 않으며 Authorization header만 사용한다.
+      parameters:
+        - name: filename
+          in: path
+          required: true
+          schema: {type: string, pattern: '^[^/\\]+\\.m4a$'}
+      responses:
+        "200":
+          description: M4A bytes
+          content:
+            audio/mp4:
+              schema: {type: string, contentEncoding: binary}
+        "400": {$ref: "#/components/responses/Error"}
+        "401": {$ref: "#/components/responses/Error"}
+        "404": {$ref: "#/components/responses/Error"}
   /api/v1/apk/info:
     get:
       operationId: apkInfo
@@ -293,6 +387,14 @@ components:
   responses:
     Error:
       description: 구조화 오류
+      content:
+        application/json:
+          schema: {$ref: "#/components/schemas/Error"}
+    RetryableError:
+      description: 일시 오류. 클라이언트는 Retry-After 이후 재시도할 수 있다.
+      headers:
+        Retry-After:
+          schema: {type: integer, minimum: 1}
       content:
         application/json:
           schema: {$ref: "#/components/schemas/Error"}

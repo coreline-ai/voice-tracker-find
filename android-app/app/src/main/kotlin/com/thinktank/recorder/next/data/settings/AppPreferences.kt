@@ -58,12 +58,19 @@ class AppPreferences @Inject constructor(
 
     override suspend fun current(): UserSettings = settings.first()
 
+    fun serverCandidate(url: String, userId: String, token: String): UserSettings =
+        UserSettings(
+            serverUrl = normalizeServerUrl(url),
+            userId = userId.trim(),
+            token = token.trim(),
+        )
+
     suspend fun updateServer(url: String, userId: String, token: String) {
-        val normalized = normalizeServerUrl(url)
+        val candidate = serverCandidate(url, userId, token)
         context.dataStore.edit {
-            it[SERVER_URL] = normalized
-            it[USER_ID] = userId.trim()
-            it[ENCRYPTED_TOKEN] = tokenCipher.encrypt(token.trim())
+            it[SERVER_URL] = candidate.serverUrl
+            it[USER_ID] = candidate.userId
+            it[ENCRYPTED_TOKEN] = tokenCipher.encrypt(candidate.token)
         }
     }
 
@@ -102,7 +109,11 @@ class AppPreferences @Inject constructor(
         if (trimmed.isEmpty()) return ""
         val uri = URI(trimmed)
         require(uri.scheme == "https" || (BuildConfig.DEBUG && uri.scheme == "http")) {
-            "HTTPS 서버 주소가 필요합니다"
+            if (BuildConfig.DEBUG) {
+                "HTTP 또는 HTTPS 서버 주소가 필요합니다"
+            } else {
+                "HTTPS 서버 주소가 필요합니다"
+            }
         }
         require(!uri.host.isNullOrBlank()) { "올바른 서버 주소가 아닙니다" }
         require(uri.userInfo == null && uri.query == null && uri.fragment == null) {

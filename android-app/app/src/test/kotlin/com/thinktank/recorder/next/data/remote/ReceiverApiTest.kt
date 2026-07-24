@@ -50,7 +50,7 @@ class ReceiverApiTest {
                     """
                     {"uploadId":"server-id","recordingId":"$recordingId","chunkId":"$chunkId",
                      "filename":"${file.name}","size":5,
-                     "sha256":"$hash","status":"stored","requestId":"r1"}
+                     "sha256":"$hash","status":"created","requestId":"r1"}
                     """.trimIndent(),
                 ),
         )
@@ -71,9 +71,81 @@ class ReceiverApiTest {
         assertEquals("client-upload", request.getHeader("Idempotency-Key"))
         assertEquals(recordingId, request.getHeader("X-Recording-ID"))
         assertEquals(chunkId, request.getHeader("X-Chunk-ID"))
+        assertEquals("audio/mp4", request.getHeader("Content-Type"))
         assertEquals("server-id", receipt.uploadId)
         assertEquals(recordingId, receipt.recordingId)
         assertEquals(chunkId, receipt.chunkId)
+        assertEquals("created", receipt.status)
+        file.delete()
+        Unit
+    }
+
+    @Test
+    fun wavUploadUsesWavMediaType() = runBlocking {
+        val file = File.createTempFile("receiver-api", ".wav").apply {
+            writeBytes("wave".toByteArray())
+        }
+        val hash = "b".repeat(64)
+        val recordingId = "33333333-3333-4333-8333-333333333333"
+        val chunkId = "44444444-4444-4444-8444-444444444444"
+        server.enqueue(
+            MockResponse()
+                .setResponseCode(201)
+                .setHeader("Content-Type", "application/json")
+                .setBody(
+                    """
+                    {"uploadId":"server-id","recordingId":"$recordingId","chunkId":"$chunkId",
+                     "filename":"${file.name}","size":4,
+                     "sha256":"$hash","status":"created","requestId":"r-wav"}
+                    """.trimIndent(),
+                ),
+        )
+
+        api.upload(
+            settings = settings,
+            file = file,
+            uploadId = "client-upload",
+            recordingId = recordingId,
+            chunkId = chunkId,
+            sha256 = hash,
+        )
+
+        assertEquals("audio/wav", server.takeRequest().getHeader("Content-Type"))
+        file.delete()
+        Unit
+    }
+
+    @Test
+    fun uploadReplayParsesAlreadyExistsWireStatus() = runBlocking {
+        val file = File.createTempFile("receiver-api", ".m4a").apply {
+            writeBytes("audio".toByteArray())
+        }
+        val hash = "c".repeat(64)
+        val recordingId = "55555555-5555-4555-8555-555555555555"
+        val chunkId = "66666666-6666-4666-8666-666666666666"
+        server.enqueue(
+            MockResponse()
+                .setResponseCode(200)
+                .setHeader("Content-Type", "application/json")
+                .setBody(
+                    """
+                    {"uploadId":"server-id","recordingId":"$recordingId","chunkId":"$chunkId",
+                     "filename":"${file.name}","size":5,
+                     "sha256":"$hash","status":"already_exists","requestId":"r-replay"}
+                    """.trimIndent(),
+                ),
+        )
+
+        val receipt = api.upload(
+            settings = settings,
+            file = file,
+            uploadId = "client-upload",
+            recordingId = recordingId,
+            chunkId = chunkId,
+            sha256 = hash,
+        )
+
+        assertEquals("already_exists", receipt.status)
         file.delete()
         Unit
     }
@@ -118,5 +190,22 @@ class ReceiverApiTest {
         assertEquals(412, error.status)
         assertEquals("REVISION_MISMATCH", error.code)
         assertEquals("r2", error.requestId)
+    }
+
+    @Test
+    fun chunkedJsonResponseStillEnforcesActualByteLimit() = runBlocking {
+        server.enqueue(
+            MockResponse()
+                .setResponseCode(200)
+                .setHeader("Content-Type", "application/json")
+                .setChunkedBody("x".repeat(10 * 1024 * 1024 + 1), 8 * 1024),
+        )
+
+        val error = runCatching { api.listNotes(settings) }.exceptionOrNull()
+
+        assertTrue(error is ApiException)
+        error as ApiException
+        assertEquals(413, error.status)
+        assertEquals("RESPONSE_TOO_LARGE", error.code)
     }
 }
