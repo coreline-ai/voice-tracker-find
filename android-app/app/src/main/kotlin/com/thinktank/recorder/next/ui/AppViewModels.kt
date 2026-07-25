@@ -14,6 +14,7 @@ import com.thinktank.recorder.next.data.repository.RecordingRepository
 import com.thinktank.recorder.next.data.settings.AppPreferences
 import com.thinktank.recorder.next.data.settings.UserSettings
 import com.thinktank.recorder.next.recording.RecorderController
+import com.thinktank.recorder.next.recording.RecordingRuntime
 import com.thinktank.recorder.next.worker.SyncScheduler
 import com.thinktank.recorder.next.worker.SyncWorker
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -49,9 +50,9 @@ data class RecordingUiState(
 class RecordingViewModel @Inject constructor(
     repository: RecordingRepository,
     private val controller: RecorderController,
+    private val runtime: RecordingRuntime,
 ) : ViewModel() {
     private val tick = MutableStateFlow(System.currentTimeMillis())
-    private val commandError = MutableStateFlow<String?>(null)
 
     private val baseRecordingState = combine(
         repository.latestSession,
@@ -88,7 +89,7 @@ class RecordingViewModel @Inject constructor(
 
     val uiState: StateFlow<RecordingUiState> = combine(
         recordingState,
-        commandError,
+        runtime.commandError,
     ) { state, error -> state.copy(commandError = error) }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), RecordingUiState())
 
@@ -102,15 +103,15 @@ class RecordingViewModel @Inject constructor(
     }
 
     fun start() {
-        commandError.value = null
+        runtime.clearCommandError()
         runCatching(controller::start).onFailure {
-            commandError.value = it.message ?: "녹음을 시작하지 못했습니다"
+            runtime.reportCommandError(it.message ?: "녹음을 시작하지 못했습니다")
         }
     }
 
     fun stop() {
         runCatching(controller::stop).onFailure {
-            commandError.value = it.message ?: "녹음을 정지하지 못했습니다"
+            runtime.reportCommandError(it.message ?: "녹음을 정지하지 못했습니다")
         }
     }
 }

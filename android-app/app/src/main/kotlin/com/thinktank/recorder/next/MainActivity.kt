@@ -10,6 +10,7 @@ import com.thinktank.recorder.next.ui.NotesViewModel
 import com.thinktank.recorder.next.ui.RecordingViewModel
 import com.thinktank.recorder.next.ui.SettingsViewModel
 import com.thinktank.recorder.next.ui.ThinkTankApp
+import com.thinktank.recorder.ondevice.ui.OnDeviceViewModel
 import dagger.hilt.android.AndroidEntryPoint
 
 @AndroidEntryPoint
@@ -17,6 +18,7 @@ class MainActivity : ComponentActivity() {
     private val recordingViewModel by viewModels<RecordingViewModel>()
     private val notesViewModel by viewModels<NotesViewModel>()
     private val settingsViewModel by viewModels<SettingsViewModel>()
+    private val onDeviceViewModel by viewModels<OnDeviceViewModel>()
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -27,15 +29,16 @@ class MainActivity : ComponentActivity() {
                 recordingViewModel = recordingViewModel,
                 notesViewModel = notesViewModel,
                 settingsViewModel = settingsViewModel,
+                onDeviceViewModel = onDeviceViewModel,
                 initialRoute = initialRoute,
             )
         }
     }
 
     private fun Intent?.destinationRoute(): String =
-        this?.data?.host?.takeIf { it in setOf("recording", "notes", "settings") }
+        this?.data?.host?.takeIf { it in setOf("recording", "notes", "settings", "ondevice") }
             ?: this?.getStringExtra(EXTRA_DESTINATION)
-                ?.takeIf { it in setOf("recording", "notes", "settings") }
+                ?.takeIf { it in setOf("recording", "notes", "settings", "ondevice") }
             ?: "recording"
 
     companion object {

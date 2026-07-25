@@ -22,4 +22,4 @@ dependencyResolutionManagement {
 
 rootProject.name = "thinktank-recorder-next"
 include(":app")
-
+include(":feature-ondevice")

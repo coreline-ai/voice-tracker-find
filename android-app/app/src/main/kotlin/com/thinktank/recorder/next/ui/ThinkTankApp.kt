@@ -20,6 +20,7 @@ import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.Mic
+import androidx.compose.material.icons.filled.Memory
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.Button
 import androidx.compose.material3.Icon
@@ -55,6 +56,8 @@ import com.thinktank.recorder.next.ui.recording.RecordingScreen
 import com.thinktank.recorder.next.ui.settings.SettingsScreen
 import com.thinktank.recorder.next.ui.theme.ArchiveInk
 import com.thinktank.recorder.next.ui.theme.ThinkTankTheme
+import com.thinktank.recorder.ondevice.ui.OnDeviceScreen
+import com.thinktank.recorder.ondevice.ui.OnDeviceViewModel
 
 private data class Tab(val route: String, val label: String, val icon: ImageVector)
 
@@ -62,6 +65,7 @@ private val tabs = listOf(
     Tab("recording", "녹음", Icons.Default.Mic),
     Tab("notes", "노트", Icons.Default.Description),
     Tab("settings", "설정", Icons.Default.Settings),
+    Tab("ondevice", "로컬 AI", Icons.Default.Memory),
 )
 
 @Composable
@@ -69,11 +73,13 @@ fun ThinkTankApp(
     recordingViewModel: RecordingViewModel,
     notesViewModel: NotesViewModel,
     settingsViewModel: SettingsViewModel,
+    onDeviceViewModel: OnDeviceViewModel,
     initialRoute: String = "recording",
 ) {
     val recording by recordingViewModel.uiState.collectAsStateWithLifecycle()
     val notes by notesViewModel.uiState.collectAsStateWithLifecycle()
     val settings by settingsViewModel.uiState.collectAsStateWithLifecycle()
+    val onDevice by onDeviceViewModel.uiState.collectAsStateWithLifecycle()
     val darkTheme = isSystemInDarkTheme()
 
     ThinkTankTheme(darkTheme = darkTheme) {
@@ -128,6 +134,7 @@ fun ThinkTankApp(
                         state = recording,
                         onStart = recordingViewModel::start,
                         onStop = recordingViewModel::stop,
+                        blockedByLocalAi = onDevice.micBusy,
                     )
                 }
                 composable("notes") {
@@ -146,6 +153,26 @@ fun ThinkTankApp(
                         onSchedule = settingsViewModel::updateSchedule,
                         onAutoSync = settingsViewModel::updateAutoSync,
                         onCheckUpdate = settingsViewModel::checkVersion,
+                    )
+                }
+                composable("ondevice") {
+                    OnDeviceScreen(
+                        state = onDevice,
+                        mainRecorderActive = recording.isActive,
+                        onSelectStt = onDeviceViewModel::selectStt,
+                        onSelectSummary = onDeviceViewModel::selectSummary,
+                        onStartListening = onDeviceViewModel::startListening,
+                        onStopListening = onDeviceViewModel::stopListening,
+                        onCancelListening = onDeviceViewModel::cancelListening,
+                        onHostStopped = onDeviceViewModel::onHostStopped,
+                        onSummarize = onDeviceViewModel::summarize,
+                        onRetryTranscription = onDeviceViewModel::retryTranscription,
+                        onDeleteSession = onDeviceViewModel::deleteSession,
+                        onDownloadModel = onDeviceViewModel::downloadModel,
+                        onImportModel = onDeviceViewModel::importModel,
+                        onPauseModel = onDeviceViewModel::pauseModel,
+                        onDeleteModel = onDeviceViewModel::deleteModel,
+                        heroImageRes = R.drawable.hero_recording_chamber,
                     )
                 }
                 composable("note/{noteId}") { entry ->

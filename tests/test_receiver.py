@@ -587,15 +587,20 @@ def test_노트를_삭제하면_아카이브로_옮겨진다(receiver: Fixture) 
     assert archived.read_text(encoding="utf-8") == "본문"
 
 
-def test_삭제한_노트는_목록에서_사라진다(receiver: Fixture) -> None:
+def test_삭제한_노트는_활성_폴더에서_사라지고_아카이브로_보인다(
+    receiver: Fixture,
+) -> None:
     _write(receiver.vault / "10-daily" / "2026-07-19.md")
 
     _request(
         f"{receiver.base_url}/notes/{USER}/{quote('2026-07-19.md')}", method="DELETE"
     )
 
-    names = {n["name"] for n in _request(f"{receiver.base_url}/notes/{USER}").json()}
-    assert "2026-07-19.md" not in names
+    notes = _request(f"{receiver.base_url}/notes/{USER}").json()
+    archived = [note for note in notes if note["name"] == "2026-07-19.md"]
+
+    assert len(archived) == 1
+    assert archived[0]["folder"] == "90-archive"
 
 
 def test_아카이브에_같은_이름이_있으면_덮어쓰지_않는다(receiver: Fixture) -> None:

@@ -124,6 +124,8 @@ ksp {
 }
 
 dependencies {
+    implementation(project(":feature-ondevice"))
+
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.activity.compose)
     implementation(libs.androidx.lifecycle.runtime.ktx)

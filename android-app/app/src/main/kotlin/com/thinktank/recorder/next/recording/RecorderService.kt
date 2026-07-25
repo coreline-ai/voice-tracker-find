@@ -22,6 +22,8 @@ import com.thinktank.recorder.next.data.local.RecordingDao
 import com.thinktank.recorder.next.data.local.RecordingSessionEntity
 import com.thinktank.recorder.next.data.local.RecordingState
 import com.thinktank.recorder.next.data.settings.AppPreferences
+import com.thinktank.recorder.ondevice.runtime.MicrophoneArbiter
+import com.thinktank.recorder.ondevice.runtime.MicrophoneOwner
 import dagger.hilt.android.AndroidEntryPoint
 import java.io.File
 import java.io.FileOutputStream
@@ -46,9 +48,8 @@ import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.sync.Mutex
-import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
+import kotlin.coroutines.coroutineContext
 
 private interface CaptureEngine {
     fun maxAmplitude(): Int
@@ -221,43 +222,48 @@ class RecorderService : Service() {
     @Inject lateinit var runtime: RecordingRuntime
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
-    private val commandMutex = Mutex()
+    private lateinit var reconcileJob: Job
+    private lateinit var commandGate: RecorderCommandGate
     private var recordingJob: Job? = null
     private var captureEngine: CaptureEngine? = null
     private var currentPart: File? = null
     private var currentChunk: ChunkEntity? = null
     private var sessionId: String? = null
+    private var microphoneHeld = false
     private var wakeLock: PowerManager.WakeLock? = null
 
     override fun onCreate() {
         super.onCreate()
-        scope.launch {
+        reconcileJob = scope.launch {
             files.reconcile(dao.unfinishedChunks()).forEach { dao.updateChunk(it) }
         }
+        commandGate = RecorderCommandGate { reconcileJob.join() }
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         when (intent?.action) {
             ACTION_STOP -> scope.launch {
-                commandMutex.withLock {
+                commandGate.run {
                     recordingJob?.cancelAndJoin()
                     recordingJob = null
                     stopForeground(STOP_FOREGROUND_REMOVE)
-                    stopSelf()
+                    stopSelfResult(startId)
                 }
             }
 
             ACTION_START -> {
+                runtime.clearCommandError()
                 startForeground(NOTIFICATION_ID, notification("녹음을 준비하고 있습니다"))
                 scope.launch {
-                    commandMutex.withLock {
-                        if (recordingJob?.isActive == true) return@withLock
+                    commandGate.run {
+                        if (recordingJob?.isActive == true) return@run
                         recordingJob = scope.launch {
                             try {
                                 runRecordingSession()
                             } finally {
+                                if (recordingJob === coroutineContext[Job]) recordingJob = null
                                 stopForeground(STOP_FOREGROUND_REMOVE)
-                                stopSelf()
+                                stopSelfResult(startId)
                             }
                         }
                     }
@@ -269,9 +275,6 @@ class RecorderService : Service() {
 
     override fun onDestroy() {
         recordingJob?.cancel()
-        releaseRecorder()
-        releaseWakeLock()
-        runtime.reset()
         scope.cancel()
         super.onDestroy()
     }
@@ -350,6 +353,11 @@ class RecorderService : Service() {
                 )
                 runtime.reset()
                 releaseWakeLock()
+                releaseMicrophone()
+                captureEngine = null
+                currentPart = null
+                currentChunk = null
+                sessionId = null
             }
         }
     }
@@ -381,6 +389,13 @@ class RecorderService : Service() {
         currentPart = part
         currentChunk = chunk
         try {
+            if (!MicrophoneArbiter.tryAcquire(MicrophoneOwner.MAIN_RECORDER)) {
+                val error = "로컬 AI가 마이크를 사용 중입니다. 로컬 작업을 마친 뒤 다시 시작하세요."
+                runtime.reportCommandError(error)
+                updateNotification("로컬 AI가 마이크를 사용 중입니다")
+                throw IllegalStateException(error)
+            }
+            microphoneHeld = true
             val engine = runCatching {
                 createStartedMediaRecorder(
                     part = part,
@@ -413,6 +428,11 @@ class RecorderService : Service() {
             dao.setSessionState(session, RecordingState.RECORDING, id)
             updateNotification("녹음 중 · 00:00")
         } catch (error: Throwable) {
+            captureEngine?.let { engine ->
+                runCatching { engine.stop() }
+                runCatching { engine.release() }
+            }
+            captureEngine = null
             files.quarantine(part)
             dao.updateChunk(
                 chunk.copy(
@@ -422,6 +442,7 @@ class RecorderService : Service() {
             )
             currentPart = null
             currentChunk = null
+            releaseMicrophone()
             throw error
         }
     }
@@ -508,12 +529,14 @@ class RecorderService : Service() {
             currentChunk = null
             runtime.reset()
             releaseWakeLock()
+            releaseMicrophone()
         }
     }
 
-    private fun releaseRecorder() {
-        runCatching { captureEngine?.release() }
-        captureEngine = null
+    private fun releaseMicrophone() {
+        if (!microphoneHeld) return
+        microphoneHeld = false
+        MicrophoneArbiter.release(MicrophoneOwner.MAIN_RECORDER)
     }
 
     @Suppress("WakelockTimeout")

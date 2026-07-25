@@ -7,7 +7,7 @@ import com.thinktank.recorder.next.data.local.UploadAttemptEntity
 import com.thinktank.recorder.next.data.remote.ApiException
 import com.thinktank.recorder.next.data.remote.ReceiverApi
 import com.thinktank.recorder.next.data.remote.UploadReceipt
-import com.thinktank.recorder.next.data.settings.AppPreferences
+import com.thinktank.recorder.next.data.settings.SettingsReader
 import java.io.File
 import kotlin.math.min
 import kotlin.random.Random
@@ -34,7 +34,7 @@ internal fun UploadReceipt.matches(chunk: ChunkEntity, file: File): Boolean =
 class SyncRepository @Inject constructor(
     private val dao: RecordingDao,
     private val api: ReceiverApi,
-    private val preferences: AppPreferences,
+    private val preferences: SettingsReader,
     private val notesRepository: NotesRepository,
 ) {
     suspend fun run(owner: String): SyncRunResult {

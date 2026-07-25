@@ -1,0 +1,341 @@
+package com.thinktank.recorder.ondevice.data
+
+import android.content.Context
+import androidx.room.Room
+import androidx.test.core.app.ApplicationProvider
+import com.thinktank.recorder.ondevice.api.LocalSummary
+import com.thinktank.recorder.ondevice.api.OnDeviceFailureStage
+import com.thinktank.recorder.ondevice.api.OnDeviceSessionState
+import com.thinktank.recorder.ondevice.api.SttEngineType
+import com.thinktank.recorder.ondevice.api.SummaryEngineType
+import com.thinktank.recorder.ondevice.recording.LocalAudioFileManager
+import java.io.File
+import java.io.RandomAccessFile
+import java.io.Closeable
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.runBlocking
+import org.junit.After
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
+import org.junit.Before
+import org.junit.Test
+import org.junit.runner.RunWith
+import org.robolectric.RobolectricTestRunner
+
+@RunWith(RobolectricTestRunner::class)
+class OnDeviceRepositoryTest : Closeable {
+    private lateinit var database: OnDeviceDatabase
+    private var now = 1_000L
+
+    @Before
+    fun setUp() {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        database = Room.inMemoryDatabaseBuilder(context, OnDeviceDatabase::class.java)
+            .allowMainThreadQueries()
+            .build()
+    }
+
+    @After
+    override fun close() {
+        database.close()
+    }
+
+    @Test
+    fun sessionStaysLocalOnlyThroughTranscriptAndSummary() = runBlocking {
+        val repository = OnDeviceRepository(database.sessionDao()) { now++ }
+        val id = repository.begin(
+            SttEngineType.ANDROID_ON_DEVICE,
+            SummaryEngineType.EXTRACTIVE_KOTLIN,
+        )
+
+        repository.saveTranscript(id, "기기 안에서 처리합니다.")
+        repository.markSummarizing(id)
+        repository.saveSummary(
+            id,
+            LocalSummary(
+                title = "기기 안에서 처리",
+                bullets = listOf("기기 안에서 처리합니다."),
+                actionItems = emptyList(),
+            ),
+        )
+
+        val session = database.sessionDao().get(id)!!
+        assertEquals(OnDeviceSessionEntity.DATA_POLICY_LOCAL_ONLY, session.dataPolicy)
+        assertEquals(OnDeviceSessionState.COMPLETE.name, session.state)
+        assertEquals("기기 안에서 처리합니다.", session.transcript)
+        assertTrue(database.sessionDao().observeAll().first().any { it.id == id })
+    }
+
+    @Test
+    fun interruptedLiveRecognitionBecomesCancelled() = runBlocking {
+        val repository = OnDeviceRepository(database.sessionDao()) { now++ }
+        val id = repository.begin(
+            SttEngineType.ANDROID_ON_DEVICE,
+            SummaryEngineType.NONE,
+        )
+
+        assertEquals(1, repository.recoverInterrupted())
+        assertEquals(
+            OnDeviceSessionState.CANCELLED.name,
+            database.sessionDao().get(id)?.state,
+        )
+    }
+
+    @Test
+    fun interruptedTranscriptionWithValidWavBecomesAudioReady() = runBlocking {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val audioFiles = LocalAudioFileManager(context)
+        val repository = OnDeviceRepository(database.sessionDao(), audioFiles) { now++ }
+        val id = "recovery-audio"
+        val token = "token"
+        val wav = audioFiles.recordingFile(id)
+        writeSilentWav(wav)
+        repository.begin(
+            id,
+            SttEngineType.MOONSHINE_LOCAL,
+            SummaryEngineType.NONE,
+            OnDeviceSessionState.TRANSCRIBING,
+            token,
+        )
+        assertTrue(repository.attachAudio(id, token, wav.absolutePath))
+
+        assertEquals(1, repository.recoverInterrupted())
+        val recovered = database.sessionDao().get(id)!!
+        assertEquals(OnDeviceSessionState.AUDIO_READY.name, recovered.state)
+        assertEquals(wav.absolutePath, recovered.audioPath)
+        assertEquals(null, recovered.operationToken)
+    }
+
+    @Test
+    fun interruptedSummaryPreservesTranscript() = runBlocking {
+        val repository = OnDeviceRepository(database.sessionDao(), clock = { now++ })
+        val id = "recovery-summary"
+        repository.begin(
+            id,
+            SttEngineType.ANDROID_ON_DEVICE,
+            SummaryEngineType.EXTRACTIVE_KOTLIN,
+            OnDeviceSessionState.TRANSCRIPT_READY,
+            null,
+        )
+        repository.saveTranscript(id, "보존할 전사")
+        assertTrue(
+            repository.startOperation(
+                id,
+                setOf(OnDeviceSessionState.TRANSCRIPT_READY),
+                OnDeviceSessionState.SUMMARIZING,
+                "summary-token",
+            ),
+        )
+
+        assertEquals(1, repository.recoverInterrupted())
+        val recovered = database.sessionDao().get(id)!!
+        assertEquals(OnDeviceSessionState.TRANSCRIPT_READY.name, recovered.state)
+        assertEquals("보존할 전사", recovered.transcript)
+        assertEquals(null, recovered.operationToken)
+    }
+
+    @Test
+    fun interruptedInvalidLocalCaptureDeletesPartialAndClearsPath() = runBlocking {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val audioFiles = LocalAudioFileManager(context)
+        val repository = OnDeviceRepository(database.sessionDao(), audioFiles) { now++ }
+        val id = "invalid-capture"
+        val partial = audioFiles.recordingFile(id).apply { writeBytes(byteArrayOf(1, 2, 3)) }
+        repository.begin(
+            id,
+            SttEngineType.MOONSHINE_LOCAL,
+            SummaryEngineType.NONE,
+            OnDeviceSessionState.STARTING,
+            "capture-token",
+        )
+        assertTrue(repository.attachAudio(id, "capture-token", partial.absolutePath))
+
+        assertEquals(1, repository.recoverInterrupted())
+        val recovered = database.sessionDao().get(id)!!
+        assertEquals(OnDeviceSessionState.CANCELLED.name, recovered.state)
+        assertEquals(null, recovered.audioPath)
+        assertTrue(!partial.exists())
+    }
+
+    @Test
+    fun staleTokenCannotOverwriteCurrentOperation() = runBlocking {
+        val repository = OnDeviceRepository(database.sessionDao(), clock = { now++ })
+        val id = "stale-token"
+        repository.begin(
+            id,
+            SttEngineType.ANDROID_ON_DEVICE,
+            SummaryEngineType.EXTRACTIVE_KOTLIN,
+            OnDeviceSessionState.TRANSCRIPT_READY,
+            null,
+        )
+        assertTrue(
+            repository.startOperation(
+                id,
+                setOf(OnDeviceSessionState.TRANSCRIPT_READY),
+                OnDeviceSessionState.SUMMARIZING,
+                "new-token",
+            ),
+        )
+
+        assertTrue(
+            !repository.finishOperation(
+                id,
+                "old-token",
+                OnDeviceSessionState.COMPLETE,
+            ),
+        )
+        assertEquals(OnDeviceSessionState.SUMMARIZING.name, database.sessionDao().get(id)?.state)
+        assertEquals("new-token", database.sessionDao().get(id)?.operationToken)
+    }
+
+    @Test
+    fun cancelledSummaryReturnsToTranscriptReadyWithoutLosingTranscript() = runBlocking {
+        val repository = OnDeviceRepository(database.sessionDao(), clock = { now++ })
+        val id = repository.begin(
+            SttEngineType.ANDROID_ON_DEVICE,
+            SummaryEngineType.EXTRACTIVE_KOTLIN,
+        )
+        repository.saveTranscript(id, "취소 후에도 보존할 전사")
+        assertTrue(
+            repository.startOperation(
+                id,
+                setOf(OnDeviceSessionState.TRANSCRIPT_READY),
+                OnDeviceSessionState.SUMMARIZING,
+                "summary-cancel",
+            ),
+        )
+
+        assertTrue(
+            repository.finishOperation(
+                id,
+                "summary-cancel",
+                OnDeviceSessionState.TRANSCRIPT_READY,
+            ),
+        )
+        val session = database.sessionDao().get(id)!!
+        assertEquals(OnDeviceSessionState.TRANSCRIPT_READY.name, session.state)
+        assertEquals("취소 후에도 보존할 전사", session.transcript)
+        assertEquals(null, session.operationToken)
+    }
+
+    @Test
+    fun cancelledTranscriptionReturnsToAudioReadyWithSamePath() = runBlocking {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val audioFiles = LocalAudioFileManager(context)
+        val repository = OnDeviceRepository(database.sessionDao(), audioFiles) { now++ }
+        val id = "transcribe-cancel"
+        val wav = audioFiles.recordingFile(id)
+        writeSilentWav(wav)
+        repository.begin(
+            id,
+            SttEngineType.MOONSHINE_LOCAL,
+            SummaryEngineType.NONE,
+            OnDeviceSessionState.AUDIO_READY,
+            null,
+        )
+        repository.attachAudio(id, wav.absolutePath)
+        assertTrue(
+            repository.startOperation(
+                id,
+                setOf(OnDeviceSessionState.AUDIO_READY),
+                OnDeviceSessionState.TRANSCRIBING,
+                "transcribe-cancel-token",
+            ),
+        )
+
+        assertTrue(
+            repository.finishOperation(
+                id,
+                "transcribe-cancel-token",
+                OnDeviceSessionState.AUDIO_READY,
+            ),
+        )
+        val session = database.sessionDao().get(id)!!
+        assertEquals(OnDeviceSessionState.AUDIO_READY.name, session.state)
+        assertEquals(wav.absolutePath, session.audioPath)
+    }
+
+    @Test
+    fun activeSessionDeleteDoesNotChangeDatabaseOrAudio() = runBlocking {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val audioFiles = LocalAudioFileManager(context)
+        val repository = OnDeviceRepository(database.sessionDao(), audioFiles) { now++ }
+        val id = "active-delete"
+        val wav = audioFiles.recordingFile(id).apply {
+            parentFile?.mkdirs()
+            writeBytes(byteArrayOf(1, 2, 3))
+        }
+        repository.begin(
+            id,
+            SttEngineType.MOONSHINE_LOCAL,
+            SummaryEngineType.NONE,
+            OnDeviceSessionState.STARTING,
+            "active-token",
+        )
+        assertTrue(repository.attachAudio(id, "active-token", wav.absolutePath))
+
+        assertEquals(DeleteSessionResult.ActiveOrMissing, repository.delete(id))
+        assertTrue(wav.exists())
+        assertEquals(OnDeviceSessionState.STARTING.name, database.sessionDao().get(id)?.state)
+    }
+
+    @Test
+    fun failedAudioDeleteKeepsRecoverableRow() = runBlocking {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val audioFiles = LocalAudioFileManager(context)
+        val repository = OnDeviceRepository(database.sessionDao(), audioFiles) { now++ }
+        val id = "failed-delete"
+        val nonEmptyDirectory = audioFiles.recordingFile(id).apply {
+            mkdirs()
+            File(this, "child").writeText("keep")
+        }
+        repository.begin(
+            id,
+            SttEngineType.MOONSHINE_LOCAL,
+            SummaryEngineType.NONE,
+            OnDeviceSessionState.CANCELLED,
+            null,
+        )
+        repository.attachAudio(id, nonEmptyDirectory.absolutePath)
+
+        assertTrue(repository.delete(id) is DeleteSessionResult.FileDeleteFailed)
+        val retained = database.sessionDao().get(id)!!
+        assertEquals(OnDeviceSessionState.FAILED_RECOVERABLE.name, retained.state)
+        assertEquals(OnDeviceFailureStage.DELETE.name, retained.failureStage)
+    }
+
+    private fun writeSilentWav(file: File) {
+        val pcmBytes = 320
+        file.parentFile?.mkdirs()
+        RandomAccessFile(file, "rw").use { wav ->
+            wav.writeBytes("RIFF")
+            writeLeInt(wav, pcmBytes + 36)
+            wav.writeBytes("WAVEfmt ")
+            writeLeInt(wav, 16)
+            writeLeShort(wav, 1)
+            writeLeShort(wav, 1)
+            writeLeInt(wav, 16_000)
+            writeLeInt(wav, 32_000)
+            writeLeShort(wav, 2)
+            writeLeShort(wav, 16)
+            wav.writeBytes("data")
+            writeLeInt(wav, pcmBytes)
+            wav.write(ByteArray(pcmBytes))
+        }
+    }
+
+    private fun writeLeInt(file: RandomAccessFile, value: Int) {
+        file.write(
+            byteArrayOf(
+                value.toByte(),
+                (value ushr 8).toByte(),
+                (value ushr 16).toByte(),
+                (value ushr 24).toByte(),
+            ),
+        )
+    }
+
+    private fun writeLeShort(file: RandomAccessFile, value: Int) {
+        file.write(byteArrayOf(value.toByte(), (value ushr 8).toByte()))
+    }
+}

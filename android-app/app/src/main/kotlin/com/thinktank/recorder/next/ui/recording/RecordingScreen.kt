@@ -69,6 +69,7 @@ fun RecordingScreen(
     onStop: () -> Unit,
     modifier: Modifier = Modifier,
     audioInputAvailable: Boolean? = null,
+    blockedByLocalAi: Boolean = false,
 ) {
     val context = LocalContext.current
     val detectedAudioInput = remember(context) {
@@ -152,7 +153,8 @@ fun RecordingScreen(
             RecordControl(
                 active = state.isActive,
                 enabled = hasAudioInput &&
-                    state.session?.state != RecordingState.FINALIZING,
+                    state.session?.state != RecordingState.FINALIZING &&
+                    (state.isActive || !blockedByLocalAi),
                 onClick = {
                     if (state.isActive) {
                         onStop()
@@ -173,6 +175,7 @@ fun RecordingScreen(
                 text = when {
                     !hasAudioInput -> "사용 가능한 마이크 입력이 없습니다"
                     state.isActive -> "눌러서 기록을 안전하게 마칩니다"
+                    blockedByLocalAi -> "로컬 AI 음성 인식이 마이크를 사용 중입니다"
                     else -> "눌러서 기록을 시작합니다"
                 },
                 style = MaterialTheme.typography.bodyMedium,
