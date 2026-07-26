@@ -45,11 +45,11 @@ class ExistingMainRecordingResultDeviceTest {
         )
         assertTrue("요약은 원문보다 짧아야 합니다.", latest.summary.length < latest.transcript.length)
         assertTrue(
-            "요약이 원문의 15% 또는 80자 상한을 초과했습니다.",
+            "요약이 원문의 12% 또는 60자 상한을 초과했습니다.",
             latest.summary.length <= minOf(
                 MAX_SUMMARY_CHARS,
                 (latest.transcript.replace(Regex("\\s+"), " ").trim().length * MAX_SOURCE_RATIO).toInt(),
-            ),
+            ).coerceAtLeast(MIN_SUMMARY_BUDGET),
         )
         assertTrue(
             "요약 항목이 너무 깁니다.",
@@ -62,8 +62,9 @@ class ExistingMainRecordingResultDeviceTest {
         const val MIN_TRANSCRIPT_CHARS = 120
         const val MIN_QWEN_BULLETS = 1
         const val MAX_QWEN_BULLETS = 2
-        const val MAX_BULLET_CHARS = 30
-        const val MAX_SUMMARY_CHARS = 80
-        const val MAX_SOURCE_RATIO = 0.15
+        const val MAX_BULLET_CHARS = 44
+        const val MAX_SUMMARY_CHARS = 60
+        const val MAX_SOURCE_RATIO = 0.12
+        const val MIN_SUMMARY_BUDGET = 24
     }
 }

@@ -208,6 +208,56 @@ class OnDeviceRepositoryTest : Closeable {
     }
 
     @Test
+    fun qwenFallbackPersistsRequestedActualAndQualityMetadata() = runBlocking {
+        val repository = OnDeviceRepository(database.sessionDao(), clock = { now++ })
+        val id = "summary-audit"
+        repository.begin(
+            id,
+            SttEngineType.SENSEVOICE_LOCAL_FILE,
+            SummaryEngineType.QWEN_LOCAL,
+            OnDeviceSessionState.TRANSCRIPT_READY,
+            null,
+        )
+        assertTrue(
+            repository.startOperation(
+                id,
+                setOf(OnDeviceSessionState.TRANSCRIPT_READY),
+                OnDeviceSessionState.SUMMARIZING,
+                "summary-audit-token",
+            ),
+        )
+
+        assertTrue(
+            repository.saveSummary(
+                id = id,
+                token = "summary-audit-token",
+                requestedEngine = SummaryEngineType.QWEN_LOCAL,
+                result = LocalSummary(
+                    title = "쇼핑쇼츠 강의",
+                    bullets = listOf("수강생 판매 경험을 원문에서 추출했습니다."),
+                    actionItems = emptyList(),
+                    engine = SummaryEngineType.EXTRACTIVE_KOTLIN,
+                    sourceHash = "source-hash",
+                    fallbackReason = "QWEN_QUALITY_REJECTED",
+                    policyVersion = 2,
+                    promptVersion = 2,
+                    modelVersion = "qwen-test",
+                    validationStatus = "FALLBACK_PASSED",
+                ),
+            ),
+        )
+
+        val stored = requireNotNull(database.sessionDao().get(id))
+        assertEquals(SummaryEngineType.QWEN_LOCAL.name, stored.requestedSummaryEngine)
+        assertEquals(SummaryEngineType.EXTRACTIVE_KOTLIN.name, stored.summaryEngine)
+        assertEquals("QWEN_QUALITY_REJECTED", stored.summaryFallbackReason)
+        assertEquals(2, stored.summaryPolicyVersion)
+        assertEquals(2, stored.summaryPromptVersion)
+        assertEquals("qwen-test", stored.summaryModelVersion)
+        assertEquals("FALLBACK_PASSED", stored.summaryValidationStatus)
+    }
+
+    @Test
     fun cancelledSummaryReturnsToTranscriptReadyWithoutLosingTranscript() = runBlocking {
         val repository = OnDeviceRepository(database.sessionDao(), clock = { now++ })
         val id = repository.begin(

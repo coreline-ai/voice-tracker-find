@@ -53,7 +53,50 @@ class OnDeviceDatabaseMigrationTest {
         }
     }
 
+    @Test
+    fun migration4To5AddsSummaryAuditColumnsWithoutChangingExistingRows() {
+        helper.createDatabase(DATABASE_NAME_V5, 4).use { db ->
+            db.execSQL(
+                """
+                INSERT INTO ondevice_sessions (
+                    id, createdAt, updatedAt, state, sttEngine, summaryEngine,
+                    transcript, title, summary, actionItems, audioPath,
+                    sourceType, sourceChunkId, sourceDisplayName, sourceDurationMs,
+                    summarySourceHash, summaryGeneratedAt, error, operationToken, failureStage, dataPolicy
+                ) VALUES (
+                    'legacy-v4', 1, 1, 'COMPLETE', 'SENSEVOICE_LOCAL_FILE',
+                    'QWEN_LOCAL', '보존할 전사', '기존 제목', '기존 요약', '', NULL,
+                    'MAIN_RECORDER_CHUNK', 'chunk', 'WAV · 60초', 60000,
+                    'hash', 2, NULL, NULL, NULL, 'LOCAL_ONLY'
+                )
+                """.trimIndent(),
+            )
+        }
+
+        helper.runMigrationsAndValidate(
+            DATABASE_NAME_V5,
+            5,
+            true,
+            OnDeviceDatabase.MIGRATION_4_5,
+        ).use { db ->
+            db.query(
+                """
+                SELECT transcript, summary, requestedSummaryEngine, summaryFallbackReason,
+                       summaryPolicyVersion, summaryPromptVersion, summaryModelVersion,
+                       summaryValidationStatus
+                FROM ondevice_sessions WHERE id = 'legacy-v4'
+                """.trimIndent(),
+            ).use { cursor ->
+                assertTrue(cursor.moveToFirst())
+                assertTrue(cursor.getString(0) == "보존할 전사")
+                assertTrue(cursor.getString(1) == "기존 요약")
+                for (index in 2..7) assertTrue(cursor.isNull(index))
+            }
+        }
+    }
+
     private companion object {
         const val DATABASE_NAME = "ondevice-migration-test"
+        const val DATABASE_NAME_V5 = "ondevice-migration-v5-test"
     }
 }

@@ -187,8 +187,45 @@ class OnDeviceScreenTest {
         composeRule.onNodeWithTag("ondevice-scroll").performScrollToIndex(3)
         composeRule.onNodeWithText("현재 인식 중").assertIsDisplayed()
         composeRule.onNodeWithText("현재 말하고 있는 문장").assertIsDisplayed()
-        composeRule.onNodeWithTag("ondevice-scroll").performScrollToIndex(9)
+        composeRule.onNodeWithTag("ondevice-scroll").performScrollToIndex(8)
         composeRule.onNodeWithText("처리 방식 · Qwen 로컬 AI").assertIsDisplayed()
+    }
+
+    @Test
+    fun latestCardShowsRequestedActualFallbackAndPolicy() {
+        composeRule.setContent {
+            MaterialTheme {
+                TestScreen(
+                    OnDeviceUiState(
+                        sessions = listOf(
+                            OnDeviceSessionEntity(
+                                id = "fallback-summary",
+                                createdAt = 2,
+                                updatedAt = 2,
+                                state = OnDeviceSessionState.COMPLETE.name,
+                                sttEngine = "SENSEVOICE_LOCAL_FILE",
+                                summaryEngine = SummaryEngineType.EXTRACTIVE_KOTLIN.name,
+                                requestedSummaryEngine = SummaryEngineType.QWEN_LOCAL.name,
+                                transcript = "쇼핑쇼츠 강의에서 수강생 판매 경험을 설명합니다.",
+                                title = "쇼핑쇼츠 강의",
+                                summary = "수강생 판매 경험을 원문에서 확인했습니다.",
+                                summaryFallbackReason = "QWEN_QUALITY_REJECTED",
+                                summaryPolicyVersion = 2,
+                                summaryValidationStatus = "FALLBACK_PASSED",
+                            ),
+                        ),
+                    ),
+                )
+            }
+        }
+
+        composeRule.onNodeWithTag("ondevice-scroll").performScrollToIndex(8)
+        composeRule.onNodeWithText("최신 결과").assertIsDisplayed()
+        composeRule.onNodeWithText(
+            "요청 · Qwen 로컬 AI / 실제 · 빠른 요약 · Kotlin 추출형",
+        ).assertIsDisplayed()
+        composeRule.onNodeWithText("요약 정책 v2").assertIsDisplayed()
+        composeRule.onNodeWithText("Qwen 품질 검사 후 원문 기반 요약으로 대체").assertIsDisplayed()
     }
 
     @Test
@@ -214,10 +251,10 @@ class OnDeviceScreenTest {
             }
         }
 
-        composeRule.onNodeWithTag("ondevice-scroll").performScrollToIndex(9)
+        composeRule.onNodeWithTag("ondevice-scroll").performScrollToIndex(8)
         composeRule.onNodeWithText("전체 전사 보기").performClick()
         composeRule.onNodeWithTag("full-transcript-sheet").assertIsDisplayed()
-        composeRule.onNodeWithText("전체 전사 문장 1", substring = true).assertIsDisplayed()
+        composeRule.onAllNodesWithText("전체 전사 문장 1", substring = true).assertCountEquals(2)
         composeRule.onNodeWithTag("full-transcript-scroll").assert(hasScrollAction())
     }
 

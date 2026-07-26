@@ -57,14 +57,48 @@ class QwenInferenceService : Service() {
                     engine.loadModel(canonicalModel.absolutePath)
                     engine.setSystemPrompt(SYSTEM_PROMPT)
                     check(transcript.length <= QWEN_MAX_INPUT_CHARS) { "Qwen 입력이 허용 크기를 초과했습니다" }
-                    val prompt = buildUserPrompt(transcript)
-                    val raw = engine.sendUserPrompt(prompt, PREDICT_TOKENS).toList().joinToString("")
-                    val result = QwenOutputParser.parse(raw, transcript)
+                    val segments = KoreanTranscriptSegmenter().segment(transcript)
+                    check(segments.isNotEmpty()) { "요약할 원문 구간이 없습니다" }
+                    val first = runCatching {
+                        generateAndParse(
+                            engine = engine,
+                            prompt = buildUserPrompt(transcript, segments),
+                            transcript = transcript,
+                            segments = segments,
+                        )
+                    }
+                    val parsed = first.getOrElse { firstError ->
+                        if (firstError !is QwenOutputRejectedException) throw firstError
+                        runCatching {
+                            generateAndParse(
+                                engine = engine,
+                                prompt = buildCorrectionPrompt(firstError.reason),
+                                transcript = transcript,
+                                segments = segments,
+                            )
+                        }.getOrElse { secondError ->
+                            if (secondError is QwenOutputRejectedException) {
+                                throw QwenFinalOutputRejectedException(secondError.reason)
+                            }
+                            throw secondError
+                        }
+                    }
+                    val result = parsed.summary.copy(
+                        modelVersion = descriptor.version,
+                        policyVersion = SummaryPolicy.VERSION,
+                        promptVersion = SummaryPolicy.PROMPT_VERSION,
+                        validationStatus = SUMMARY_VALIDATION_PASSED,
+                    )
                     callback.safeSuccess(requestId, QwenSummaryCodec.encode(result))
                 } catch (cancelled: CancellationException) {
                     callback.safeError(requestId, "Qwen 로컬 요약이 취소되었습니다")
+                } catch (rejected: QwenFinalOutputRejectedException) {
+                    callback.safeError(
+                        requestId,
+                        "$QWEN_QUALITY_REJECTED:${rejected.reason}",
+                    )
                 } catch (error: Throwable) {
-                    callback.safeError(requestId, error.message ?: "Qwen 로컬 요약에 실패했습니다")
+                    callback.safeError(requestId, QWEN_RUNTIME_FAILED)
                 } finally {
                     engine?.let(::destroyEngine)
                     terminateProcess()
@@ -125,23 +159,66 @@ class QwenInferenceService : Service() {
         runCatching { engine.destroy() }
     }
 
-    private fun buildUserPrompt(source: String): String = """
-        아래 한국어 전사문만 근거로 정리하세요. /no_think
-        원문에 없는 이름, 날짜, 수치, 담당자, 기한, 할 일을 만들지 마세요.
-        bullets는 핵심이 있는 만큼 1~2개만 작성하고 각 항목은 짧은 한 문장(30자 이내)으로 만드세요.
-        각 항목에는 원문의 고유한 주제어·사례·수치·비교 대상 중 하나 이상을 포함하세요.
-        "운영 가이드라인", "성공 사례 분석", "계획 수립"처럼 원문만으로 구분되지 않는
-        일반 문장만 쓰지 마세요. 서로 다른 세부 내용을 짧고 구체적으로 정리하세요.
-        bullet 앞에 "분석:", "결과:", "핵심:" 같은 소제목을 붙이지 말고 제목을 반복하지 마세요.
-        원문 정보가 부족하면 억지로 항목을 만들지 말고, 확인 가능한 항목만 반환하세요.
-        할 일이 명시되지 않았으면 actionItems는 빈 배열로 반환하세요.
-        마크다운 설명 없이 아래 JSON 객체 하나만 반환하세요.
-        {"title":"짧은 제목","bullets":["짧은 구체 핵심 1","짧은 구체 핵심 2"],"actionItems":[]}
+    private suspend fun generateAndParse(
+        engine: InferenceEngine,
+        prompt: String,
+        transcript: String,
+        segments: List<SourceSegment>,
+    ): ParsedQwenSummary {
+        val raw = engine.sendUserPrompt(prompt, PREDICT_TOKENS).toList().joinToString("")
+        return try {
+            QwenOutputParser.parse(raw, transcript, segments)
+        } catch (error: Throwable) {
+            throw QwenOutputRejectedException(rejectionReason(error), error)
+        }
+    }
 
-        <transcript>
-        $source
-        </transcript>
-    """.trimIndent()
+    private fun buildUserPrompt(
+        source: String,
+        segments: List<SourceSegment>,
+    ): String {
+        val totalBudget = SummaryPolicy.totalBudget(source)
+        val facts = segments.joinToString("\n") { segment ->
+            """<segment id="${segment.id}">${escapeXml(segment.text)}</segment>"""
+        }
+        return """
+            아래 한국어 전사 구간만 근거로 핵심을 정리하세요. /no_think
+            기본은 summary 1개입니다. 서로 독립된 핵심이 명확할 때만 2개를 쓰세요.
+            summary 전체는 ${totalBudget}자 이내, 각 text는 ${SummaryPolicy.MAX_BULLET_CHARS}자 이내의
+            완결된 한국어 문장으로 작성하세요. 문장을 자르거나 말줄임표를 쓰지 마세요.
+            제목을 반복하거나 "성공 사례 분석", "운영 전략", "계획 수립" 같은 일반 문장만 쓰지 마세요.
+            원문에 없는 이름, 날짜, 수치, 비교 결과, 성과, 담당자, 기한, 할 일을 만들지 마세요.
+            각 summary에는 직접 근거가 된 segment 번호를 evidenceIds에 넣으세요.
+            할 일이 명시되지 않았으면 actionItems는 빈 배열로 반환하세요.
+            마크다운 없이 아래 구조의 JSON 객체 하나만 반환하세요.
+            {"title":"28자 이내 제목","summary":[{"text":"완결된 핵심 문장","evidenceIds":[1]}],"actionItems":[]}
+
+            <transcript>
+            $facts
+            </transcript>
+        """.trimIndent()
+    }
+
+    private fun buildCorrectionPrompt(reason: String): String {
+        return """
+            이전 결과는 앱 품질 검사에서 거절되었습니다: $reason
+            이전 설명을 반복하지 말고 JSON 객체만 다시 작성하세요.
+            summary는 기본 1개, 최대 2개이며 완결된 문장이어야 합니다.
+            말줄임표를 쓰지 말고, 전체 ${SummaryPolicy.MAX_TOTAL_CHARS}자와
+            항목당 ${SummaryPolicy.MAX_BULLET_CHARS}자를 넘지 마세요.
+            각 항목의 evidenceIds는 실제 원문 segment 번호만 사용하세요.
+            {"title":"짧은 제목","summary":[{"text":"짧고 완결된 핵심 문장","evidenceIds":[1]}],"actionItems":[]}
+        """.trimIndent()
+    }
+
+    private fun rejectionReason(error: Throwable): String =
+        (error as? SummaryQualityException)
+            ?.validation
+            ?.correctionHint()
+            ?: "INVALID_JSON_OR_SCHEMA"
+
+    private fun escapeXml(value: String): String =
+        value.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
 
     private fun IQwenInferenceCallback.safeSuccess(requestId: String, json: String) {
         runCatching { onSuccess(requestId, json, Process.myPid()) }
@@ -162,6 +239,15 @@ class QwenInferenceService : Service() {
         val id: String,
         val job: Job,
     )
+
+    private class QwenOutputRejectedException(
+        val reason: String,
+        cause: Throwable,
+    ) : IllegalArgumentException(reason, cause)
+
+    private class QwenFinalOutputRejectedException(
+        val reason: String,
+    ) : IllegalArgumentException(reason)
 
     private companion object {
         // A compact one-to-two-row JSON summary fits comfortably in this bound. A lower ceiling

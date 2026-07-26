@@ -14,6 +14,10 @@ class QwenSummaryCodecTest {
             actionItems = listOf("금요일까지 회귀 테스트"),
             engine = SummaryEngineType.QWEN_LOCAL,
             sourceHash = "abc123",
+            policyVersion = 2,
+            promptVersion = 2,
+            modelVersion = "qwen-test",
+            validationStatus = "PASSED",
         )
 
         assertEquals(summary, QwenSummaryCodec.decode(QwenSummaryCodec.encode(summary)))

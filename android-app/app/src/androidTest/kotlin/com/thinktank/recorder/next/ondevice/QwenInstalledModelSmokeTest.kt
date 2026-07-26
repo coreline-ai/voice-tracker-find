@@ -45,12 +45,13 @@ class QwenInstalledModelSmokeTest {
         assertEquals(SummaryEngineType.QWEN_LOCAL, result.engine)
         assertTrue(result.title.isNotBlank())
         assertTrue(result.bullets.size in 1..2)
-        assertTrue(result.bullets.all { it.length <= 30 })
+        assertTrue(result.bullets.all { it.length <= 44 })
         val persistedSummary = result.bullets.joinToString("\n")
         val normalizedTranscript = transcript.replace(Regex("\\s+"), " ").trim()
         assertTrue(persistedSummary.length < normalizedTranscript.length)
         assertTrue(
-            persistedSummary.length <= minOf(80, (normalizedTranscript.length * 0.15).toInt()),
+            persistedSummary.length <= minOf(60, (normalizedTranscript.length * 0.12).toInt())
+                .coerceAtLeast(24),
         )
         assertTrue(result.sourceHash.isNotBlank())
     }

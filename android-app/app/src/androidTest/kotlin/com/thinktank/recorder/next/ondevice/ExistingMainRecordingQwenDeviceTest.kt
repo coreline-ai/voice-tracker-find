@@ -44,15 +44,16 @@ class ExistingMainRecordingQwenDeviceTest {
             persisted.length <= minOf(
                 MAX_SUMMARY_CHARS,
                 (normalizedSourceLength * MAX_SOURCE_RATIO).toInt(),
-            ),
+            ).coerceAtLeast(MIN_SUMMARY_BUDGET),
         )
     }
 
     private companion object {
         const val ARG_ASSERT_EXISTING_QWEN = "assertExistingQwen"
         const val MAX_BULLETS = 2
-        const val MAX_BULLET_CHARS = 30
-        const val MAX_SUMMARY_CHARS = 80
-        const val MAX_SOURCE_RATIO = 0.15
+        const val MAX_BULLET_CHARS = 44
+        const val MAX_SUMMARY_CHARS = 60
+        const val MAX_SOURCE_RATIO = 0.12
+        const val MIN_SUMMARY_BUDGET = 24
     }
 }

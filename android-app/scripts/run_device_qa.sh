@@ -1,10 +1,8 @@
 #!/usr/bin/env bash
 # Physical-device QA runner.
 #
-# `preflight` is non-destructive. Android Gradle connected instrumentation, however, manages the
-# isolated `.qa` target by uninstalling/reinstalling it, which clears that package's recordings,
-# database and downloaded models. It is therefore blocked unless the caller explicitly
-# acknowledges the QA-package reset. The runner never touches a separately installed app package.
+# `preflight` is non-destructive. Connected instrumentation targets only the disposable
+# `.deviceTest` package and never installs, clears, or uninstalls the persistent `.qa` preview.
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -17,26 +15,21 @@ APPROVED_MANUFACTURER="samsung"
 APPROVED_MODEL="SM-S931N"
 SERIAL="$APPROVED_SERIAL"
 CASE_NAME="preflight"
-ALLOW_QA_PACKAGE_RESET=0
 
 usage() {
   cat <<'USAGE'
-Usage: run_device_qa.sh [--case preflight|core|native|all] [--allow-qa-package-reset]
+Usage: run_device_qa.sh [--case preflight|core|native|all]
 
 Target is fixed to the approved Samsung SM-S931N device (R3CY40PXCAP).
 PD20 and every other device are rejected before a device command is executed.
 
   preflight  Record non-destructive device facts only (default).
-  core       Run required connected instrumentation in the isolated .qa package.
+  core       Run required connected instrumentation in the isolated .deviceTest package.
   native     Run connected instrumentation including optional installed-model smoke tests.
   all        Alias for native.
 
-`core`, `native`, and `all` are blocked unless --allow-qa-package-reset is present: Android
-Gradle may uninstall/reinstall the isolated .qa package and clear its app-private recordings,
-database and downloaded models. Use `preflight` for a non-destructive device check.
-
-This script never clears or reads user data from any separately installed app package, toggles
-radios, deletes models directly, or pulls recordings/transcripts from the phone.
+This script refuses destructive commands against com.thinktank.recorder.next.qa. It never reads
+preview recordings/transcripts, toggles radios, deletes preview models, or pulls user content.
 USAGE
 }
 
@@ -50,7 +43,10 @@ while (($#)); do
       shift 2
       ;;
     --case) CASE_NAME="${2:-}"; shift 2 ;;
-    --allow-qa-package-reset|--destructive) ALLOW_QA_PACKAGE_RESET=1; shift ;;
+    --allow-qa-package-reset|--destructive)
+      echo "Reset approval is obsolete: instrumentation is restricted to .deviceTest." >&2
+      exit 2
+      ;;
     -h|--help) usage; exit 0 ;;
     *) echo "Unknown argument: $1" >&2; usage >&2; exit 2 ;;
   esac
@@ -88,7 +84,7 @@ write_device_facts() {
     echo "approved_target=$APPROVED_MANUFACTURER $APPROVED_MODEL"
     echo "excluded_target=PD20"
     echo "case=$CASE_NAME"
-    echo "qa_package_reset_acknowledged=$ALLOW_QA_PACKAGE_RESET"
+    echo "preview_package_protected=true"
     echo "collected_at=$(date --iso-8601=seconds 2>/dev/null || date)"
     echo "model=$("${ADB[@]}" shell getprop ro.product.model | tr -d '\r')"
     echo "abi=$("${ADB[@]}" shell getprop ro.product.cpu.abi | tr -d '\r')"
@@ -96,12 +92,13 @@ write_device_facts() {
     echo "android_sdk=$("${ADB[@]}" shell getprop ro.build.version.sdk | tr -d '\r')"
     echo "battery=$("${ADB[@]}" shell dumpsys battery | awk '/^  level:|^  status:/{printf "%s%s", sep, $0; sep="; "}' | tr -d '\r')"
     echo "data_fs=$("${ADB[@]}" shell 'df -k /data | tail -1' | tr -d '\r')"
-    echo "qa_package=$("${ADB[@]}" shell 'pm path com.thinktank.recorder.next.qa' | tr -d '\r')"
+    echo "preview_package=$("${ADB[@]}" shell 'pm path com.thinktank.recorder.next.qa' | tr -d '\r')"
+    echo "test_package=$("${ADB[@]}" shell 'pm path com.thinktank.recorder.next.deviceTest' | tr -d '\r')"
   } > "$EVIDENCE_DIR/device.txt"
 }
 
 sample_qwen_pss() {
-  local package_name="com.thinktank.recorder.next.qa:local_ai_qwen"
+  local package_name="com.thinktank.recorder.next.deviceTest:local_ai_qwen"
   while true; do
     local pids
     pids="$("${ADB[@]}" shell "pidof $package_name" 2>/dev/null | tr -d '\r' || true)"
@@ -128,23 +125,14 @@ if [[ "$CASE_NAME" == "preflight" ]]; then
   exit 0
 fi
 
-if [[ "$ALLOW_QA_PACKAGE_RESET" != "1" ]]; then
-  cat >&2 <<'ERROR'
-Refusing connected instrumentation without --allow-qa-package-reset.
-Android Gradle connected tests can uninstall/reinstall com.thinktank.recorder.next.qa and clear
-that package's app-private recordings, database, and downloaded models. Use --case preflight for
-a non-destructive check, or run a manual UI test against an already-installed app instead.
-ERROR
-  exit 5
-fi
-
 sample_qwen_pss &
 SAMPLER_PID=$!
 cleanup() {
   kill "$SAMPLER_PID" 2>/dev/null || true
   wait "$SAMPLER_PID" 2>/dev/null || true
   capture_safe_logcat
-  printf 'qa_package_after=%s\n' "$("${ADB[@]}" shell 'pm path com.thinktank.recorder.next.qa' | tr -d '\r')" >> "$EVIDENCE_DIR/device.txt"
+  printf 'preview_package_after=%s\n' "$("${ADB[@]}" shell 'pm path com.thinktank.recorder.next.qa' | tr -d '\r')" >> "$EVIDENCE_DIR/device.txt"
+  printf 'test_package_after=%s\n' "$("${ADB[@]}" shell 'pm path com.thinktank.recorder.next.deviceTest' | tr -d '\r')" >> "$EVIDENCE_DIR/device.txt"
 }
 trap cleanup EXIT
 
@@ -159,5 +147,5 @@ fi
 # model/fixture is not present. The runner never downloads or imports a model on its own.
 ./gradlew \
   :feature-ondevice:connectedDebugAndroidTest \
-  :app:connectedDeviceQaAndroidTest \
+  :app:connectedDeviceTestAndroidTest \
   --stacktrace 2>&1 | tee "$EVIDENCE_DIR/gradle-connected.log"

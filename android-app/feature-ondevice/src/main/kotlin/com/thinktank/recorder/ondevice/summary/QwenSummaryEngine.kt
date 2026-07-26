@@ -25,7 +25,7 @@ class QwenSummaryEngine(
     private val integrityVerifier = ModelIntegrityVerifier(modelStore)
     private val client = QwenInferenceClient(applicationContext)
     private val inputReducer = QwenInputReducer()
-    private val compactor = LocalSummaryCompactor()
+    private val qualityGate = SummaryQualityGate()
 
     override suspend fun summarize(transcript: String): LocalSummary {
         require(transcript.isNotBlank()) { "요약할 전사문이 없습니다" }
@@ -40,13 +40,19 @@ class QwenSummaryEngine(
                     resourceGuard.requireQwenCapacity()
                     val modelFile = File(modelStore.installDir(descriptor.id), "model.gguf")
                     val promptInput = inputReducer.reduce(transcript)
-                    compactor.compact(
+                    qualityGate.requireValid(
                         summary = client.summarize(
                             modelPath = modelFile.absolutePath,
                             transcript = promptInput,
                             originalSourceHash = sourceHash(transcript),
                         ),
                         transcript = transcript,
+                    ).copy(
+                        sourceHash = sourceHash(transcript),
+                        modelVersion = descriptor.version,
+                        policyVersion = SummaryPolicy.VERSION,
+                        promptVersion = SummaryPolicy.PROMPT_VERSION,
+                        validationStatus = SUMMARY_VALIDATION_PASSED,
                     )
                 }
             } catch (cancelled: CancellationException) {

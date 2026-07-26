@@ -9,7 +9,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
 
 @Database(
     entities = [OnDeviceSessionEntity::class],
-    version = 4,
+    version = 5,
     exportSchema = true,
 )
 abstract class OnDeviceDatabase : RoomDatabase() {
@@ -26,7 +26,7 @@ abstract class OnDeviceDatabase : RoomDatabase() {
                     OnDeviceDatabase::class.java,
                     "ondevice.db",
                 )
-                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4)
+                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5)
                     .build()
                     .also { instance = it }
             }
@@ -69,6 +69,29 @@ abstract class OnDeviceDatabase : RoomDatabase() {
                 )
                 db.execSQL(
                     "ALTER TABLE ondevice_sessions ADD COLUMN sourceDurationMs INTEGER DEFAULT NULL",
+                )
+            }
+        }
+
+        val MIGRATION_4_5 = object : Migration(4, 5) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    "ALTER TABLE ondevice_sessions ADD COLUMN requestedSummaryEngine TEXT DEFAULT NULL",
+                )
+                db.execSQL(
+                    "ALTER TABLE ondevice_sessions ADD COLUMN summaryFallbackReason TEXT DEFAULT NULL",
+                )
+                db.execSQL(
+                    "ALTER TABLE ondevice_sessions ADD COLUMN summaryPolicyVersion INTEGER DEFAULT NULL",
+                )
+                db.execSQL(
+                    "ALTER TABLE ondevice_sessions ADD COLUMN summaryPromptVersion INTEGER DEFAULT NULL",
+                )
+                db.execSQL(
+                    "ALTER TABLE ondevice_sessions ADD COLUMN summaryModelVersion TEXT DEFAULT NULL",
+                )
+                db.execSQL(
+                    "ALTER TABLE ondevice_sessions ADD COLUMN summaryValidationStatus TEXT DEFAULT NULL",
                 )
             }
         }

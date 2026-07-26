@@ -13,6 +13,11 @@ internal object QwenSummaryCodec {
             .put("actionItems", JSONArray(summary.actionItems))
             .put("engine", summary.engine.name)
             .put("sourceHash", summary.sourceHash)
+            .put("fallbackReason", summary.fallbackReason)
+            .put("policyVersion", summary.policyVersion)
+            .put("promptVersion", summary.promptVersion)
+            .put("modelVersion", summary.modelVersion)
+            .put("validationStatus", summary.validationStatus)
             .toString()
 
     fun decode(json: String): LocalSummary {
@@ -25,6 +30,11 @@ internal object QwenSummaryCodec {
                 SummaryEngineType.valueOf(root.optString("engine"))
             }.getOrDefault(SummaryEngineType.QWEN_LOCAL),
             sourceHash = root.getString("sourceHash"),
+            fallbackReason = root.optNullableString("fallbackReason"),
+            policyVersion = root.optNullableInt("policyVersion"),
+            promptVersion = root.optNullableInt("promptVersion"),
+            modelVersion = root.optNullableString("modelVersion"),
+            validationStatus = root.optNullableString("validationStatus"),
         )
     }
 
@@ -32,4 +42,10 @@ internal object QwenSummaryCodec {
         buildList {
             for (index in 0 until length()) add(getString(index))
         }
+
+    private fun JSONObject.optNullableString(key: String): String? =
+        if (isNull(key)) null else optString(key).takeIf(String::isNotBlank)
+
+    private fun JSONObject.optNullableInt(key: String): Int? =
+        if (isNull(key) || !has(key)) null else optInt(key).takeIf { it > 0 }
 }

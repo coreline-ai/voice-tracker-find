@@ -43,4 +43,20 @@ class ExtractiveSummaryEngineTest {
 
         assertEquals(engine.summarize(source), engine.summarize(source))
     }
+
+    @Test
+    fun punctuationLightSttUsesSpokenKoreanEndingsWithoutEllipsis() = runBlocking {
+        val source = """
+            쇼핑쇼츠 강의에서 수강생 판매 경험을 설명합니다
+            쿠팡 경쟁 대응법은 후속 영상에서 소개합니다
+            여성 의류 판매자는 상품 영상을 확인해야 합니다
+        """.trimIndent()
+
+        val result = engine.summarize(source)
+
+        assertTrue(result.bullets.isNotEmpty())
+        assertTrue(result.bullets.all { it in engine.splitSentences(source) })
+        assertTrue(result.bullets.none { it.contains('…') || it.contains("...") })
+        assertTrue(result.bullets.joinToString("\n").length < source.length)
+    }
 }

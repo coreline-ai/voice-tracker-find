@@ -23,6 +23,7 @@ import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
@@ -272,9 +273,10 @@ fun OnDeviceScreen(
                 )
             }
         } else {
-            items(state.sessions, key = { it.id }) { session ->
+            itemsIndexed(state.sessions, key = { _, session -> session.id }) { index, session ->
                 SessionCard(
                     session = session,
+                    latest = index == 0,
                     active = state.activeSessionId == session.id,
                     onSummarize = { onSummarize(session.id) },
                     onDelete = { onDeleteSession(session.id) },
@@ -934,6 +936,7 @@ private fun ModelCard(
 @Composable
 private fun SessionCard(
     session: OnDeviceSessionEntity,
+    latest: Boolean,
     active: Boolean,
     onSummarize: () -> Unit,
     onDelete: () -> Unit,
@@ -942,11 +945,18 @@ private fun SessionCard(
     var fullTranscriptShown by rememberSaveable(session.id) { mutableStateOf(false) }
     Card(
         shape = RoundedCornerShape(18.dp),
-        modifier = modifier.fillMaxWidth(),
+        modifier = modifier.fillMaxWidth().testTag("session-${session.id}"),
     ) {
         Column(Modifier.padding(16.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
+                    if (latest) {
+                        Text(
+                            "최신 결과",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.primary,
+                        )
+                    }
                     Text(
                         session.title.ifBlank { "로컬 음성 기록" },
                         style = MaterialTheme.typography.titleMedium,
@@ -1001,13 +1011,31 @@ private fun SessionCard(
                 Spacer(Modifier.height(12.dp))
                 Text("핵심 요약", style = MaterialTheme.typography.labelLarge)
                 Text(
-                    "처리 방식 · ${summaryEngineLabel(session.summaryEngine)}",
+                    summaryProcessingLabel(session),
                     style = MaterialTheme.typography.labelMedium,
                     color = MaterialTheme.colorScheme.primary,
                     modifier = Modifier.padding(top = 3.dp),
                 )
-                session.summary.lines().filter(String::isNotBlank).forEach {
-                    Text("• $it", style = MaterialTheme.typography.bodyMedium)
+                session.summary.lines().filter(String::isNotBlank).forEachIndexed { index, text ->
+                    Text(
+                        "• $text",
+                        style = MaterialTheme.typography.bodyMedium,
+                        modifier = Modifier.testTag("summary-${session.id}-$index"),
+                    )
+                }
+                Text(
+                    session.summaryPolicyVersion?.let { "요약 정책 v$it" } ?: "이전 요약 정책",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(top = 4.dp),
+                )
+                if (!session.summaryFallbackReason.isNullOrBlank()) {
+                    Text(
+                        fallbackLabel(session.summaryFallbackReason),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.tertiary,
+                        modifier = Modifier.padding(top = 2.dp),
+                    )
                 }
             }
             if (
@@ -1146,6 +1174,25 @@ private fun summaryEngineLabel(engine: String): String = when (engine) {
     SummaryEngineType.QWEN_LOCAL_GROUNDED.name -> "Qwen 로컬 AI · 원문 근거 보강"
     SummaryEngineType.NONE.name -> "요약하지 않음"
     else -> "알 수 없는 방식"
+}
+
+private fun summaryProcessingLabel(session: OnDeviceSessionEntity): String {
+    val actual = summaryEngineLabel(session.summaryEngine)
+    val requested = session.requestedSummaryEngine
+        ?.takeIf { it != session.summaryEngine }
+        ?.let(::summaryEngineLabel)
+    return if (requested == null) {
+        "처리 방식 · $actual"
+    } else {
+        "요청 · $requested / 실제 · $actual"
+    }
+}
+
+private fun fallbackLabel(reason: String): String = when {
+    reason.contains("QWEN_QUALITY_REJECTED") -> "Qwen 품질 검사 후 원문 기반 요약으로 대체"
+    reason.contains("QWEN_RUNTIME_FAILED") -> "Qwen 실행 실패 후 원문 기반 요약으로 대체"
+    reason.contains("NO_SAFE_EXTRACTIVE_SUMMARY") -> "안전한 핵심을 만들지 못해 전사 원문만 보존"
+    else -> "원문 기반 안전 대체 요약"
 }
 
 private fun sttEngineLabel(engine: String): String = when (engine) {

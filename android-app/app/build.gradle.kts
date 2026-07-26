@@ -68,12 +68,20 @@ android {
                 "\"${debugServerUrl}\"",
             )
         }
-        // A physical-device test package must not overwrite a developer's existing debug app.
-        // The connected runner removes only this isolated package after each QA execution.
-        create("deviceQa") {
+        // Persistent Samsung preview package. Keep the historical `.qa` application ID so the
+        // existing on-device database and downloaded models survive `adb install -r` updates.
+        create("devicePreview") {
             initWith(getByName("debug"))
             applicationIdSuffix = ".qa"
-            versionNameSuffix = "-qa"
+            versionNameSuffix = "-preview"
+            matchingFallbacks += listOf("debug")
+        }
+        // Disposable instrumentation target. Connected Gradle tasks may uninstall/reinstall only
+        // this package and can never clear the persistent `.qa` preview data.
+        create("deviceTest") {
+            initWith(getByName("debug"))
+            applicationIdSuffix = ".deviceTest"
+            versionNameSuffix = "-device-test"
             matchingFallbacks += listOf("debug")
         }
         release {
@@ -88,8 +96,8 @@ android {
         }
     }
 
-    // Keep physical instrumentation isolated from any separately signed .debug installation.
-    testBuildType = "deviceQa"
+    // Keep physical instrumentation isolated from both `.debug` and persistent `.qa` preview.
+    testBuildType = "deviceTest"
 
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17

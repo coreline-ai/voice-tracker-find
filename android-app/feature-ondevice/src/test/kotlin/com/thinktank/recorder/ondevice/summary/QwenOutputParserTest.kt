@@ -8,13 +8,19 @@ import org.junit.Test
 class QwenOutputParserTest {
     @Test
     fun parsesJsonWrappedByReasoningAndCodeFence() {
-        val source = "민수는 금요일까지 견적서를 확인해야 합니다. 일정은 다음 주에 다시 논의합니다."
+        val source = """
+            민수는 금요일까지 신규 제품 견적서를 확인해야 합니다.
+            일정은 다음 주 회의에서 다시 논의합니다.
+            출시 전에 회귀 테스트 범위도 함께 확인합니다.
+        """.trimIndent()
         val raw = """
             <think>internal reasoning</think>
             ```json
             {
               "title": "견적서 확인",
-              "bullets": ["견적서를 확인한다.", "일정은 다음 주에 논의한다."],
+              "summary": [
+                {"text":"민수는 신규 제품 견적서를 확인한다.","evidenceIds":[1]}
+              ],
               "actionItems": ["민수는 금요일까지 견적서를 확인한다.", "영희가 예산을 승인한다."]
             }
             ```
@@ -22,11 +28,12 @@ class QwenOutputParserTest {
 
         val result = QwenOutputParser.parse(raw, source)
 
-        assertEquals(SummaryEngineType.QWEN_LOCAL, result.engine)
-        assertEquals("견적서 확인", result.title)
-        assertEquals(2, result.bullets.size)
-        assertEquals(listOf("민수는 금요일까지 견적서를 확인한다."), result.actionItems)
-        assertEquals(64, result.sourceHash.length)
+        assertEquals(SummaryEngineType.QWEN_LOCAL, result.summary.engine)
+        assertEquals("견적서 확인", result.summary.title)
+        assertEquals(listOf("민수는 신규 제품 견적서를 확인한다."), result.summary.bullets)
+        assertEquals(listOf("민수는 금요일까지 견적서를 확인한다."), result.summary.actionItems)
+        assertEquals(listOf(setOf(1)), result.evidenceIds)
+        assertEquals(64, result.summary.sourceHash.length)
     }
 
     @Test
@@ -38,26 +45,28 @@ class QwenOutputParserTest {
     }
 
     @Test
-    fun preservesCompactBulletsAndCapsTheThird() {
-        val source = "쇼핑쇼츠 쿠팡 여성 의류 수익 경쟁 사례 영상 강의 판매 고객 전환 운영 전략"
+    fun rejectsMoreThanTwoSummaryRowsInsteadOfSilentlySlicingThem() {
+        val source = """
+            쇼핑쇼츠 강의에서 고객 전환 사례를 설명합니다.
+            쿠팡 경쟁 구도는 후속 영상에서 소개합니다.
+            여성 의류 판매 경험도 별도 자료로 공유합니다.
+            강의와 영상 콘텐츠의 관계를 구체적으로 설명합니다.
+        """.trimIndent()
         val raw = """
             {
-              "title": "쇼핑쇼츠 운영 전략",
-              "bullets": [
-                "쇼핑쇼츠 영상으로 고객 전환을 설명한다.",
-                "쿠팡과의 경쟁 구도를 사례로 든다.",
-                "여성 의류 수익 사례를 중심으로 소개한다.",
-                "강의 판매와 영상 콘텐츠를 연결한다.",
-                "네 번째 항목은 저장하지 않는다."
+              "title": "쇼핑쇼츠 강의",
+              "summary": [
+                {"text":"쇼핑쇼츠 강의의 고객 전환 사례를 설명한다.","evidenceIds":[1]},
+                {"text":"쿠팡 경쟁 구도는 후속 영상에서 소개한다.","evidenceIds":[2]},
+                {"text":"여성 의류 판매 경험은 별도 자료로 공유한다.","evidenceIds":[3]}
               ],
               "actionItems": []
             }
         """.trimIndent()
 
-        val result = QwenOutputParser.parse(raw, source)
+        val failure = runCatching { QwenOutputParser.parse(raw, source) }
 
-        assertEquals(2, result.bullets.size)
-        assertEquals("쇼핑쇼츠 영상으로 고객 전환을 설명한다.", result.bullets.first())
-        assertEquals("쿠팡과의 경쟁 구도를 사례로 든다.", result.bullets.last())
+        assertTrue(failure.isFailure)
+        assertTrue(failure.exceptionOrNull()?.message.orEmpty().contains("TOO_MANY_BULLETS"))
     }
 }

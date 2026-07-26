@@ -109,6 +109,7 @@ class OnDeviceRepository(
                 state = state.name,
                 sttEngine = sttEngine.name,
                 summaryEngine = summaryEngine.name,
+                requestedSummaryEngine = summaryEngine.name,
                 operationToken = operationToken,
             ),
         )
@@ -130,6 +131,7 @@ class OnDeviceRepository(
                 state = OnDeviceSessionState.STARTING.name,
                 sttEngine = sttEngine.name,
                 summaryEngine = summaryEngine.name,
+                requestedSummaryEngine = summaryEngine.name,
                 sourceType = OnDeviceSessionEntity.SOURCE_TYPE_MAIN_RECORDER_CHUNK,
                 sourceChunkId = source.id,
                 sourceDisplayName = "${source.extension.uppercase()} · ${source.durationMs / 1_000}초",
@@ -244,6 +246,12 @@ class OnDeviceRepository(
                 summary = result.bullets.joinToString("\n"),
                 actionItems = result.actionItems.joinToString("\n"),
                 summaryEngine = result.engine.name,
+                requestedSummaryEngine = current.requestedSummaryEngine ?: current.summaryEngine,
+                summaryFallbackReason = result.fallbackReason,
+                summaryPolicyVersion = result.policyVersion,
+                summaryPromptVersion = result.promptVersion,
+                summaryModelVersion = result.modelVersion,
+                summaryValidationStatus = result.validationStatus,
                 summarySourceHash = result.sourceHash,
                 summaryGeneratedAt = clock(),
                 error = null,
@@ -251,7 +259,22 @@ class OnDeviceRepository(
         )
     }
 
-    suspend fun saveSummary(id: String, token: String, result: LocalSummary): Boolean {
+    suspend fun saveSummary(id: String, token: String, result: LocalSummary): Boolean =
+        saveSummary(
+            id = id,
+            token = token,
+            requestedEngine = runCatching {
+                SummaryEngineType.valueOf(requireNotNull(dao.get(id)).summaryEngine)
+            }.getOrDefault(result.engine),
+            result = result,
+        )
+
+    suspend fun saveSummary(
+        id: String,
+        token: String,
+        requestedEngine: SummaryEngineType,
+        result: LocalSummary,
+    ): Boolean {
         val now = clock()
         return dao.saveSummaryForOperation(
             id = id,
@@ -260,6 +283,12 @@ class OnDeviceRepository(
             summary = result.bullets.joinToString("\n"),
             actionItems = result.actionItems.joinToString("\n"),
             summaryEngine = result.engine.name,
+            requestedSummaryEngine = requestedEngine.name,
+            fallbackReason = result.fallbackReason,
+            policyVersion = result.policyVersion,
+            promptVersion = result.promptVersion,
+            modelVersion = result.modelVersion,
+            validationStatus = result.validationStatus,
             sourceHash = result.sourceHash,
             generatedAt = now,
             now = now,

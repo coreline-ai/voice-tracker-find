@@ -39,8 +39,11 @@ import com.thinktank.recorder.ondevice.stt.SenseVoiceFileSpeechEngine
 import com.thinktank.recorder.ondevice.stt.SenseVoiceFileSttAvailability
 import com.thinktank.recorder.ondevice.stt.SpeechRecognitionException
 import com.thinktank.recorder.ondevice.summary.ExtractiveSummaryEngine
-import com.thinktank.recorder.ondevice.summary.LocalSummaryCompactor
 import com.thinktank.recorder.ondevice.summary.QwenSummaryEngine
+import com.thinktank.recorder.ondevice.summary.QWEN_QUALITY_REJECTED
+import com.thinktank.recorder.ondevice.summary.SUMMARY_VALIDATION_FALLBACK
+import com.thinktank.recorder.ondevice.summary.SummaryQualityGate
+import com.thinktank.recorder.ondevice.summary.classifyQwenFailure
 import java.util.UUID
 import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
@@ -132,7 +135,7 @@ class OnDeviceViewModel @Inject constructor(
     private val fileSpeechEngine = SenseVoiceFileSpeechEngine(application, modelStore)
     private val pcmNormalizer = AndroidPcmNormalizer()
     private val extractiveSummary = ExtractiveSummaryEngine()
-    private val summaryCompactor = LocalSummaryCompactor()
+    private val summaryQualityGate = SummaryQualityGate()
     private val qwenDelegate = lazy { QwenSummaryEngine(application, modelStore) }
     private val qwen by qwenDelegate
     private val modelManager = ModelDownloadManager(application)
@@ -718,29 +721,37 @@ class OnDeviceViewModel @Inject constructor(
                         qwen.summarize(transcript)
                     } catch (cancelled: CancellationException) {
                         throw cancelled
-                    } catch (_: Throwable) {
-                        withContext(Dispatchers.Default) {
-                            summaryCompactor.compact(
-                                summary = extractiveSummary.summarize(transcript),
-                                transcript = transcript,
-                            )
-                        }.also {
-                            message.value = "Qwen 요약에 실패해 원문 기반 빠른 요약을 보존했습니다."
+                    } catch (error: Throwable) {
+                        val fallbackReason = classifyQwenFailure(error)
+                        createSafeExtractiveFallback(
+                            transcript = transcript,
+                            reason = fallbackReason,
+                        ).also {
+                            message.value = when {
+                                fallbackReason == QWEN_QUALITY_REJECTED && it.bullets.isEmpty() ->
+                                    "Qwen 결과가 품질 기준을 통과하지 못해 전사 원문만 보존했습니다."
+                                fallbackReason == QWEN_QUALITY_REJECTED ->
+                                    "Qwen 결과가 품질 기준을 통과하지 못해 원문 기반 요약으로 대체했습니다."
+                                it.bullets.isEmpty() ->
+                                    "Qwen 실행에 실패해 전사 원문만 보존했습니다."
+                                else ->
+                                    "Qwen 실행에 실패해 원문 기반 요약으로 대체했습니다."
+                            }
                         }
                     }
                 } else {
-                    withContext(Dispatchers.Default) {
-                        summaryCompactor.compact(
-                            summary = extractiveSummary.summarize(transcript),
-                            transcript = transcript,
-                        )
-                    }
+                    createSafeExtractiveFallback(transcript = transcript, reason = null)
                 }
                 val saved = withContext(Dispatchers.IO) {
-                    repository.saveSummary(sessionId, operation.token, result)
+                    repository.saveSummary(
+                        id = sessionId,
+                        token = operation.token,
+                        requestedEngine = engine,
+                        result = result,
+                    )
                 }
                 check(saved) { "만료된 요약 결과는 저장하지 않았습니다." }
-                if (message.value?.startsWith("Qwen 요약에 실패") != true) {
+                if (result.fallbackReason == null) {
                     message.value = if (engine.usesQwen()) {
                         "Qwen 로컬 AI 요약을 완료했습니다."
                     } else {
@@ -776,6 +787,34 @@ class OnDeviceViewModel @Inject constructor(
             } finally {
                 finishUiOperation(operation)
             }
+        }
+    }
+
+    private suspend fun createSafeExtractiveFallback(
+        transcript: String,
+        reason: String?,
+    ) = withContext(Dispatchers.Default) {
+        val candidate = extractiveSummary.summarize(transcript)
+        val validation = summaryQualityGate.validate(candidate, transcript)
+        if (validation.valid) {
+            summaryQualityGate.requireValid(candidate, transcript).copy(
+                fallbackReason = reason,
+                validationStatus = if (reason == null) {
+                    candidate.validationStatus
+                } else {
+                    SUMMARY_VALIDATION_FALLBACK
+                },
+            )
+        } else {
+            candidate.copy(
+                bullets = emptyList(),
+                actionItems = emptyList(),
+                fallbackReason = listOfNotNull(
+                    reason,
+                    "NO_SAFE_EXTRACTIVE_SUMMARY",
+                ).joinToString("+"),
+                validationStatus = "FALLBACK_EMPTY",
+            )
         }
     }
 

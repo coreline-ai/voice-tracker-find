@@ -64,16 +64,16 @@ class LocalAiSingleRecordedSampleDeviceTest {
                 }
                 assertEquals(SummaryEngineType.QWEN_LOCAL, summary.engine)
                 assertTrue("Qwen 제목이 비어 있습니다.", summary.title.isNotBlank())
-                // A very short STT fixture can legitimately have no meaningful row after the
-                // strict 15% cap. The product must prefer an empty body over expanding it.
-                assertTrue("Qwen 핵심 요약 항목 수가 허용 범위를 벗어났습니다.", summary.bullets.size <= 2)
-                assertTrue("Qwen 핵심 요약 항목이 너무 깁니다.", summary.bullets.all { it.length <= 30 })
+                assertTrue("Qwen 핵심 요약 항목 수가 허용 범위를 벗어났습니다.", summary.bullets.size in 1..2)
+                assertTrue("Qwen 핵심 요약 항목이 너무 깁니다.", summary.bullets.all { it.length <= 44 })
                 val persistedSummary = summary.bullets.joinToString("\n")
                 val normalizedTranscript = transcript.replace(Regex("\\s+"), " ").trim()
                 assertTrue("Qwen 요약은 전사보다 짧아야 합니다.", persistedSummary.length < normalizedTranscript.length)
                 assertTrue(
-                    "Qwen 요약이 전사의 15% 또는 80자 상한을 초과했습니다.",
-                    persistedSummary.length <= minOf(80, (normalizedTranscript.length * 0.15).toInt()),
+                    "Qwen 요약이 정책 글자 상한을 초과했습니다.",
+                    persistedSummary.length <= minOf(60, (normalizedTranscript.length * 0.12).toInt())
+                        .coerceAtLeast(24)
+                        .coerceAtMost(normalizedTranscript.length - 1),
                 )
                 assertTrue("Qwen 원문 hash가 비어 있습니다.", summary.sourceHash.isNotBlank())
                 Log.i(

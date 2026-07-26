@@ -94,6 +94,11 @@ data class LocalSummary(
     val actionItems: List<String>,
     val engine: SummaryEngineType = SummaryEngineType.EXTRACTIVE_KOTLIN,
     val sourceHash: String = "",
+    val fallbackReason: String? = null,
+    val policyVersion: Int? = null,
+    val promptVersion: Int? = null,
+    val modelVersion: String? = null,
+    val validationStatus: String? = null,
 )
 
 sealed interface SpeechEvent {
