@@ -3,7 +3,9 @@ import java.security.MessageDigest
 plugins {
     alias(libs.plugins.android.library)
     alias(libs.plugins.kotlin.android)
+    kotlin("kapt")
     alias(libs.plugins.ksp)
+    alias(libs.plugins.hilt)
 }
 
 android {
@@ -51,6 +53,9 @@ android {
     )
 
     testOptions {
+        // Without an explicit androidTest target the standalone test APK inherits minSdk (26),
+        // which opens Android 16's deprecated-target dialog over Compose device tests.
+        targetSdk = libs.versions.targetSdk.get().toInt()
         unitTests.isIncludeAndroidResources = true
         unitTests.isReturnDefaultValues = true
     }
@@ -73,6 +78,8 @@ dependencies {
     implementation(libs.androidx.lifecycle.runtime.compose)
     implementation(libs.androidx.lifecycle.viewmodel.ktx)
     implementation(libs.androidx.lifecycle.viewmodel.compose)
+    implementation(libs.hilt.android)
+    kapt(libs.hilt.compiler)
 
     implementation(platform(libs.compose.bom))
     implementation(libs.compose.ui)
@@ -89,8 +96,8 @@ dependencies {
 
     implementation(libs.work.runtime)
     implementation(libs.okhttp)
-    implementation(libs.kotlinx.coroutines.android)
     implementation(libs.commons.compress)
+    implementation(libs.kotlinx.coroutines.android)
 
     testImplementation(libs.junit)
     testImplementation(libs.kotlinx.coroutines.test)
@@ -122,15 +129,15 @@ fun sha256(file: File): String {
 
 val verifyOnDeviceNativeArtifacts by tasks.registering {
     group = "verification"
-    description = "Verify pinned sherpa-onnx and llama.cpp arm64 artifacts."
+    description = "Verify the pinned llama.cpp arm64 artifact."
     doLast {
         val expected = mapOf(
-            file("src/main/jniLibs/arm64-v8a/libonnxruntime.so") to
-                "994848008526a934dfb579ac773b00e5867929234852b061005d45aacaee9533",
-            file("src/main/jniLibs/arm64-v8a/libsherpa-onnx-jni.so") to
-                "a79ff75fbe1c3813cc239037b458a7828298a90a5b77f5314056508eefdf72bc",
             file("libs/llama-android-b10107-arm64.aar") to
                 "96e22269f12a56d04be5577065d729677b0a61d606d38a8963d211a6cca4937c",
+            file("src/main/jniLibs/arm64-v8a/libsherpa-onnx-jni.so") to
+                "a79ff75fbe1c3813cc239037b458a7828298a90a5b77f5314056508eefdf72bc",
+            file("src/main/jniLibs/arm64-v8a/libonnxruntime.so") to
+                "994848008526a934dfb579ac773b00e5867929234852b061005d45aacaee9533",
         )
         expected.forEach { (artifact, checksum) ->
             check(artifact.isFile) { "Missing native artifact: ${artifact.path}" }

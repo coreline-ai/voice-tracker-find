@@ -106,8 +106,7 @@ if ($Tls) {
 Write-Host ""
 Write-Host "수집 폴더  : $shownDir"
 if ($env:RECEIVER_APK) {
-    Write-Host "앱 설치    : 폰 브라우저로 ${scheme}://${displayAddress}:${Port}/apk?token=$token" -ForegroundColor Green
-    Write-Host "             (버전 확인은 끝에 /apk/info)" -ForegroundColor DarkGray
+    Write-Host "APK 배포    : 토큰 URL은 사용하지 않습니다. USB 또는 인증된 V1 배포 절차를 사용하세요." -ForegroundColor Yellow
 }
 Write-Host "연결 확인  : 폰 브라우저로 ${scheme}://${displayAddress}:${Port}/health -> ok" -ForegroundColor DarkGray
 Write-Host "방화벽     : 첫 실행 시 Windows 가 물어보면 '개인 네트워크' 허용" -ForegroundColor DarkGray

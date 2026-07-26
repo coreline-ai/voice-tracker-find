@@ -48,7 +48,7 @@ from collections.abc import Callable
 from dataclasses import replace
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from urllib.parse import parse_qs, unquote
+from urllib.parse import unquote
 
 from thinktank.config import Settings, load_settings
 from thinktank.ingest import AUDIO_EXTENSIONS
@@ -399,17 +399,13 @@ class _Handler(BaseHTTPRequestHandler):
         return user
 
     def _authorized_for_download(self) -> bool:
-        """헤더 또는 쿼리스트링의 토큰을 받는다.
+        """Require the normal Authorization header for legacy APK endpoints.
 
-        폰 브라우저로 APK 를 받을 때는 Authorization 헤더를 붙일 수 없어서
-        ``?token=`` 을 허용한다. 파일 하나를 내려주는 용도로만 쓴다 — 다른
-        엔드포인트는 헤더만 받는다(주소창/기록에 토큰이 남지 않도록).
+        A reusable Receiver bearer in a URL leaks through browser history, copied links and
+        proxy logs. Browser APK distribution is intentionally not supported until a separate
+        short-lived ticket flow and its issuing UI are introduced.
         """
-        if self._authorized() is not None:
-            return True
-        _, _, query = self.path.partition("?")
-        supplied = parse_qs(query).get("token", [""])[0].strip()
-        return self._resolve_user(supplied) is not None
+        return self._authorized() is not None
 
     def _segments(self) -> list[str]:
         """경로를 세그먼트로 나눈 뒤 각각 디코딩한다.

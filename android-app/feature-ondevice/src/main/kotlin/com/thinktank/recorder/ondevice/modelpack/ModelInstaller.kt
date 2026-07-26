@@ -1,6 +1,5 @@
 package com.thinktank.recorder.ondevice.modelpack
 
-import java.io.BufferedInputStream
 import java.io.File
 import java.io.FileInputStream
 import java.io.FileOutputStream
@@ -21,20 +20,17 @@ class ModelInstaller(
     ) {
         cancellationCheck()
         require(artifact.isFile) { "모델 파일을 찾을 수 없습니다" }
-        val root = store.modelRoot()
-        val staging = File(root, ".staging-${descriptor.id.name.lowercase()}")
-        val backup = File(root, ".backup-${descriptor.id.name.lowercase()}")
+        val staging = store.stagingDir(descriptor.id)
+        val backup = store.backupDir(descriptor.id)
         val target = store.installDir(descriptor.id)
+        store.recoverInterruptedInstall(descriptor.id)
         staging.deleteRecursively()
-        backup.deleteRecursively()
         check(staging.mkdirs()) { "모델 임시 설치 폴더를 만들 수 없습니다" }
 
         try {
-            when (descriptor.packaging) {
-                ModelPackaging.TAR_BZ2 ->
-                    extractMoonshine(descriptor, artifact, staging, cancellationCheck)
-                ModelPackaging.SINGLE_GGUF ->
-                    copyQwen(artifact, staging, cancellationCheck)
+            when (descriptor.artifactFormat) {
+                ModelArtifactFormat.SINGLE_FILE -> copySingleArtifact(artifact, staging, descriptor, cancellationCheck)
+                ModelArtifactFormat.TAR_BZ2 -> extractTarBz2(artifact, staging, descriptor, cancellationCheck)
             }
             cancellationCheck()
             descriptor.requiredFiles.forEach { filename ->
@@ -63,10 +59,13 @@ class ModelInstaller(
 
             if (target.exists()) check(target.renameTo(backup)) { "기존 모델을 보존하지 못했습니다" }
             if (!staging.renameTo(target)) {
-                if (backup.exists()) backup.renameTo(target)
+                if (backup.exists()) {
+                    check(backup.renameTo(target)) { "기존 모델 복원에 실패했습니다" }
+                }
                 error("검증된 모델을 활성화하지 못했습니다")
             }
             backup.deleteRecursively()
+            ModelIntegrityVerifier.invalidate(descriptor.id)
             artifact.delete()
         } catch (error: Throwable) {
             staging.deleteRecursively()
@@ -74,61 +73,73 @@ class ModelInstaller(
         }
     }
 
-    private fun extractMoonshine(
+    private fun copySingleArtifact(
+        artifact: File,
+        staging: File,
         descriptor: ModelDescriptor,
-        artifact: File,
-        staging: File,
         cancellationCheck: () -> Unit,
     ) {
-        val allowed = descriptor.requiredFiles
-        var extractedBytes = 0L
-        TarArchiveInputStream(
-            BZip2CompressorInputStream(
-                BufferedInputStream(FileInputStream(artifact)),
-                true,
-            ),
-        ).use { tar ->
-            while (true) {
-                cancellationCheck()
-                val entry = tar.nextTarEntry ?: break
-                if (!entry.isFile) continue
-                val normalized = entry.name.replace('\\', '/')
-                check(!normalized.startsWith("/") && ".." !in normalized.split('/')) {
-                    "안전하지 않은 모델 경로입니다"
-                }
-                val leaf = normalized.substringAfterLast('/')
-                if (leaf !in allowed) continue
-                check(entry.size in 0..MAX_MOONSHINE_ENTRY_BYTES) {
-                    "모델 파일 크기가 허용 범위를 벗어났습니다: $leaf"
-                }
-                val output = File(staging, leaf)
-                check(!output.exists()) { "중복 모델 파일입니다: $leaf" }
-                FileOutputStream(output).use { sink ->
-                    val copied = copyChecked(tar, sink, cancellationCheck)
-                    check(copied == entry.size) { "모델 파일이 완전하지 않습니다: $leaf" }
-                    extractedBytes += copied
-                    check(extractedBytes <= MAX_MOONSHINE_TOTAL_BYTES) {
-                        "압축 해제 크기가 허용 범위를 초과했습니다"
-                    }
-                }
-            }
+        check(descriptor.requiredFiles.size == 1) { "단일 모델 파일 구성이 올바르지 않습니다" }
+        check(artifact.length() <= descriptor.approximateInstallBytes + INSTALL_SIZE_TOLERANCE_BYTES) {
+            "모델 크기가 허용 범위를 초과했습니다"
         }
-    }
-
-    private fun copyQwen(
-        artifact: File,
-        staging: File,
-        cancellationCheck: () -> Unit,
-    ) {
-        check(artifact.length() <= MAX_QWEN_BYTES) { "Qwen 모델 크기가 허용 범위를 초과했습니다" }
-        val destination = File(staging, "model.gguf")
+        val destination = File(staging, descriptor.requiredFiles.single())
         FileInputStream(artifact).use { source ->
             FileOutputStream(destination).use { sink ->
                 copyChecked(source, sink, cancellationCheck)
                 sink.fd.sync()
             }
         }
-        check(destination.length() == artifact.length()) { "Qwen 모델 복사가 완전하지 않습니다" }
+        check(destination.length() == artifact.length()) { "모델 파일 복사가 완전하지 않습니다" }
+    }
+
+    private fun extractTarBz2(
+        artifact: File,
+        staging: File,
+        descriptor: ModelDescriptor,
+        cancellationCheck: () -> Unit,
+    ) {
+        check(descriptor.archiveRoot.isNotBlank()) { "모델 archive root가 없습니다" }
+        var extractedBytes = 0L
+        FileInputStream(artifact).use { fileInput ->
+            BZip2CompressorInputStream(fileInput, true).use { bzip2 ->
+                TarArchiveInputStream(bzip2).use { tar ->
+                    while (true) {
+                        cancellationCheck()
+                        val entry = tar.nextTarEntry ?: break
+                        val name = entry.name.replace('\\', '/')
+                        check(!name.startsWith('/') && !name.split('/').any { it == ".." }) {
+                            "안전하지 않은 모델 archive 경로입니다"
+                        }
+                        check(!entry.isSymbolicLink && !entry.isLink) {
+                            "링크가 포함된 모델 archive는 설치할 수 없습니다"
+                        }
+                        if (entry.isDirectory || !name.startsWith("${descriptor.archiveRoot}/")) continue
+                        val relative = name.removePrefix("${descriptor.archiveRoot}/")
+                        if (relative !in descriptor.requiredFiles) continue
+                        val destination = File(staging, relative)
+                        check(destination.canonicalPath.startsWith(staging.canonicalPath + File.separator)) {
+                            "모델 archive가 설치 경로 밖으로 나가려고 합니다"
+                        }
+                        destination.parentFile?.mkdirs()
+                        FileOutputStream(destination).use { sink ->
+                            val buffer = ByteArray(DEFAULT_BUFFER_SIZE * 4)
+                            while (true) {
+                                cancellationCheck()
+                                val count = tar.read(buffer)
+                                if (count < 0) break
+                                extractedBytes += count
+                                check(extractedBytes <= descriptor.approximateInstallBytes + INSTALL_SIZE_TOLERANCE_BYTES) {
+                                    "압축 해제된 모델 크기가 허용 범위를 초과했습니다"
+                                }
+                                sink.write(buffer, 0, count)
+                            }
+                            sink.fd.sync()
+                        }
+                    }
+                }
+            }
+        }
     }
 
     private fun copyChecked(
@@ -163,8 +174,6 @@ class ModelInstaller(
     }
 
     private companion object {
-        const val MAX_MOONSHINE_ENTRY_BYTES = 80L * 1024 * 1024
-        const val MAX_MOONSHINE_TOTAL_BYTES = 120L * 1024 * 1024
-        const val MAX_QWEN_BYTES = 650L * 1024 * 1024
+        const val INSTALL_SIZE_TOLERANCE_BYTES = 16L * 1024 * 1024
     }
 }

@@ -11,6 +11,9 @@ import com.thinktank.recorder.ondevice.runtime.DeviceResourceGuard
 import com.thinktank.recorder.ondevice.runtime.NativeWorkload
 import com.thinktank.recorder.ondevice.runtime.ResourceArbiter
 import java.io.File
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
 
 class QwenSummaryEngine(
@@ -21,24 +24,44 @@ class QwenSummaryEngine(
     private val resourceGuard = DeviceResourceGuard(applicationContext)
     private val integrityVerifier = ModelIntegrityVerifier(modelStore)
     private val client = QwenInferenceClient(applicationContext)
+    private val inputReducer = QwenInputReducer()
+    private val compactor = LocalSummaryCompactor()
 
     override suspend fun summarize(transcript: String): LocalSummary {
         require(transcript.isNotBlank()) { "요약할 전사문이 없습니다" }
         return ResourceArbiter.withLease(NativeWorkload.QWEN_SUMMARY) {
-            withTimeout(MAX_TOTAL_TIME_MS) {
-                val descriptor = ModelCatalog.get(ModelId.QWEN_SUMMARY_KO)
-                check(modelStore.snapshot(descriptor).ready) {
-                    "Qwen 로컬 요약 모델이 설치되지 않았습니다"
+            try {
+                withTimeout(MAX_TOTAL_TIME_MS) {
+                    val descriptor = ModelCatalog.get(ModelId.QWEN_SUMMARY_KO)
+                    check(modelStore.snapshot(descriptor).ready) {
+                        "Qwen 로컬 요약 모델이 설치되지 않았습니다"
+                    }
+                    integrityVerifier.requireValid(descriptor)
+                    resourceGuard.requireQwenCapacity()
+                    val modelFile = File(modelStore.installDir(descriptor.id), "model.gguf")
+                    val promptInput = inputReducer.reduce(transcript)
+                    compactor.compact(
+                        summary = client.summarize(
+                            modelPath = modelFile.absolutePath,
+                            transcript = promptInput,
+                            originalSourceHash = sourceHash(transcript),
+                        ),
+                        transcript = transcript,
+                    )
                 }
-                integrityVerifier.requireValid(descriptor)
-                resourceGuard.requireQwenCapacity()
-                val modelFile = File(modelStore.installDir(descriptor.id), "model.gguf")
-                client.summarize(modelFile.absolutePath, transcript)
+            } catch (cancelled: CancellationException) {
+                // Cancellation handlers cannot wait. Hold the native lease for a bounded drain so
+                // Model deletion cannot overlap a still-alive Qwen worker.
+                withContext(NonCancellable) {
+                    client.awaitActiveDrain(PROCESS_DRAIN_TIMEOUT_MS)
+                }
+                throw cancelled
             }
         }
     }
 
     private companion object {
         const val MAX_TOTAL_TIME_MS = 120_000L
+        const val PROCESS_DRAIN_TIMEOUT_MS = 5_000L
     }
 }

@@ -17,18 +17,18 @@ class OnDeviceDatabaseMigrationTest {
     )
 
     @Test
-    fun migration2To3AddsOperationColumnsWithoutChangingExistingRows() {
-        helper.createDatabase(DATABASE_NAME, 2).use { db ->
+    fun migration3To4AddsMainRecordingSourceColumnsWithoutChangingExistingRows() {
+        helper.createDatabase(DATABASE_NAME, 3).use { db ->
             db.execSQL(
                 """
                 INSERT INTO ondevice_sessions (
                     id, createdAt, updatedAt, state, sttEngine, summaryEngine,
                     transcript, title, summary, actionItems, audioPath,
-                    summarySourceHash, summaryGeneratedAt, error, dataPolicy
+                    summarySourceHash, summaryGeneratedAt, error, operationToken, failureStage, dataPolicy
                 ) VALUES (
                     'legacy', 1, 1, 'TRANSCRIPT_READY', 'ANDROID_ON_DEVICE',
                     'EXTRACTIVE_KOTLIN', '원문', '', '', '', NULL, '', NULL,
-                    NULL, 'LOCAL_ONLY'
+                    NULL, NULL, NULL, 'LOCAL_ONLY'
                 )
                 """.trimIndent(),
             )
@@ -36,16 +36,19 @@ class OnDeviceDatabaseMigrationTest {
 
         helper.runMigrationsAndValidate(
             DATABASE_NAME,
-            3,
+            4,
             true,
-            OnDeviceDatabase.MIGRATION_2_3,
+            OnDeviceDatabase.MIGRATION_3_4,
         ).use { db ->
             db.query(
-                "SELECT operationToken, failureStage FROM ondevice_sessions WHERE id = 'legacy'",
+                "SELECT sourceType, sourceChunkId, sourceDisplayName, sourceDurationMs " +
+                    "FROM ondevice_sessions WHERE id = 'legacy'",
             ).use { cursor ->
                 assertTrue(cursor.moveToFirst())
-                assertTrue(cursor.isNull(0))
+                assertTrue(cursor.getString(0) == "LIVE_MIC")
                 assertTrue(cursor.isNull(1))
+                assertTrue(cursor.isNull(2))
+                assertTrue(cursor.isNull(3))
             }
         }
     }

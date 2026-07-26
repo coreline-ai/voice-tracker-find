@@ -22,6 +22,7 @@ import com.thinktank.recorder.next.data.local.RecordingDao
 import com.thinktank.recorder.next.data.local.RecordingSessionEntity
 import com.thinktank.recorder.next.data.local.RecordingState
 import com.thinktank.recorder.next.data.settings.AppPreferences
+import com.thinktank.recorder.next.data.storage.AppStorageMonitor
 import com.thinktank.recorder.ondevice.runtime.MicrophoneArbiter
 import com.thinktank.recorder.ondevice.runtime.MicrophoneOwner
 import dagger.hilt.android.AndroidEntryPoint
@@ -85,47 +86,64 @@ private class PcmWavCapture(
         AudioFormat.ENCODING_PCM_16BIT,
     ).also { check(it > 0) { "AudioRecord buffer를 만들 수 없습니다: $it" } }
         .coerceAtLeast(4_096)
-    private val recorder = AudioRecord.Builder()
-        .setAudioSource(audioSource)
-        .setAudioFormat(format)
-        .setBufferSizeInBytes(bufferSize * 2)
-        .build()
-        .also {
-            check(it.state == AudioRecord.STATE_INITIALIZED) {
-                "AudioRecord 초기화에 실패했습니다"
-            }
-        }
-    private val output = FileOutputStream(file)
+    private val recorder: AudioRecord
+    private val output: FileOutputStream
     private val worker: Thread
 
     init {
+        var createdRecorder: AudioRecord? = null
+        var createdOutput: FileOutputStream? = null
         try {
-            output.write(ByteArray(WAV_HEADER_SIZE))
-            recorder.startRecording()
-            check(recorder.recordingState == AudioRecord.RECORDSTATE_RECORDING) {
+            val audioRecord = AudioRecord.Builder()
+                .setAudioSource(audioSource)
+                .setAudioFormat(format)
+                .setBufferSizeInBytes(bufferSize * 2)
+                .build()
+            createdRecorder = audioRecord
+            check(audioRecord.state == AudioRecord.STATE_INITIALIZED) {
+                "AudioRecord 초기화에 실패했습니다"
+            }
+            val stream = FileOutputStream(file)
+            createdOutput = stream
+            recorder = audioRecord
+            output = stream
+            stream.write(ByteArray(WAV_HEADER_SIZE))
+            audioRecord.startRecording()
+            check(audioRecord.recordingState == AudioRecord.RECORDSTATE_RECORDING) {
                 "AudioRecord 시작에 실패했습니다"
             }
             running.set(true)
             worker = Thread(
                 {
-                    val buffer = ByteArray(bufferSize)
-                    while (running.get()) {
-                        val count = recorder.read(
-                            buffer,
-                            0,
-                            buffer.size,
-                            AudioRecord.READ_BLOCKING,
-                        )
-                        if (count > 0) {
-                            output.write(buffer, 0, count)
-                            amplitude.set(peakAmplitude(buffer, count))
-                        } else if (running.get()) {
-                            workerError.compareAndSet(
-                                null,
-                                IllegalStateException("AudioRecord read 실패: $count"),
+                    try {
+                        val buffer = ByteArray(bufferSize)
+                        while (running.get()) {
+                            val count = recorder.read(
+                                buffer,
+                                0,
+                                buffer.size,
+                                AudioRecord.READ_BLOCKING,
                             )
-                            running.set(false)
+                            when {
+                                count > 0 -> {
+                                    try {
+                                        output.write(buffer, 0, count)
+                                    } catch (error: Throwable) {
+                                        // A write failure corrupts the current WAV even when a
+                                        // concurrent stop has already flipped [running]. Keep it
+                                        // as the terminal cause instead of producing a READY file.
+                                        workerError.compareAndSet(null, error)
+                                        break
+                                    }
+                                    amplitude.set(peakAmplitude(buffer, count))
+                                }
+                                running.get() -> error("AudioRecord read 실패: $count")
+                            }
                         }
+                    } catch (error: Throwable) {
+                        if (running.get()) workerError.compareAndSet(null, error)
+                    } finally {
+                        running.set(false)
                     }
                 },
                 "thinktank-pcm-writer",
@@ -134,8 +152,12 @@ private class PcmWavCapture(
                 start()
             }
         } catch (error: Throwable) {
-            runCatching { recorder.release() }
-            runCatching { output.close() }
+            running.set(false)
+            createdRecorder?.let { active ->
+                runCatching { active.stop() }
+                runCatching { active.release() }
+            }
+            createdOutput?.let { runCatching { it.close() } }
             file.delete()
             throw error
         }
@@ -150,19 +172,35 @@ private class PcmWavCapture(
     override fun stop() {
         if (!stopped.compareAndSet(false, true)) return
         running.set(false)
-        runCatching { recorder.stop() }
-        worker.join(5_000)
-        check(!worker.isAlive) { "PCM writer 종료 시간이 초과했습니다" }
-        output.flush()
-        output.fd.sync()
-        output.close()
-        workerError.get()?.let { throw it }
-        writeWavHeader(file)
+        var failure: Throwable? = null
+        fun attempt(block: () -> Unit) {
+            runCatching(block).exceptionOrNull()?.let { error ->
+                if (failure == null) failure = error
+            }
+        }
+
+        attempt { recorder.stop() }
+        attempt { worker.join(5_000) }
+        if (worker.isAlive && failure == null) {
+            failure = IllegalStateException("PCM writer 종료 시간이 초과했습니다")
+        }
+        attempt { output.flush() }
+        attempt { output.fd.sync() }
+        attempt { output.close() }
+        workerError.get()?.let { error -> if (failure == null) failure = error }
+        if (failure == null) attempt { writeWavHeader(file) }
+        failure?.let { throw it }
     }
 
     override fun release() {
-        if (!stopped.get()) runCatching { stop() }
-        recorder.release()
+        var failure: Throwable? = null
+        if (!stopped.get()) {
+            runCatching { stop() }.exceptionOrNull()?.let { failure = it }
+        }
+        runCatching { recorder.release() }.exceptionOrNull()?.let { error ->
+            if (failure == null) failure = error
+        }
+        failure?.let { throw it }
     }
 
     private companion object {
@@ -220,11 +258,15 @@ class RecorderService : Service() {
     @Inject lateinit var preferences: AppPreferences
     @Inject lateinit var files: RecordingFileManager
     @Inject lateinit var runtime: RecordingRuntime
+    @Inject lateinit var storage: AppStorageMonitor
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
-    private lateinit var reconcileJob: Job
-    private lateinit var commandGate: RecorderCommandGate
+    private lateinit var commandActor: RecorderCommandActor
+    private val latestStartIntentId = AtomicInteger(0)
     private var recordingJob: Job? = null
+    private var activeStartId: Int? = null
+    private var reconciliationCompleted = false
+    private var reconciliationFailure: Throwable? = null
     private var captureEngine: CaptureEngine? = null
     private var currentPart: File? = null
     private var currentChunk: ChunkEntity? = null
@@ -234,49 +276,88 @@ class RecorderService : Service() {
 
     override fun onCreate() {
         super.onCreate()
-        reconcileJob = scope.launch {
-            files.reconcile(dao.unfinishedChunks()).forEach { dao.updateChunk(it) }
-        }
-        commandGate = RecorderCommandGate { reconcileJob.join() }
+        commandActor = RecorderCommandActor(scope, ::handleCommand)
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         when (intent?.action) {
-            ACTION_STOP -> scope.launch {
-                commandGate.run {
-                    recordingJob?.cancelAndJoin()
-                    recordingJob = null
-                    stopForeground(STOP_FOREGROUND_REMOVE)
-                    stopSelfResult(startId)
-                }
-            }
-
+            ACTION_STOP -> commandActor.send(RecorderServiceCommand.Stop(startId))
             ACTION_START -> {
                 runtime.clearCommandError()
+                latestStartIntentId.updateAndGet { previous -> maxOf(previous, startId) }
+                // Android requires foreground entry immediately after a microphone-service START.
+                // All mutable recorder state is still owned by the FIFO actor below.
                 startForeground(NOTIFICATION_ID, notification("녹음을 준비하고 있습니다"))
-                scope.launch {
-                    commandGate.run {
-                        if (recordingJob?.isActive == true) return@run
-                        recordingJob = scope.launch {
-                            try {
-                                runRecordingSession()
-                            } finally {
-                                if (recordingJob === coroutineContext[Job]) recordingJob = null
-                                stopForeground(STOP_FOREGROUND_REMOVE)
-                                stopSelfResult(startId)
-                            }
-                        }
-                    }
-                }
+                commandActor.send(RecorderServiceCommand.Start(startId))
             }
         }
         return START_NOT_STICKY
     }
 
     override fun onDestroy() {
+        commandActor.close()
         recordingJob?.cancel()
         scope.cancel()
         super.onDestroy()
+    }
+
+    private suspend fun handleCommand(command: RecorderServiceCommand) {
+        when (command) {
+            is RecorderServiceCommand.Start -> handleStart(command.startId)
+            is RecorderServiceCommand.Stop -> handleStop(command.startId)
+            is RecorderServiceCommand.RunnerCompleted -> handleRunnerCompleted(command.runner)
+        }
+    }
+
+    private suspend fun handleStart(startId: Int) {
+        activeStartId = startId
+        if (!reconciliationCompleted) {
+            reconciliationFailure = runCatching {
+                files.reconcile(dao.unfinishedChunks()).forEach { dao.updateChunk(it) }
+            }.exceptionOrNull()
+            reconciliationCompleted = true
+        }
+        reconciliationFailure?.let { error ->
+            val message = "기존 녹음 파일 복구에 실패했습니다: ${error.message.orEmpty()}"
+            runtime.reportCommandError(message)
+            updateNotification("녹음 파일 복구에 실패했습니다")
+            finishService(startId)
+            return
+        }
+        if (recordingJob?.isActive == true) return
+
+        lateinit var runner: Job
+        runner = scope.launch {
+            runRecordingSession()
+        }
+        recordingJob = runner
+        runner.invokeOnCompletion {
+            runCatching { commandActor.send(RecorderServiceCommand.RunnerCompleted(runner)) }
+        }
+    }
+
+    private suspend fun handleStop(startId: Int) {
+        val runner = recordingJob
+        recordingJob = null
+        activeStartId = null
+        runner?.cancelAndJoin()
+        finishService(startId)
+    }
+
+    private fun handleRunnerCompleted(runner: Job) {
+        if (recordingJob !== runner) return
+        recordingJob = null
+        val startId = activeStartId ?: return
+        activeStartId = null
+        finishService(startId)
+    }
+
+    private fun finishService(startId: Int) {
+        // A newer START may already have reached Android before this FIFO actor handles an
+        // earlier STOP/completion. Do not remove its foreground notification or stop service.
+        if (latestStartIntentId.get() > startId) return
+        stopForeground(STOP_FOREGROUND_REMOVE)
+        stopSelfResult(startId)
     }
 
     override fun onBind(intent: Intent?): IBinder? = null
@@ -293,7 +374,7 @@ class RecorderService : Service() {
         )
         var failure: String? = null
         try {
-            while (scope.isActive) {
+            while (coroutineContext.isActive) {
                 val settings = preferences.current()
                 val isInsideWindow = RecordingWindow.contains(
                     now = LocalTime.now(),
@@ -312,7 +393,7 @@ class RecorderService : Service() {
                 if (captureEngine == null) startChunk(id, settings.chunkMinutes)
                 val chunkStarted = SystemClock.elapsedRealtime()
                 var nextWindowCheckAt = chunkStarted + WINDOW_CHECK_MS
-                while (scope.isActive && captureEngine != null) {
+                while (coroutineContext.isActive && captureEngine != null) {
                     runtime.updateAmplitude(captureEngine?.maxAmplitude() ?: 0)
                     val nowElapsed = SystemClock.elapsedRealtime()
                     val elapsed = nowElapsed - chunkStarted
@@ -375,6 +456,11 @@ class RecorderService : Service() {
     @Suppress("DEPRECATION")
     private suspend fun startChunk(session: String, chunkMinutes: Int) {
         dao.setSessionState(session, RecordingState.PREPARING)
+        val storageCheck = storage.recordingCheck(chunkMinutes)
+        check(storageCheck.canStart) {
+            "저장공간이 부족합니다. 녹음 시작에는 최소 ${formatBytes(storageCheck.requiredBytes)}의 " +
+                "여유 공간이 필요합니다."
+        }
         val id = UUID.randomUUID().toString()
         var part = files.createPartFile(extension = "m4a", uuid = id).second
         var chunk = ChunkEntity(
@@ -433,9 +519,10 @@ class RecorderService : Service() {
                 runCatching { engine.release() }
             }
             captureEngine = null
-            files.quarantine(part)
+            val quarantined = files.quarantine(part)
             dao.updateChunk(
                 chunk.copy(
+                    path = quarantined.absolutePath,
                     state = ChunkState.FAILED,
                     lastError = error::class.simpleName ?: "PREPARE_FAILED",
                 ),
@@ -514,10 +601,11 @@ class RecorderService : Service() {
             return true
         } catch (error: Throwable) {
             runCatching { engine.release() }
-            if (part != null) files.quarantine(part)
+            val quarantined = part?.let { files.quarantine(it) }
             if (chunk != null) {
                 dao.updateChunk(
                     chunk.copy(
+                        path = quarantined?.absolutePath ?: chunk.path,
                         state = ChunkState.QUARANTINED,
                         lastError = error::class.simpleName ?: "FINALIZE_FAILED",
                     ),
@@ -594,6 +682,12 @@ class RecorderService : Service() {
     private fun formatElapsed(milliseconds: Long): String {
         val totalSeconds = milliseconds / 1000
         return "%02d:%02d".format(totalSeconds / 60, totalSeconds % 60)
+    }
+
+    private fun formatBytes(bytes: Long): String = when {
+        bytes >= 1024L * 1024L * 1024L -> "%.1f GB".format(bytes / (1024.0 * 1024.0 * 1024.0))
+        bytes >= 1024L * 1024L -> "%.0f MB".format(bytes / (1024.0 * 1024.0))
+        else -> "$bytes B"
     }
 
     companion object {

@@ -12,6 +12,7 @@ import android.speech.SpeechRecognizer
 import androidx.annotation.RequiresApi
 import com.thinktank.recorder.ondevice.api.LiveSttEngine
 import com.thinktank.recorder.ondevice.api.SpeechEvent
+import com.thinktank.recorder.ondevice.api.SttCaptureProfile
 import com.thinktank.recorder.ondevice.api.SttResult
 import com.thinktank.recorder.ondevice.api.TranscriptSegment
 import java.util.concurrent.CancellationException
@@ -44,12 +45,16 @@ class AndroidOnDeviceSpeechEngine(
     private val mainHandler = Handler(Looper.getMainLooper())
     private var recognizer: SpeechRecognizer? = null
     private var cancelCurrent: (() -> Unit)? = null
+    private var stopCurrent: (() -> Unit)? = null
 
     override fun isAvailable(): Boolean =
         Build.VERSION.SDK_INT >= Build.VERSION_CODES.S &&
             SpeechRecognizer.isOnDeviceRecognitionAvailable(applicationContext)
 
-    override suspend fun recognize(onProgress: (SpeechEvent) -> Unit): SttResult =
+    override suspend fun recognize(
+        profile: SttCaptureProfile,
+        onProgress: (SpeechEvent) -> Unit,
+    ): SttResult =
         withContext(Dispatchers.Main.immediate) {
             if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S) {
                 error("이 기기에 사용 가능한 온디바이스 음성 인식기가 없습니다")
@@ -58,16 +63,22 @@ class AndroidOnDeviceSpeechEngine(
                 "이 기기에 사용 가능한 온디바이스 음성 인식기가 없습니다"
             }
             releaseOnMain(cancel = true)
-            recognizeApi31(onProgress)
+            recognizeApi31(profile, onProgress)
         }
 
     @RequiresApi(Build.VERSION_CODES.S)
-    private suspend fun recognizeApi31(onProgress: (SpeechEvent) -> Unit): SttResult =
+    private suspend fun recognizeApi31(
+        profile: SttCaptureProfile,
+        onProgress: (SpeechEvent) -> Unit,
+    ): SttResult =
         suspendCancellableCoroutine { continuation ->
             var active: SpeechRecognizer? = null
+            var stopWatchdog: Runnable? = null
             val gate = TerminalResultGate<SttResult> { result ->
+                stopWatchdog?.let(mainHandler::removeCallbacks)
                 active?.let { releaseSpecific(it, cancel = result.isFailure) }
                 cancelCurrent = null
+                stopCurrent = null
                 continuation.resumeWith(result)
             }
             val listener = object : RecognitionListener {
@@ -128,18 +139,40 @@ class AndroidOnDeviceSpeechEngine(
                 active = created
                 recognizer = created
                 created.setRecognitionListener(listener)
+                val stopRequested = AtomicBoolean(false)
+                stopWatchdog = Runnable {
+                    gate.tryComplete(
+                        Result.failure(
+                            SpeechRecognitionException(
+                                SpeechRecognizer.ERROR_SPEECH_TIMEOUT,
+                                "음성 인식 종료 결과를 받지 못했습니다",
+                            ),
+                        ),
+                    )
+                }
                 cancelCurrent = {
                     gate.tryComplete(
                         Result.failure(CancellationException("온디바이스 음성 인식이 취소되었습니다")),
                     )
                 }
-                continuation.invokeOnCancellation {
-                    runOnMain {
-                        releaseSpecific(created, cancel = true)
-                        cancelCurrent = null
+                stopCurrent = {
+                    if (stopRequested.compareAndSet(false, true)) {
+                        runCatching { created.stopListening() }
+                        mainHandler.postDelayed(
+                            checkNotNull(stopWatchdog),
+                            STOP_WATCHDOG_MS,
+                        )
                     }
                 }
-                created.startListening(recognitionIntent())
+                continuation.invokeOnCancellation {
+                    runOnMain {
+                        mainHandler.removeCallbacks(stopWatchdog)
+                        releaseSpecific(created, cancel = true)
+                        cancelCurrent = null
+                        stopCurrent = null
+                    }
+                }
+                created.startListening(recognitionIntent(profile))
             } catch (error: Throwable) {
                 if (active != null) {
                     gate.tryComplete(Result.failure(error))
@@ -150,7 +183,7 @@ class AndroidOnDeviceSpeechEngine(
         }
 
     override fun stop() {
-        runOnMain { recognizer?.stopListening() }
+        runOnMain { stopCurrent?.invoke() ?: recognizer?.stopListening() }
     }
 
     override fun cancel() {
@@ -164,7 +197,7 @@ class AndroidOnDeviceSpeechEngine(
         cancel()
     }
 
-    private fun recognitionIntent() =
+    private fun recognitionIntent(profile: SttCaptureProfile) =
         Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
             putExtra(
                 RecognizerIntent.EXTRA_LANGUAGE_MODEL,
@@ -174,6 +207,12 @@ class AndroidOnDeviceSpeechEngine(
             putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, true)
             putExtra(RecognizerIntent.EXTRA_PREFER_OFFLINE, true)
             putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 1)
+            // The recognizer provider makes the final endpointing decision. This preference is
+            // used by the ViewModel's automatic re-arm loop to offer consistent user choices.
+            putExtra(
+                RecognizerIntent.EXTRA_SPEECH_INPUT_COMPLETE_SILENCE_LENGTH_MILLIS,
+                profile.silenceMillis,
+            )
         }
 
     private fun releaseSpecific(active: SpeechRecognizer, cancel: Boolean) {
@@ -186,6 +225,7 @@ class AndroidOnDeviceSpeechEngine(
     private fun releaseOnMain(cancel: Boolean) {
         val active = recognizer ?: return
         recognizer = null
+        stopCurrent = null
         if (cancel) runCatching { active.cancel() }
         runCatching { active.destroy() }
     }
@@ -214,5 +254,9 @@ class AndroidOnDeviceSpeechEngine(
         SpeechRecognizer.ERROR_SPEECH_TIMEOUT -> "음성이 감지되지 않았습니다"
         SpeechRecognizer.ERROR_TOO_MANY_REQUESTS -> "요청이 너무 많습니다. 잠시 후 다시 시도하세요"
         else -> "음성 인식 오류가 발생했습니다 ($code)"
+    }
+
+    private companion object {
+        const val STOP_WATCHDOG_MS = 5_000L
     }
 }

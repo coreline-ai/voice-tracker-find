@@ -16,7 +16,7 @@ class ModelOperationCoordinatorTest {
         val firstEntered = CompletableDeferred<Unit>()
         val releaseFirst = CompletableDeferred<Unit>()
         val first = async {
-            ModelOperationCoordinator.withLock(ModelId.MOONSHINE_KO) {
+            ModelOperationCoordinator.withLock(ModelId.QWEN_SUMMARY_KO) {
                 order += "first-enter"
                 firstEntered.complete(Unit)
                 releaseFirst.await()
@@ -25,7 +25,7 @@ class ModelOperationCoordinatorTest {
         }
         firstEntered.await()
         val second = async {
-            ModelOperationCoordinator.withLock(ModelId.MOONSHINE_KO) {
+            ModelOperationCoordinator.withLock(ModelId.QWEN_SUMMARY_KO) {
                 order += "second-enter"
             }
         }

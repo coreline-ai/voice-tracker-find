@@ -1,13 +1,13 @@
 package com.thinktank.recorder.ondevice.modelpack
 
 enum class ModelId {
-    MOONSHINE_KO,
     QWEN_SUMMARY_KO,
+    SENSEVOICE_STT_KO,
 }
 
-enum class ModelPackaging {
+enum class ModelArtifactFormat {
+    SINGLE_FILE,
     TAR_BZ2,
-    SINGLE_GGUF,
 }
 
 data class ModelDescriptor(
@@ -20,31 +20,13 @@ data class ModelDescriptor(
     val exactArtifactBytes: Long,
     val approximateDownloadBytes: Long,
     val approximateInstallBytes: Long,
-    val packaging: ModelPackaging,
     val requiredFiles: Set<String>,
+    val artifactFormat: ModelArtifactFormat = ModelArtifactFormat.SINGLE_FILE,
+    val archiveRoot: String = "",
 )
 
 object ModelCatalog {
     val models: List<ModelDescriptor> = listOf(
-        ModelDescriptor(
-            id = ModelId.MOONSHINE_KO,
-            displayName = "Moonshine 한국어 STT",
-            version = "2026.02.27",
-            description = "한국어 음성을 기기에서 텍스트로 변환합니다.",
-            downloadUrl = "https://github.com/k2-fsa/sherpa-onnx/releases/download/" +
-                "asr-models/sherpa-onnx-moonshine-tiny-ko-quantized-2026-02-27.tar.bz2",
-            expectedSha256 = "d3b6c5390a7859c9ef20ff4f20b0766fcbad1dc06c0f509fe4840a3a302112dc",
-            exactArtifactBytes = 49_153_415L,
-            approximateDownloadBytes = 49_153_415L,
-            approximateInstallBytes = 70_000_000L,
-            packaging = ModelPackaging.TAR_BZ2,
-            requiredFiles = setOf(
-                "encoder_model.ort",
-                "decoder_model_merged.ort",
-                "tokens.txt",
-                "LICENSE",
-            ),
-        ),
         ModelDescriptor(
             id = ModelId.QWEN_SUMMARY_KO,
             displayName = "Qwen 로컬 AI 요약",
@@ -56,10 +38,27 @@ object ModelCatalog {
             exactArtifactBytes = 563_036_064L,
             approximateDownloadBytes = 563_036_064L,
             approximateInstallBytes = 563_000_000L,
-            packaging = ModelPackaging.SINGLE_GGUF,
             requiredFiles = setOf("model.gguf"),
         ),
+        ModelDescriptor(
+            id = ModelId.SENSEVOICE_STT_KO,
+            displayName = "SenseVoice 한국어 파일 STT",
+            version = "int8-2024-07-17",
+            description = "완료 녹음 파일을 기기 안에서 전사하는 한국어 STT 모델입니다.",
+            downloadUrl = "https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/" +
+                "sherpa-onnx-sense-voice-zh-en-ja-ko-yue-int8-2024-07-17.tar.bz2",
+            expectedSha256 = "7d1efa2138a65b0b488df37f8b89e3d91a60676e416f515b952358d83dfd347e",
+            exactArtifactBytes = 163_002_883L,
+            approximateDownloadBytes = 163_002_883L,
+            approximateInstallBytes = 230_000_000L,
+            requiredFiles = setOf("model.int8.onnx", "tokens.txt"),
+            artifactFormat = ModelArtifactFormat.TAR_BZ2,
+            archiveRoot = "sherpa-onnx-sense-voice-zh-en-ja-ko-yue-int8-2024-07-17",
+        ),
     )
+
+    /** Every optional model is explicitly installed and managed from the Local AI tab. */
+    val userManagedModels: List<ModelDescriptor> = models
 
     fun get(id: ModelId): ModelDescriptor =
         requireNotNull(models.firstOrNull { it.id == id }) { "알 수 없는 모델: $id" }

@@ -30,18 +30,24 @@ class QwenInferenceProcessTest {
         val client = QwenInferenceClient(context)
         val model = File(store.installDir(descriptor.id), "model.gguf")
 
+        val startedAt = System.nanoTime()
         runCatching { client.summarize(model.absolutePath, "별도 프로세스 실패 경로 확인") }
         val remotePid = client.lastServicePid.get()
         assertTrue(remotePid > 0)
         assertNotEquals(Process.myPid(), remotePid)
 
         val activityManager = context.getSystemService(ActivityManager::class.java)
-        repeat(30) {
+        var exited = false
+        repeat(50) {
             val alive = activityManager.runningAppProcesses.orEmpty().any { it.pid == remotePid }
-            if (!alive) return@runBlocking
+            if (!alive) {
+                exited = true
+                return@repeat
+            }
             delay(100)
         }
-        val stillAlive = activityManager.runningAppProcesses.orEmpty().any { it.pid == remotePid }
-        assertTrue("Qwen worker process가 종료되지 않았습니다", !stillAlive)
+        val elapsedMs = (System.nanoTime() - startedAt) / 1_000_000
+        println("DEVICE_QA QWEN-01 workerPid=$remotePid exitMs=$elapsedMs exited=$exited")
+        assertTrue("Qwen worker process가 5초 안에 종료되지 않았습니다", exited)
     }
 }

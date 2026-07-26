@@ -25,12 +25,14 @@ import java.io.FileOutputStream
 import java.io.IOException
 import java.net.UnknownHostException
 import java.security.MessageDigest
+import java.util.concurrent.TimeUnit
 import javax.net.ssl.SSLHandshakeException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
+import okhttp3.Dns
 import okhttp3.OkHttpClient
 import okhttp3.Request
 
@@ -47,6 +49,7 @@ class ModelDownloadWorker(
             ?: return@withContext Result.failure(errorData("모델 식별자가 없습니다"))
         val descriptor = ModelCatalog.get(id)
         ModelOperationCoordinator.withLock(id) {
+            store.recoverInterruptedInstall(id)
             installLocked(id, descriptor)
         }
     }
@@ -54,7 +57,7 @@ class ModelDownloadWorker(
     private suspend fun installLocked(id: ModelId, descriptor: ModelDescriptor): Result {
         if (!NativeRuntimeCapabilities.current().supported) {
             return Result.failure(
-                errorData("Moonshine/Qwen 모델은 arm64 64비트 기기에서만 설치할 수 있습니다"),
+                errorData("로컬 AI 모델은 arm64 64비트 기기에서만 설치할 수 있습니다"),
             )
         }
         if (store.snapshot(descriptor).ready) {
@@ -69,8 +72,19 @@ class ModelDownloadWorker(
         return try {
             ensureStorage(descriptor, partial.length())
             val sourceUri = inputData.getString(KEY_SOURCE_URI)
-            if (sourceUri.isNullOrBlank()) {
-                download(descriptor, partial)
+            // A completed, pinned artifact may remain after an app update interrupted only
+            // extraction. Verify it locally and continue without opening a socket or requiring
+            // Wi-Fi. The later SHA-256 check is the authoritative trust boundary.
+            val reusableLocalArtifact = sourceUri.isNullOrBlank() &&
+                hasCompleteArtifactFile(partial, descriptor.exactArtifactBytes) &&
+                sha256(partial) == descriptor.expectedSha256
+            if (reusableLocalArtifact) {
+                setProgress(progressData(descriptor, partial.length(), partial.length(), STATUS_VERIFYING))
+                updateNotification(descriptor, partial.length(), partial.length(), "다운로드 파일 확인 완료")
+            } else if (sourceUri.isNullOrBlank()) {
+                val wifi = WifiOnlyDownloadPolicy.validatedWifi(applicationContext)
+                    ?: return Result.retry()
+                download(descriptor, partial, wifi)
             } else {
                 importFromUri(descriptor, Uri.parse(sourceUri), partial)
             }
@@ -100,6 +114,9 @@ class ModelDownloadWorker(
             )
         } catch (cancelled: CancellationException) {
             throw cancelled
+        } catch (wifiRequired: WifiRequiredException) {
+            // Preserve the partial artifact. A future run again checks and binds Wi-Fi.
+            Result.retry()
         } catch (error: Throwable) {
             if (error is ArtifactValidationException) {
                 partial.delete()
@@ -113,16 +130,29 @@ class ModelDownloadWorker(
     override suspend fun getForegroundInfo(): ForegroundInfo {
         val id = inputData.getString(KEY_MODEL_ID)
             ?.let { runCatching { ModelId.valueOf(it) }.getOrNull() }
-            ?: ModelId.MOONSHINE_KO
+            ?: ModelId.QWEN_SUMMARY_KO
         val descriptor = ModelCatalog.get(id)
         createNotificationChannel()
         return foregroundInfo(descriptor, 0, descriptor.approximateDownloadBytes)
     }
 
-    private suspend fun download(descriptor: ModelDescriptor, target: File) {
+    private suspend fun download(
+        descriptor: ModelDescriptor,
+        target: File,
+        wifi: android.net.Network,
+    ) {
         val client = OkHttpClient.Builder()
+            .socketFactory(wifi.socketFactory)
+            .dns(object : Dns {
+                override fun lookup(hostname: String) = wifi.getAllByName(hostname).toList()
+            })
             .followRedirects(true)
             .followSslRedirects(true)
+            // Large model CDNs can pause a response for longer than OkHttp's 10-second default.
+            // Keep the download resumable instead of failing a partially received 563 MB model.
+            .connectTimeout(CONNECT_TIMEOUT_SECONDS, TimeUnit.SECONDS)
+            .readTimeout(MODEL_READ_TIMEOUT_MINUTES, TimeUnit.MINUTES)
+            .writeTimeout(MODEL_READ_TIMEOUT_MINUTES, TimeUnit.MINUTES)
             .addNetworkInterceptor { chain ->
                 val host = chain.request().url.host.lowercase()
                 if (!isAllowedModelHost(host)) {
@@ -202,6 +232,7 @@ class ModelDownloadWorker(
                                 sink = sink,
                                 initial = existing,
                                 total = descriptor.exactArtifactBytes,
+                                wifi = wifi,
                             )
                         }
                     }
@@ -239,6 +270,7 @@ class ModelDownloadWorker(
         sink: FileOutputStream,
         initial: Long,
         total: Long,
+        wifi: android.net.Network? = null,
     ) {
         val buffer = ByteArray(DEFAULT_BUFFER_SIZE * 4)
         val sizeGuard = ExactArtifactSizeGuard(descriptor.exactArtifactBytes, initial)
@@ -248,6 +280,9 @@ class ModelDownloadWorker(
         val startedAt = SystemClock.elapsedRealtime()
         while (true) {
             currentCoroutineContext().ensureActive()
+            if (wifi != null && !WifiOnlyDownloadPolicy.isStillValidatedWifi(applicationContext, wifi)) {
+                throw WifiRequiredException()
+            }
             val count = source.read(buffer)
             if (count < 0) break
             sizeGuard.accept(count)
@@ -461,6 +496,8 @@ class ModelDownloadWorker(
         private const val CHANNEL_ID = "ondevice-models"
         private const val PROGRESS_STEP_BYTES = 1024L * 1024
         private const val STORAGE_HEADROOM_BYTES = 128L * 1024 * 1024
+        private const val CONNECT_TIMEOUT_SECONDS = 30L
+        private const val MODEL_READ_TIMEOUT_MINUTES = 2L
         private val ALLOWED_MODEL_HOSTS = setOf(
             "github.com",
             "release-assets.githubusercontent.com",
@@ -481,5 +518,9 @@ class ModelDownloadWorker(
     private data class TransferMetrics(
         val bytesPerSecond: Long,
         val etaSeconds: Long,
+    )
+
+    private class WifiRequiredException : IOException(
+        "Wi-Fi 연결이 끊겨 모델 다운로드를 일시정지했습니다",
     )
 }

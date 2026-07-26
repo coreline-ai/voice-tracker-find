@@ -36,4 +36,28 @@ class QwenOutputParserTest {
         }
         assertTrue(failure.isFailure)
     }
+
+    @Test
+    fun preservesCompactBulletsAndCapsTheThird() {
+        val source = "쇼핑쇼츠 쿠팡 여성 의류 수익 경쟁 사례 영상 강의 판매 고객 전환 운영 전략"
+        val raw = """
+            {
+              "title": "쇼핑쇼츠 운영 전략",
+              "bullets": [
+                "쇼핑쇼츠 영상으로 고객 전환을 설명한다.",
+                "쿠팡과의 경쟁 구도를 사례로 든다.",
+                "여성 의류 수익 사례를 중심으로 소개한다.",
+                "강의 판매와 영상 콘텐츠를 연결한다.",
+                "네 번째 항목은 저장하지 않는다."
+              ],
+              "actionItems": []
+            }
+        """.trimIndent()
+
+        val result = QwenOutputParser.parse(raw, source)
+
+        assertEquals(2, result.bullets.size)
+        assertEquals("쇼핑쇼츠 영상으로 고객 전환을 설명한다.", result.bullets.first())
+        assertEquals("쿠팡과의 경쟁 구도를 사례로 든다.", result.bullets.last())
+    }
 }

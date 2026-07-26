@@ -167,6 +167,121 @@ class RecordingDaoTest {
     }
 
     @Test
+    fun onDeviceAnalysisCandidatesRequireACompletedVerifiedOriginal() = runBlocking {
+        dao.upsertSession(
+            RecordingSessionEntity("session", RecordingState.STOPPED, startedAt = 1),
+        )
+        val verified = ChunkEntity(
+            id = "verified",
+            sessionId = "session",
+            uploadId = "verified-upload",
+            path = "/tmp/verified.m4a",
+            state = ChunkState.UPLOADED,
+            createdAt = 10,
+            durationMs = 1_000,
+            sizeBytes = 100,
+            sha256 = "f".repeat(64),
+        )
+        dao.insertChunk(verified)
+        dao.insertChunk(
+            verified.copy(
+                id = "recording",
+                uploadId = "recording-upload",
+                path = "/tmp/recording.m4a.part",
+                state = ChunkState.RECORDING,
+                createdAt = 11,
+            ),
+        )
+        dao.insertChunk(
+            verified.copy(
+                id = "no-receipt",
+                uploadId = "no-receipt-upload",
+                path = "/tmp/no-receipt.m4a",
+                sha256 = null,
+                createdAt = 12,
+            ),
+        )
+
+        assertEquals(
+            listOf("verified"),
+            dao.observeOnDeviceAnalysisCandidates(10).first().map { it.id },
+        )
+    }
+
+    @Test
+    fun syncQueueKeepsFailedAndConflictVisibleButOnlyFailedCanBeRequeued() = runBlocking {
+        dao.upsertSession(
+            RecordingSessionEntity("session", RecordingState.STOPPED, startedAt = 1),
+        )
+        val base = ChunkEntity(
+            id = "retry",
+            sessionId = "session",
+            uploadId = "retry-upload",
+            path = "/tmp/retry.m4a",
+            state = ChunkState.FAILED,
+            createdAt = 2,
+            sha256 = "e".repeat(64),
+            lastError = "NETWORK_ERROR",
+        )
+        dao.insertChunk(base)
+        dao.insertChunk(
+            base.copy(
+                id = "conflict",
+                uploadId = "conflict-upload",
+                path = "/tmp/conflict.m4a",
+                state = ChunkState.CONFLICT,
+                createdAt = 3,
+                lastError = "SERVER_RECEIPT_MISMATCH",
+            ),
+        )
+
+        assertEquals(
+            listOf("conflict", "retry"),
+            dao.observeSyncQueue(10).first().map { it.id },
+        )
+        assertEquals(1, dao.requeueForManualRetry("retry"))
+        assertEquals(ChunkState.READY, dao.chunk("retry")?.state)
+        assertNull(dao.chunk("retry")?.lastError)
+        assertEquals(0, dao.requeueForManualRetry("conflict"))
+        assertEquals(ChunkState.CONFLICT, dao.chunk("conflict")?.state)
+    }
+
+    @Test
+    fun deletingStateCanRecoverWithoutExposingAnActiveUploadToDeletion() = runBlocking {
+        dao.upsertSession(
+            RecordingSessionEntity("session", RecordingState.STOPPED, startedAt = 1),
+        )
+        dao.insertChunk(
+            ChunkEntity(
+                id = "terminal",
+                sessionId = "session",
+                uploadId = "terminal-upload",
+                path = "/tmp/terminal.m4a",
+                state = ChunkState.FAILED,
+                createdAt = 2,
+            ),
+        )
+        dao.insertChunk(
+            ChunkEntity(
+                id = "active",
+                sessionId = "session",
+                uploadId = "active-upload",
+                path = "/tmp/active.m4a",
+                state = ChunkState.UPLOADING,
+                createdAt = 3,
+                claimOwner = "worker",
+            ),
+        )
+
+        assertEquals(1, dao.markDeleting("terminal"))
+        assertEquals(ChunkState.DELETING, dao.chunk("terminal")?.state)
+        assertEquals(0, dao.markDeleting("active"))
+        assertEquals(1, dao.failDeletingChunk("terminal", "DELETE_INTERRUPTED"))
+        assertEquals(ChunkState.FAILED, dao.chunk("terminal")?.state)
+        assertEquals("DELETE_INTERRUPTED", dao.chunk("terminal")?.lastError)
+    }
+
+    @Test
     fun updatingNoteDoesNotDeleteItsPersistedConflict() = runBlocking {
         val original = NoteEntity(
             serverId = "note",

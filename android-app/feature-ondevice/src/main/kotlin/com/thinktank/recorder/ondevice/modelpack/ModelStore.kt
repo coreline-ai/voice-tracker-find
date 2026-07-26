@@ -17,6 +17,10 @@ class ModelStore(context: Context) {
 
     fun installDir(id: ModelId): File = File(root, id.name.lowercase())
 
+    fun stagingDir(id: ModelId): File = File(root, ".staging-${id.name.lowercase()}")
+
+    fun backupDir(id: ModelId): File = File(root, ".backup-${id.name.lowercase()}")
+
     fun partialFile(id: ModelId): File = File(downloadRoot, "${id.name.lowercase()}.part")
 
     fun etagFile(id: ModelId): File = File(downloadRoot, "${id.name.lowercase()}.etag")
@@ -31,15 +35,19 @@ class ModelStore(context: Context) {
         }.getOrNull()
         val versionMatches = markerJson?.optString("version") == descriptor.version
         val hashMatches = markerJson?.optString("sourceSha256") == descriptor.expectedSha256
-        val manifestNames = markerJson?.optJSONArray("files")?.let { files ->
-            buildSet {
+        val manifestFiles = markerJson?.optJSONArray("files")?.let { files ->
+            buildMap {
                 for (index in 0 until files.length()) {
-                    files.optJSONObject(index)?.optString("name")?.let(::add)
+                    val entry = files.optJSONObject(index) ?: continue
+                    val name = entry.optString("name")
+                    val size = entry.optLong("size", -1L)
+                    if (name.isNotBlank() && size >= 0) put(name, size)
                 }
             }
         }.orEmpty()
-        val filesReady = descriptor.requiredFiles.all {
-            File(dir, it).isFile && it in manifestNames
+        val filesReady = descriptor.requiredFiles.all { name ->
+            val file = File(dir, name)
+            file.isFile && manifestFiles[name] == file.length()
         }
         return InstalledModel(
             descriptor = descriptor,
@@ -51,12 +59,32 @@ class ModelStore(context: Context) {
         )
     }
 
+    /**
+     * Restores the previously active model after a process death during staging -> target swap.
+     * Callers must hold [ModelOperationCoordinator]'s lock for this id.
+     */
+    fun recoverInterruptedInstall(id: ModelId) {
+        val target = installDir(id)
+        val backup = backupDir(id)
+        val staging = stagingDir(id)
+        when {
+            !target.exists() && backup.isDirectory -> {
+                check(backup.renameTo(target)) { "중단된 모델 설치의 backup을 복원하지 못했습니다" }
+            }
+            target.exists() && backup.exists() -> backup.deleteRecursively()
+        }
+        // A staging directory is never active. It is safe to discard after preserving target or
+        // backup above; a later download/install starts from a verified artifact again.
+        if (staging.exists()) staging.deleteRecursively()
+    }
+
     fun delete(id: ModelId) {
         installDir(id).deleteRecursively()
         partialFile(id).delete()
         etagFile(id).delete()
-        File(root, ".staging-${id.name.lowercase()}").deleteRecursively()
-        File(root, ".backup-${id.name.lowercase()}").deleteRecursively()
+        stagingDir(id).deleteRecursively()
+        backupDir(id).deleteRecursively()
+        ModelIntegrityVerifier.invalidate(id)
     }
 
     fun modelRoot(): File = root

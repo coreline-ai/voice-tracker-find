@@ -208,4 +208,22 @@ class ReceiverApiTest {
         assertEquals(413, error.status)
         assertEquals("RESPONSE_TOO_LARGE", error.code)
     }
+
+    @Test
+    fun redirectDoesNotSendSecondRequestOrBearerToken() = runBlocking {
+        server.enqueue(
+            MockResponse()
+                .setResponseCode(302)
+                .setHeader("Location", server.url("/other")),
+        )
+
+        val error = runCatching { api.listNotes(settings) }.exceptionOrNull()
+
+        assertTrue(error is ApiException)
+        assertEquals(302, (error as ApiException).status)
+        assertEquals("Bearer secret-token", server.takeRequest().getHeader("Authorization"))
+        assertEquals(1, server.requestCount)
+    }
+
+
 }

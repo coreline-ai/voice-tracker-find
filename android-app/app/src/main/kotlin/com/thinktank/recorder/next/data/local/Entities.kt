@@ -26,6 +26,7 @@ object ChunkState {
     const val CONFLICT = "CONFLICT"
     const val QUARANTINED = "QUARANTINED"
     const val FAILED = "FAILED"
+    const val DELETING = "DELETING"
 }
 
 object NoteSyncState {
@@ -153,4 +154,3 @@ data class SyncCursorEntity(
     val lastUploadAt: Long? = null,
     val lastError: String? = null,
 )
-

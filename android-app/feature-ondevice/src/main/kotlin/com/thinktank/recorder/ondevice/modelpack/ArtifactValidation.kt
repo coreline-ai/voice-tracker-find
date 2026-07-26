@@ -1,6 +1,16 @@
 package com.thinktank.recorder.ondevice.modelpack
 
+import java.io.File
+
 internal class ArtifactValidationException(message: String) : IllegalStateException(message)
+
+/**
+ * A full artifact can be installed locally after an app update interrupted the extraction phase.
+ * Size alone is deliberately not treated as "installed"; the worker still verifies SHA-256 before
+ * activating it. It is only a safe, cheap gate for scheduling that local recovery work.
+ */
+internal fun hasCompleteArtifactFile(artifact: File, expectedBytes: Long): Boolean =
+    artifact.isFile && artifact.length() == expectedBytes
 
 internal class ExactArtifactSizeGuard(
     private val expectedBytes: Long,

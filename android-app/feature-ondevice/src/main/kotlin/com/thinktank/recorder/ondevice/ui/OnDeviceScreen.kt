@@ -9,20 +9,24 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.text.selection.SelectionContainer
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.GraphicEq
@@ -33,7 +37,6 @@ import androidx.compose.material.icons.filled.Security
 import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material.icons.filled.UploadFile
 import androidx.compose.material3.Button
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.FilledTonalButton
@@ -42,6 +45,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
@@ -49,6 +53,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -59,8 +64,10 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -70,10 +77,12 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.thinktank.recorder.ondevice.api.OnDeviceSessionState
-import com.thinktank.recorder.ondevice.api.SttEngineType
+import com.thinktank.recorder.ondevice.api.MainRecordingSource
+import com.thinktank.recorder.ondevice.api.SttCaptureProfile
 import com.thinktank.recorder.ondevice.api.SummaryEngineType
 import com.thinktank.recorder.ondevice.data.OnDeviceSessionEntity
 import com.thinktank.recorder.ondevice.modelpack.ModelId
+import com.thinktank.recorder.ondevice.stt.SenseVoiceFileSttAvailability
 import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
@@ -82,16 +91,18 @@ import java.time.format.DateTimeFormatter
 fun OnDeviceScreen(
     state: OnDeviceUiState,
     mainRecorderActive: Boolean,
-    onSelectStt: (SttEngineType) -> Unit,
+    onSelectMainRecording: (String) -> Unit,
+    onTranscribeSelectedRecording: () -> Unit,
+    onSelectSttProfile: (SttCaptureProfile) -> Unit,
     onSelectSummary: (SummaryEngineType) -> Unit,
     onStartListening: () -> Unit,
     onStopListening: () -> Unit,
     onCancelListening: () -> Unit,
     onHostStopped: () -> Unit,
+    onClearMessage: () -> Unit,
     onSummarize: (String) -> Unit,
-    onRetryTranscription: (String) -> Unit,
     onDeleteSession: (String) -> Unit,
-    onDownloadModel: (ModelId, Boolean) -> Unit,
+    onDownloadModel: (ModelId) -> Unit,
     onImportModel: (ModelId, android.net.Uri) -> Unit,
     onPauseModel: (ModelId) -> Unit,
     onDeleteModel: (ModelId) -> Unit,
@@ -102,9 +113,7 @@ fun OnDeviceScreen(
     val lifecycleOwner = LocalLifecycleOwner.current
     val latestHostStopped by rememberUpdatedState(onHostStopped)
     var pendingImport by remember { mutableStateOf<ModelId?>(null) }
-    var wifiOnly by rememberSaveable { mutableStateOf(true) }
-    var moonshineLicenseAccepted by rememberSaveable { mutableStateOf(false) }
-    var showMoonshineLicense by remember { mutableStateOf(false) }
+    var sourcePickerShown by rememberSaveable { mutableStateOf(false) }
     val permissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission(),
     ) { granted ->
@@ -130,8 +139,9 @@ fun OnDeviceScreen(
     }
 
     LazyColumn(
-        modifier = modifier.fillMaxSize(),
+        modifier = modifier.fillMaxSize().testTag("ondevice-scroll"),
         verticalArrangement = Arrangement.spacedBy(18.dp),
+        contentPadding = PaddingValues(bottom = 128.dp),
     ) {
         item {
             Hero(heroImageRes)
@@ -139,61 +149,18 @@ fun OnDeviceScreen(
         item {
             PrivacyBanner(Modifier.padding(horizontal = 20.dp))
         }
-        state.message?.let { message ->
-            item {
-                Surface(
-                    color = MaterialTheme.colorScheme.secondaryContainer,
-                    shape = RoundedCornerShape(16.dp),
-                    modifier = Modifier.padding(horizontal = 20.dp),
-                ) {
-                    Text(
-                        message,
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSecondaryContainer,
-                        modifier = Modifier.padding(16.dp),
-                    )
-                }
-            }
-        }
         item {
             Column(Modifier.padding(horizontal = 20.dp)) {
-                SectionTitle("음성 인식", "사용할 온디바이스 STT 엔진을 선택하세요.")
-                Spacer(Modifier.height(10.dp))
-                EngineChoice(
-                    title = "시스템 온디바이스 STT",
-                    description = if (state.systemSttAvailable) {
-                        "설치 없이 라이브 한국어 받아쓰기"
-                    } else {
-                        "이 기기에서 사용할 수 없음"
-                    },
-                    selected = state.selectedStt == SttEngineType.ANDROID_ON_DEVICE,
-                    available = state.systemSttAvailable,
-                    onClick = { onSelectStt(SttEngineType.ANDROID_ON_DEVICE) },
-                )
+                SectionTitle("음성 인식", "실시간은 시스템 STT, 완료 녹음은 SenseVoice 로컬 STT로 처리합니다.")
                 Spacer(Modifier.height(8.dp))
-                val moonshineReady = state.models
-                    .firstOrNull { it.descriptor.id == ModelId.MOONSHINE_KO }
-                    ?.status == ModelUiStatus.READY
-                EngineChoice(
-                    title = "Moonshine 한국어 STT",
-                    description = if (!state.nativeAiAvailable) {
-                        state.nativeAiUnavailableReason ?: "이 기기에서 사용할 수 없음"
-                    } else if (moonshineReady) {
-                        "모델 설치됨 · 독립 로컬 음성 인식"
-                    } else {
-                        "약 47MB 다운로드 · 설치 후 약 69MB"
-                    },
-                    selected = state.selectedStt == SttEngineType.MOONSHINE_LOCAL,
-                    available = state.nativeAiAvailable,
-                    onClick = { onSelectStt(SttEngineType.MOONSHINE_LOCAL) },
+                SystemSttCard(available = state.systemSttAvailable)
+                Spacer(Modifier.height(18.dp))
+                SectionTitle(
+                    "연속 전사 기준",
+                    "문장이 확정되면 자동으로 다시 듣습니다. 기기 인식기가 실제 무음 시점을 판단합니다.",
                 )
-            }
-        }
-        item {
-            Column(Modifier.padding(horizontal = 20.dp)) {
-                SectionTitle("요약 방식", "전사 후 실행할 로컬 처리 방식을 선택하세요.")
                 Spacer(Modifier.height(10.dp))
-                SummaryChoices(state, onSelectSummary)
+                SttCaptureChoices(state, onSelectSttProfile)
             }
         }
         item {
@@ -216,31 +183,69 @@ fun OnDeviceScreen(
             )
         }
         item {
+            MainRecordingImportCard(
+                state = state,
+                mainRecorderActive = mainRecorderActive,
+                onOpenPicker = { sourcePickerShown = true },
+                onTranscribe = onTranscribeSelectedRecording,
+                modifier = Modifier.padding(horizontal = 20.dp),
+            )
+        }
+        state.message?.let { message ->
+            item {
+                Surface(
+                    color = MaterialTheme.colorScheme.secondaryContainer,
+                    shape = RoundedCornerShape(16.dp),
+                    modifier = Modifier.padding(horizontal = 20.dp),
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.padding(start = 16.dp, end = 4.dp, top = 6.dp, bottom = 6.dp),
+                    ) {
+                        Text(
+                            message,
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSecondaryContainer,
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.weight(1f),
+                        )
+                        IconButton(onClick = onClearMessage) {
+                            Icon(Icons.Default.Close, contentDescription = "알림 닫기")
+                        }
+                    }
+                }
+            }
+        }
+        item {
+            Column(Modifier.padding(horizontal = 20.dp)) {
+                SectionTitle("요약 방식", "전사 후 적용할 기기 내 처리 방식을 고르세요.")
+                Spacer(Modifier.height(10.dp))
+                SummaryChoices(state, onSelectSummary)
+            }
+        }
+        item {
             Column(Modifier.padding(horizontal = 20.dp)) {
                 Row(
                     Modifier.fillMaxWidth(),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Column(Modifier.weight(1f)) {
-                        SectionTitle("AI 모델 관리", "모델 파일만 내려받고 추론은 기기에서 실행합니다.")
+                        SectionTitle("로컬 모델 관리", "파일 전사와 요약은 기기에서 실행합니다.")
                     }
-                    Text("Wi-Fi만", style = MaterialTheme.typography.labelMedium)
-                    Switch(checked = wifiOnly, onCheckedChange = { wifiOnly = it })
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(10.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Text("Wi‑Fi 전용", style = MaterialTheme.typography.labelMedium)
+                    }
                 }
                 Spacer(Modifier.height(10.dp))
                 state.models.forEach { model ->
                     ModelCard(
                         model = model,
-                        wifiOnly = wifiOnly,
                         installationAvailable = state.nativeAiAvailable,
-                        licenseAccepted = model.descriptor.id != ModelId.MOONSHINE_KO ||
-                            moonshineLicenseAccepted,
-                        onReadLicense = {
-                            if (model.descriptor.id == ModelId.MOONSHINE_KO) {
-                                showMoonshineLicense = true
-                            }
-                        },
-                        onDownload = { onDownloadModel(model.descriptor.id, wifiOnly) },
+                        onDownload = { onDownloadModel(model.descriptor.id) },
                         onImport = {
                             pendingImport = model.descriptor.id
                             fileLauncher.launch(arrayOf("*/*"))
@@ -272,50 +277,25 @@ fun OnDeviceScreen(
                     session = session,
                     active = state.activeSessionId == session.id,
                     onSummarize = { onSummarize(session.id) },
-                    onRetryTranscription = { onRetryTranscription(session.id) },
                     onDelete = { onDeleteSession(session.id) },
                     modifier = Modifier.padding(horizontal = 20.dp),
                 )
             }
         }
-        item { Spacer(Modifier.height(28.dp)) }
     }
 
-    if (showMoonshineLicense) {
-        val licenseText = remember {
-            runCatching {
-                context.assets.open("licenses/MOONSHINE-KOREAN-MODEL-LICENSE.txt")
-                    .bufferedReader()
-                    .use { it.readText() }
-            }.getOrElse { "모델 라이선스 원문을 불러오지 못했습니다." }
-        }
-        AlertDialog(
-            onDismissRequest = { showMoonshineLicense = false },
-            title = { Text("Moonshine 한국어 모델 라이선스") },
-            text = {
-                Text(
-                    licenseText,
-                    style = MaterialTheme.typography.bodySmall,
-                    modifier = Modifier
-                        .height(420.dp)
-                        .verticalScroll(rememberScrollState()),
-                )
+    if (sourcePickerShown) {
+        MainRecordingSourceSheet(
+            sources = state.mainRecordingSources,
+            selectedId = state.selectedMainRecordingId,
+            onSelect = {
+                onSelectMainRecording(it)
+                sourcePickerShown = false
             },
-            confirmButton = {
-                TextButton(
-                    onClick = {
-                        moonshineLicenseAccepted = true
-                        showMoonshineLicense = false
-                    },
-                ) {
-                    Text("읽었으며 동의")
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { showMoonshineLicense = false }) { Text("닫기") }
-            },
+            onDismiss = { sourcePickerShown = false },
         )
     }
+
 }
 
 @Composable
@@ -323,7 +303,7 @@ private fun Hero(imageRes: Int?) {
     Box(
         Modifier
             .fillMaxWidth()
-            .height(210.dp)
+            .height(164.dp)
             .background(
                 Brush.linearGradient(
                     listOf(
@@ -361,23 +341,23 @@ private fun Hero(imageRes: Int?) {
             tint = Color.White.copy(alpha = 0.12f),
             modifier = Modifier
                 .align(Alignment.CenterEnd)
-                .padding(end = 18.dp)
-                .size(150.dp),
+                .padding(end = 20.dp)
+                .size(116.dp),
         )
         Column(
             Modifier
                 .align(Alignment.BottomStart)
-                .padding(24.dp),
+                .padding(20.dp),
         ) {
             Text(
                 "LOCAL AI",
                 style = MaterialTheme.typography.labelLarge,
                 color = Color(0xFFD9C49A),
             )
-            Spacer(Modifier.height(8.dp))
+            Spacer(Modifier.height(4.dp))
             Text(
                 "목소리에서\n정리된 기록까지",
-                style = MaterialTheme.typography.headlineLarge,
+                style = MaterialTheme.typography.headlineMedium,
                 fontWeight = FontWeight.SemiBold,
                 color = Color.White,
             )
@@ -403,7 +383,7 @@ private fun PrivacyBanner(modifier: Modifier = Modifier) {
             Column {
                 Text("이 기기에서만 처리", style = MaterialTheme.typography.titleMedium)
                 Text(
-                    "음성·전사·요약은 외부로 전송하지 않습니다. 네트워크는 모델 설치에만 사용합니다.",
+                    "음성·전사·요약은 기기 밖으로 전송하지 않습니다.",
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.78f),
                 )
@@ -423,9 +403,50 @@ private fun SectionTitle(title: String, body: String) {
 }
 
 @Composable
-private fun EngineChoice(
+private fun SystemSttCard(available: Boolean) {
+    Card(
+        shape = RoundedCornerShape(16.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = if (available) {
+                MaterialTheme.colorScheme.secondaryContainer
+            } else {
+                MaterialTheme.colorScheme.surfaceVariant
+            },
+        ),
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        Row(
+            Modifier.padding(horizontal = 16.dp, vertical = 13.dp),
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Icon(
+                Icons.Default.Mic,
+                contentDescription = null,
+                tint = if (available) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline,
+            )
+            Column(Modifier.weight(1f)) {
+                Text("시스템 온디바이스 STT", style = MaterialTheme.typography.titleMedium)
+                Text(
+                    if (available) "설치 없이 라이브 한국어 받아쓰기" else "이 기기에서 사용할 수 없음",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            Text(
+                if (available) "사용 가능" else "미지원",
+                style = MaterialTheme.typography.labelMedium,
+                color = if (available) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error,
+            )
+        }
+    }
+}
+
+@Composable
+private fun SummaryChoice(
     title: String,
     description: String,
+    icon: ImageVector,
     selected: Boolean,
     available: Boolean,
     onClick: () -> Unit,
@@ -444,12 +465,12 @@ private fun EngineChoice(
         modifier = Modifier.fillMaxWidth(),
     ) {
         Row(
-            Modifier.padding(16.dp),
+            Modifier.padding(horizontal = 16.dp, vertical = 13.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             Icon(
-                if (selected) Icons.Default.Check else Icons.Default.Mic,
+                icon,
                 contentDescription = null,
             )
             Column(Modifier.weight(1f)) {
@@ -459,6 +480,9 @@ private fun EngineChoice(
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
+            }
+            if (selected) {
+                Icon(Icons.Default.Check, contentDescription = "선택됨")
             }
         }
     }
@@ -487,14 +511,183 @@ private fun SummaryChoices(
         ),
         Triple(SummaryEngineType.NONE, "요약하지 않음", "전사 원문만 기기에 저장"),
     ).forEachIndexed { index, item ->
-        EngineChoice(
+        val icon = when (item.first) {
+            SummaryEngineType.EXTRACTIVE_KOTLIN -> Icons.Default.GraphicEq
+            SummaryEngineType.QWEN_LOCAL,
+            SummaryEngineType.QWEN_LOCAL_GROUNDED,
+            -> Icons.Default.Memory
+            SummaryEngineType.NONE -> Icons.Default.Stop
+        }
+        SummaryChoice(
             title = item.second,
             description = item.third,
+            icon = icon,
             selected = state.selectedSummary == item.first,
             available = item.first != SummaryEngineType.QWEN_LOCAL || state.nativeAiAvailable,
             onClick = { onSelect(item.first) },
         )
         if (index < 2) Spacer(Modifier.height(8.dp))
+    }
+}
+
+@Composable
+private fun SttCaptureChoices(
+    state: OnDeviceUiState,
+    onSelect: (SttCaptureProfile) -> Unit,
+) {
+    SttCaptureProfile.entries.forEachIndexed { index, profile ->
+        SummaryChoice(
+            title = profile.title,
+            description = profile.description,
+            icon = Icons.Default.GraphicEq,
+            selected = state.selectedSttProfile == profile,
+            available = !state.listening,
+            onClick = { onSelect(profile) },
+        )
+        if (index < SttCaptureProfile.entries.lastIndex) Spacer(Modifier.height(8.dp))
+    }
+}
+
+@Composable
+private fun MainRecordingImportCard(
+    state: OnDeviceUiState,
+    mainRecorderActive: Boolean,
+    onOpenPicker: () -> Unit,
+    onTranscribe: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val selected = state.mainRecordingSources.firstOrNull { it.id == state.selectedMainRecordingId }
+    val availabilityMessage = when (state.fileSttAvailability) {
+        SenseVoiceFileSttAvailability.READY ->
+            "SenseVoice 한국어 파일 STT가 설치되었습니다. 녹음은 네트워크 없이 기기 안에서 전사됩니다."
+        SenseVoiceFileSttAvailability.MODEL_NOT_INSTALLED ->
+            "아래 모델 관리에서 SenseVoice 한국어 파일 STT를 Wi-Fi로 설치한 뒤 사용할 수 있습니다."
+        SenseVoiceFileSttAvailability.NATIVE_UNSUPPORTED ->
+            "이 기기는 arm64 로컬 STT runtime을 지원하지 않습니다."
+    }
+    Card(
+        shape = RoundedCornerShape(22.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        modifier = modifier.fillMaxWidth(),
+    ) {
+        Column(Modifier.padding(18.dp)) {
+            Text("1번 탭 녹음 분석", style = MaterialTheme.typography.titleLarge)
+            Text(
+                "완료된 원본을 선택해 분석용 PCM으로 변환한 뒤 텍스트를 추출합니다.",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(top = 4.dp),
+            )
+            OutlinedButton(
+                onClick = onOpenPicker,
+                enabled = !state.fileTranscribing && !state.listening && !state.processing,
+                modifier = Modifier.padding(top = 14.dp),
+            ) {
+                Icon(Icons.Default.UploadFile, contentDescription = null)
+                Spacer(Modifier.size(8.dp))
+                Text(if (selected == null) "1번 탭 녹음 선택" else "다른 녹음 선택")
+            }
+            if (selected != null) {
+                Text(
+                    "선택됨 · ${formatTime(selected.createdAt)} · ${formatDuration(selected.durationMs / 1_000)} · ${selected.extension.uppercase()}",
+                    style = MaterialTheme.typography.labelLarge,
+                    color = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.padding(top = 12.dp),
+                )
+                Text(
+                    "원본은 변경하지 않으며 분석용 PCM 임시 파일만 생성합니다.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(top = 4.dp),
+                )
+            } else {
+                Text(
+                    if (state.mainRecordingSources.isEmpty()) {
+                        "선택 가능한 완료 녹음이 없습니다."
+                    } else {
+                        "완료된 원본 하나를 선택하세요."
+                    },
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(top = 12.dp),
+                )
+            }
+            Text(
+                availabilityMessage,
+                style = MaterialTheme.typography.bodySmall,
+                color = if (state.fileSttAvailability == SenseVoiceFileSttAvailability.READY) {
+                    MaterialTheme.colorScheme.primary
+                } else {
+                    MaterialTheme.colorScheme.onSurfaceVariant
+                },
+                modifier = Modifier.padding(top = 10.dp),
+            )
+            Button(
+                onClick = onTranscribe,
+                enabled = selected != null &&
+                    !mainRecorderActive &&
+                    !state.listening &&
+                    !state.processing &&
+                    state.fileSttAvailability == SenseVoiceFileSttAvailability.READY,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(top = 14.dp),
+            ) {
+                Icon(Icons.Default.GraphicEq, contentDescription = null)
+                Spacer(Modifier.size(8.dp))
+                Text("PCM 변환 후 텍스트 추출")
+            }
+        }
+    }
+}
+
+@Composable
+private fun MainRecordingSourceSheet(
+    sources: List<MainRecordingSource>,
+    selectedId: String?,
+    onSelect: (String) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    ModalBottomSheet(onDismissRequest = onDismiss) {
+        Column(
+            Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 20.dp, vertical = 8.dp),
+        ) {
+            Text("1번 탭 완료 녹음", style = MaterialTheme.typography.titleLarge)
+            Text(
+                "녹음 중·정리 중·무결성 정보가 없는 파일은 표시하지 않습니다.",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(top = 4.dp),
+            )
+            Spacer(Modifier.height(12.dp))
+            if (sources.isEmpty()) {
+                Text(
+                    "선택 가능한 완료 녹음이 없습니다.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(bottom = 32.dp),
+                )
+            } else {
+                LazyColumn(
+                    modifier = Modifier.heightIn(max = 420.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                    contentPadding = PaddingValues(bottom = 32.dp),
+                ) {
+                    items(sources, key = { it.id }) { source ->
+                        SummaryChoice(
+                            title = "${formatTime(source.createdAt)} · ${formatDuration(source.durationMs / 1_000)}",
+                            description = "${source.extension.uppercase()} · ${formatBytes(source.sizeBytes)} · ${sourceStorageLabel(source.storageState)}",
+                            icon = Icons.Default.GraphicEq,
+                            selected = source.id == selectedId,
+                            available = true,
+                            onClick = { onSelect(source.id) },
+                        )
+                    }
+                }
+            }
+        }
     }
 }
 
@@ -507,6 +700,10 @@ private fun ListeningCard(
     onCancel: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    val transcriptScrollState = rememberScrollState()
+    LaunchedEffect(state.liveTranscript, state.partialTranscript) {
+        transcriptScrollState.animateScrollTo(transcriptScrollState.maxValue)
+    }
     Card(
         shape = RoundedCornerShape(22.dp),
         colors = CardDefaults.cardColors(
@@ -515,33 +712,86 @@ private fun ListeningCard(
         modifier = modifier.fillMaxWidth(),
     ) {
         Column(
-            Modifier.padding(20.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
+            Modifier.padding(18.dp),
         ) {
-            Icon(
-                if (state.listening) Icons.Default.GraphicEq else Icons.Default.Mic,
-                contentDescription = null,
-                tint = MaterialTheme.colorScheme.primary,
-                modifier = Modifier.size(38.dp),
-            )
-            Spacer(Modifier.height(12.dp))
-            Text(
-                when {
-                    mainRecorderActive -> "기본 녹음이 사용 중입니다"
-                    state.listening -> "온디바이스 음성 인식 중"
-                    state.processing -> state.processingLabel ?: "기기에서 처리 중"
-                    else -> "새 로컬 기록"
-                },
-                style = MaterialTheme.typography.titleLarge,
-            )
-            if (state.partialTranscript.isNotBlank()) {
-                Text(
-                    state.partialTranscript,
-                    style = MaterialTheme.typography.bodyLarge,
-                    maxLines = 5,
-                    overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.padding(top = 12.dp),
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(
+                    if (state.listening) Icons.Default.GraphicEq else Icons.Default.Mic,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(32.dp),
                 )
+                Spacer(Modifier.size(12.dp))
+                Column {
+                    Text(
+                        when {
+                            mainRecorderActive -> "기본 녹음이 사용 중입니다"
+                            state.listening -> "온디바이스 음성 인식 중"
+                            state.fileTranscribing -> "1번 탭 녹음 전사 중"
+                            state.processing -> state.processingLabel ?: "기기에서 처리 중"
+                            else -> "새 로컬 기록"
+                        },
+                        style = MaterialTheme.typography.titleLarge,
+                    )
+                    if (!state.listening && !state.processing && !mainRecorderActive) {
+                        Text(
+                            "문장마다 자동으로 다시 듣고, 완료하면 전사와 요약을 저장합니다.",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                }
+            }
+            if (
+                state.listening ||
+                state.fileTranscribing ||
+                state.liveTranscript.isNotBlank() ||
+                state.partialTranscript.isNotBlank()
+            ) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(208.dp)
+                        .padding(top = 14.dp)
+                        .background(
+                            MaterialTheme.colorScheme.surface.copy(alpha = 0.72f),
+                            RoundedCornerShape(14.dp),
+                        )
+                        .padding(14.dp)
+                        .verticalScroll(transcriptScrollState),
+                ) {
+                    Text(
+                        "현재 상태 · ${state.message ?: if (state.listening) "음성을 기다리는 중" else "대기"}",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.primary,
+                    )
+                    if (state.liveTranscript.isNotBlank()) {
+                        Spacer(Modifier.height(10.dp))
+                        Text("확정된 전사", style = MaterialTheme.typography.labelLarge)
+                        Text(
+                            state.liveTranscript,
+                            style = MaterialTheme.typography.bodyLarge,
+                            modifier = Modifier.padding(top = 4.dp),
+                        )
+                    }
+                    if (state.partialTranscript.isNotBlank()) {
+                        Spacer(Modifier.height(10.dp))
+                        Text("현재 인식 중", style = MaterialTheme.typography.labelLarge)
+                        Text(
+                            state.partialTranscript,
+                            style = MaterialTheme.typography.bodyLarge,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.padding(top = 4.dp),
+                        )
+                    } else if (state.liveTranscript.isBlank()) {
+                        Spacer(Modifier.height(10.dp))
+                        Text(
+                            "말씀을 시작하면 이 영역에 실시간 전사가 표시됩니다.",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                }
             }
             if (state.processing) {
                 Spacer(Modifier.height(14.dp))
@@ -557,7 +807,7 @@ private fun ListeningCard(
                     )
                 } ?: LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
             }
-            Spacer(Modifier.height(18.dp))
+            Spacer(Modifier.height(16.dp))
             if (state.listening) {
                 Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                     Button(onClick = onStop) {
@@ -572,21 +822,12 @@ private fun ListeningCard(
             } else {
                 Button(
                     onClick = onStart,
-                    enabled = !mainRecorderActive && !state.processing &&
-                        (state.selectedStt != SttEngineType.ANDROID_ON_DEVICE ||
-                            state.systemSttAvailable) &&
-                        (state.selectedStt != SttEngineType.MOONSHINE_LOCAL ||
-                            state.nativeAiAvailable),
+                    enabled = !mainRecorderActive && !state.processing && state.systemSttAvailable,
+                    modifier = Modifier.fillMaxWidth(),
                 ) {
                     Icon(Icons.Default.Mic, contentDescription = null)
                     Spacer(Modifier.size(8.dp))
-                    Text(
-                        if (state.selectedStt == SttEngineType.MOONSHINE_LOCAL) {
-                            "로컬 STT 시작"
-                        } else {
-                            "말하기 시작"
-                        },
-                    )
+                    Text("말하기 시작")
                 }
             }
         }
@@ -596,10 +837,7 @@ private fun ListeningCard(
 @Composable
 private fun ModelCard(
     model: ModelUiState,
-    wifiOnly: Boolean,
     installationAvailable: Boolean,
-    licenseAccepted: Boolean,
-    onReadLicense: () -> Unit,
     onDownload: () -> Unit,
     onImport: () -> Unit,
     onPause: () -> Unit,
@@ -621,13 +859,6 @@ private fun ModelCard(
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
-                    if (model.descriptor.id == ModelId.MOONSHINE_KO) {
-                        Text(
-                            "Powered by Moonshine AI",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                    }
                 }
                 if (model.status == ModelUiStatus.READY) {
                     Icon(Icons.Default.Check, contentDescription = "설치 완료")
@@ -661,63 +892,37 @@ private fun ModelCard(
             model.error?.let {
                 Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
             }
-            if (
-                model.descriptor.id == ModelId.MOONSHINE_KO &&
-                model.status != ModelUiStatus.READY
-            ) {
-                Text(
-                    "한국어 모델은 Community License가 적용되며 상업 이용 조건이 있습니다.",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(top = 8.dp),
-                )
-                TextButton(onClick = onReadLicense) {
-                    Text(if (licenseAccepted) "라이선스 동의 완료" else "라이선스 읽기 및 동의")
-                }
-            }
-            Spacer(Modifier.height(12.dp))
+            Spacer(Modifier.height(10.dp))
             Row(
                 Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End),
             ) {
                 when (model.status) {
-                    ModelUiStatus.READY -> {
-                        OutlinedButton(onClick = onDelete) {
-                            Icon(Icons.Default.Delete, contentDescription = null)
-                            Spacer(Modifier.size(6.dp))
-                            Text("삭제")
-                        }
+                    ModelUiStatus.READY -> OutlinedButton(onClick = onDelete) {
+                        Icon(Icons.Default.Delete, contentDescription = null)
+                        Spacer(Modifier.size(6.dp))
+                        Text("삭제")
                     }
                     ModelUiStatus.DOWNLOADING,
                     ModelUiStatus.WAITING_FOR_WIFI,
                     ModelUiStatus.VERIFYING,
                     ModelUiStatus.INSTALLING,
-                    -> {
-                        OutlinedButton(onClick = onPause) {
-                            Icon(Icons.Default.Pause, contentDescription = null)
-                            Spacer(Modifier.size(6.dp))
-                            Text("일시정지")
-                        }
+                    -> OutlinedButton(onClick = onPause) {
+                        Icon(Icons.Default.Pause, contentDescription = null)
+                        Spacer(Modifier.size(6.dp))
+                        Text("일시정지")
                     }
                     else -> {
-                        OutlinedButton(
-                            onClick = onImport,
-                            enabled = licenseAccepted && installationAvailable,
-                        ) {
+                        OutlinedButton(onClick = onImport, enabled = installationAvailable) {
                             Icon(Icons.Default.UploadFile, contentDescription = null)
                             Spacer(Modifier.size(6.dp))
                             Text("파일")
                         }
-                        FilledTonalButton(
-                            onClick = onDownload,
-                            enabled = licenseAccepted && installationAvailable,
-                        ) {
+                        FilledTonalButton(onClick = onDownload, enabled = installationAvailable) {
                             Icon(Icons.Default.Download, contentDescription = null)
                             Spacer(Modifier.size(6.dp))
-                            Text(
-                                if (model.status == ModelUiStatus.PAUSED) "이어받기"
-                                else if (wifiOnly) "Wi-Fi 설치" else "설치",
-                            )
+                            Text(if (model.status == ModelUiStatus.PAUSED) "Wi‑Fi에서 이어받기" else "Wi‑Fi 설치")
                         }
                     }
                 }
@@ -731,10 +936,10 @@ private fun SessionCard(
     session: OnDeviceSessionEntity,
     active: Boolean,
     onSummarize: () -> Unit,
-    onRetryTranscription: () -> Unit,
     onDelete: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    var fullTranscriptShown by rememberSaveable(session.id) { mutableStateOf(false) }
     Card(
         shape = RoundedCornerShape(18.dp),
         modifier = modifier.fillMaxWidth(),
@@ -759,22 +964,62 @@ private fun SessionCard(
                     Icon(Icons.Default.Delete, contentDescription = "기록 삭제")
                 }
             }
+            if (session.sourceType == OnDeviceSessionEntity.SOURCE_TYPE_MAIN_RECORDER_CHUNK) {
+                Text(
+                    "원본 · 1번 탭 녹음${session.sourceDurationMs?.let { " · ${formatDuration(it / 1_000)}" }.orEmpty()}",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.padding(top = 4.dp),
+                )
+            }
+            Text(
+                "전사 방식 · ${sttEngineLabel(session.sttEngine)}",
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.padding(top = 4.dp),
+            )
             if (session.transcript.isNotBlank()) {
                 HorizontalDivider(Modifier.padding(vertical = 10.dp))
-                Text("전사 원문", style = MaterialTheme.typography.labelLarge)
+                Text(
+                    "전사 원문 · ${session.transcript.length}자",
+                    style = MaterialTheme.typography.labelLarge,
+                )
                 Text(
                     session.transcript,
                     style = MaterialTheme.typography.bodyMedium,
                     maxLines = 6,
                     overflow = TextOverflow.Ellipsis,
                 )
+                TextButton(
+                    onClick = { fullTranscriptShown = true },
+                    modifier = Modifier.padding(top = 4.dp),
+                ) {
+                    Text("전체 전사 보기")
+                }
             }
             if (session.summary.isNotBlank()) {
                 Spacer(Modifier.height(12.dp))
                 Text("핵심 요약", style = MaterialTheme.typography.labelLarge)
+                Text(
+                    "처리 방식 · ${summaryEngineLabel(session.summaryEngine)}",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.padding(top = 3.dp),
+                )
                 session.summary.lines().filter(String::isNotBlank).forEach {
                     Text("• $it", style = MaterialTheme.typography.bodyMedium)
                 }
+            }
+            if (
+                session.summary.isBlank() &&
+                session.state == OnDeviceSessionState.COMPLETE.name
+            ) {
+                Spacer(Modifier.height(12.dp))
+                Text(
+                    "요약 방식 · ${summaryEngineLabel(session.summaryEngine)}",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
             }
             if (session.actionItems.isNotBlank()) {
                 Spacer(Modifier.height(12.dp))
@@ -804,23 +1049,60 @@ private fun SessionCard(
                     Text("현재 방식으로 요약")
                 }
             }
-            if (
-                session.transcript.isBlank() &&
-                !session.audioPath.isNullOrBlank() &&
-                session.sttEngine == SttEngineType.MOONSHINE_LOCAL.name &&
-                session.state in setOf(
-                    OnDeviceSessionState.AUDIO_READY.name,
-                    OnDeviceSessionState.FAILED_RECOVERABLE.name,
-                ) &&
-                session.failureStage != com.thinktank.recorder.ondevice.api.OnDeviceFailureStage.DELETE.name
+        }
+    }
+    if (fullTranscriptShown) {
+        FullTranscriptSheet(
+            transcript = session.transcript,
+            onDismiss = { fullTranscriptShown = false },
+        )
+    }
+}
+
+@Composable
+private fun FullTranscriptSheet(
+    transcript: String,
+    onDismiss: () -> Unit,
+) {
+    val scrollState = rememberScrollState()
+    ModalBottomSheet(onDismissRequest = onDismiss) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 20.dp, vertical = 8.dp)
+                .testTag("full-transcript-sheet"),
+        ) {
+            Text("전체 전사", style = MaterialTheme.typography.titleLarge)
+            Text(
+                "${transcript.length}자 · 이 기기에 저장된 원문 전체입니다.",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(top = 4.dp),
+            )
+            Spacer(Modifier.height(12.dp))
+            Surface(
+                color = MaterialTheme.colorScheme.surfaceVariant,
+                shape = RoundedCornerShape(14.dp),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(max = 480.dp),
             ) {
-                OutlinedButton(
-                    onClick = onRetryTranscription,
-                    enabled = !active,
-                    modifier = Modifier.padding(top = 10.dp),
+                Column(
+                    modifier = Modifier
+                        .verticalScroll(scrollState)
+                        .padding(14.dp)
+                        .testTag("full-transcript-scroll"),
                 ) {
-                    Text("전사 다시 시도")
+                    SelectionContainer {
+                        Text(transcript, style = MaterialTheme.typography.bodyLarge)
+                    }
                 }
+            }
+            TextButton(
+                onClick = onDismiss,
+                modifier = Modifier.align(Alignment.End),
+            ) {
+                Text("닫기")
             }
         }
     }
@@ -856,6 +1138,30 @@ private fun sessionStateLabel(state: String): String = when (state) {
     OnDeviceSessionState.FAILED_RECOVERABLE.name -> "다시 시도 가능"
     OnDeviceSessionState.FAILED_PERMANENT.name -> "처리 실패"
     else -> "대기"
+}
+
+private fun summaryEngineLabel(engine: String): String = when (engine) {
+    SummaryEngineType.EXTRACTIVE_KOTLIN.name -> "빠른 요약 · Kotlin 추출형"
+    SummaryEngineType.QWEN_LOCAL.name -> "Qwen 로컬 AI"
+    SummaryEngineType.QWEN_LOCAL_GROUNDED.name -> "Qwen 로컬 AI · 원문 근거 보강"
+    SummaryEngineType.NONE.name -> "요약하지 않음"
+    else -> "알 수 없는 방식"
+}
+
+private fun sttEngineLabel(engine: String): String = when (engine) {
+    "SENSEVOICE_LOCAL_FILE" -> "SenseVoice 로컬 파일 STT"
+    "ANDROID_ON_DEVICE" -> "Android 시스템 온디바이스 STT"
+    "ANDROID_ON_DEVICE_FILE" -> "이전 시스템 파일 STT 기록"
+    else -> "알 수 없는 방식"
+}
+
+private fun sourceStorageLabel(state: String): String = when (state) {
+    "READY" -> "기기 보관됨"
+    "UPLOADED" -> "동기화 완료 · 기기 보관됨"
+    "RETRY" -> "동기화 재시도 대기"
+    "FAILED" -> "동기화 실패 · 원본 보관됨"
+    "CONFLICT" -> "동기화 충돌 · 원본 보관됨"
+    else -> "기기 보관됨"
 }
 
 private fun String.isActiveSessionState(): Boolean =

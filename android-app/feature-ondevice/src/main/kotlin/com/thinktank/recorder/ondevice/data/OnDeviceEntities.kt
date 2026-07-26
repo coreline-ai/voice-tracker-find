@@ -20,6 +20,10 @@ data class OnDeviceSessionEntity(
     val summary: String = "",
     val actionItems: String = "",
     val audioPath: String? = null,
+    val sourceType: String = SOURCE_TYPE_LIVE_MIC,
+    val sourceChunkId: String? = null,
+    val sourceDisplayName: String? = null,
+    val sourceDurationMs: Long? = null,
     val summarySourceHash: String = "",
     val summaryGeneratedAt: Long? = null,
     val error: String? = null,
@@ -29,5 +33,7 @@ data class OnDeviceSessionEntity(
 ) {
     companion object {
         const val DATA_POLICY_LOCAL_ONLY = "LOCAL_ONLY"
+        const val SOURCE_TYPE_LIVE_MIC = "LIVE_MIC"
+        const val SOURCE_TYPE_MAIN_RECORDER_CHUNK = "MAIN_RECORDER_CHUNK"
     }
 }

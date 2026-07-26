@@ -10,9 +10,12 @@ import com.thinktank.recorder.next.data.local.RecordingState
 import com.thinktank.recorder.next.data.remote.ApkInfo
 import com.thinktank.recorder.next.data.remote.ReceiverApi
 import com.thinktank.recorder.next.data.repository.NotesRepository
+import com.thinktank.recorder.next.data.repository.QueueActionResult
 import com.thinktank.recorder.next.data.repository.RecordingRepository
 import com.thinktank.recorder.next.data.settings.AppPreferences
 import com.thinktank.recorder.next.data.settings.UserSettings
+import com.thinktank.recorder.next.data.storage.AppStorageMonitor
+import com.thinktank.recorder.next.data.storage.AppStorageSnapshot
 import com.thinktank.recorder.next.recording.RecorderController
 import com.thinktank.recorder.next.recording.RecordingRuntime
 import com.thinktank.recorder.next.worker.SyncScheduler
@@ -20,6 +23,7 @@ import com.thinktank.recorder.next.worker.SyncWorker
 import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -36,6 +40,10 @@ data class RecordingUiState(
     val amplitude: Float = 0f,
     val elapsedMs: Long = 0,
     val commandError: String? = null,
+    val queueMessage: String? = null,
+    val syncQueue: List<ChunkEntity> = emptyList(),
+    val attentionUploads: Int = 0,
+    val storage: AppStorageSnapshot? = null,
 ) {
     val isActive: Boolean
         get() = session?.state in setOf(
@@ -48,13 +56,17 @@ data class RecordingUiState(
 
 @HiltViewModel
 class RecordingViewModel @Inject constructor(
-    repository: RecordingRepository,
+    private val repository: RecordingRepository,
     private val controller: RecorderController,
     private val runtime: RecordingRuntime,
+    private val scheduler: SyncScheduler,
+    private val storageMonitor: AppStorageMonitor,
 ) : ViewModel() {
     private val tick = MutableStateFlow(System.currentTimeMillis())
+    private val storage = MutableStateFlow<AppStorageSnapshot?>(null)
+    private val queueMessage = MutableStateFlow<String?>(null)
 
-    private val baseRecordingState = combine(
+    private val liveRecordingState = combine(
         repository.latestSession,
         repository.latestChunk,
         repository.recentChunks,
@@ -67,6 +79,19 @@ class RecordingViewModel @Inject constructor(
             recentChunks = recentChunks,
             pendingUploads = pending,
             amplitude = amplitude,
+        )
+    }
+
+    private val baseRecordingState = combine(
+        liveRecordingState,
+        repository.syncQueue,
+        repository.attentionUploads,
+        storage,
+    ) { state, queue, attention, snapshot ->
+        state.copy(
+            syncQueue = queue,
+            attentionUploads = attention,
+            storage = snapshot,
         )
     }
 
@@ -90,7 +115,10 @@ class RecordingViewModel @Inject constructor(
     val uiState: StateFlow<RecordingUiState> = combine(
         recordingState,
         runtime.commandError,
-    ) { state, error -> state.copy(commandError = error) }
+        queueMessage,
+    ) { state, error, actionMessage ->
+        state.copy(commandError = error, queueMessage = actionMessage)
+    }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), RecordingUiState())
 
     init {
@@ -98,6 +126,13 @@ class RecordingViewModel @Inject constructor(
             while (isActive) {
                 tick.value = System.currentTimeMillis()
                 delay(1_000)
+            }
+        }
+        viewModelScope.launch(Dispatchers.IO) {
+            repository.recoverInterruptedDeletes()
+            while (isActive) {
+                storage.value = storageMonitor.snapshot()
+                delay(STORAGE_REFRESH_MS)
             }
         }
     }
@@ -113,6 +148,33 @@ class RecordingViewModel @Inject constructor(
         runCatching(controller::stop).onFailure {
             runtime.reportCommandError(it.message ?: "녹음을 정지하지 못했습니다")
         }
+    }
+
+    fun retryUpload(id: String) {
+        viewModelScope.launch(Dispatchers.IO) {
+            queueMessage.value = when (val result = repository.retryUpload(id)) {
+                QueueActionResult.Completed -> {
+                    scheduler.enqueueManual()
+                    "업로드 재시도를 시작했습니다."
+                }
+                is QueueActionResult.Rejected -> result.message
+            }
+            storage.value = storageMonitor.snapshot()
+        }
+    }
+
+    fun deleteStoredChunk(id: String) {
+        viewModelScope.launch(Dispatchers.IO) {
+            queueMessage.value = when (val result = repository.deleteStoredChunk(id)) {
+                QueueActionResult.Completed -> "기기 보관함에서 원본을 정리했습니다."
+                is QueueActionResult.Rejected -> result.message
+            }
+            storage.value = storageMonitor.snapshot()
+        }
+    }
+
+    private companion object {
+        const val STORAGE_REFRESH_MS = 15_000L
     }
 }
 

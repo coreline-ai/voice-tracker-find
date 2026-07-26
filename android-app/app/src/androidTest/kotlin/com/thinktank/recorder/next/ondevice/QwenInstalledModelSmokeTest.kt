@@ -23,7 +23,7 @@ import org.junit.runner.RunWith
 @RunWith(AndroidJUnit4::class)
 class QwenInstalledModelSmokeTest {
     @Test
-    fun installedQwenModelCreatesGroundedKoreanSummary() = runBlocking {
+    fun installedQwenModelCreatesCompactKoreanSummary() = runBlocking {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
         val store = ModelStore(context)
         val descriptor = ModelCatalog.get(ModelId.QWEN_SUMMARY_KO)
@@ -39,12 +39,19 @@ class QwenInstalledModelSmokeTest {
         val elapsedMs = (System.nanoTime() - startedAt) / 1_000_000
 
         println(
-            "Qwen native smoke: ${elapsedMs}ms, title=${result.title}, " +
-                "bullets=${result.bullets}, actions=${result.actionItems}",
+            "DEVICE_QA QWEN-02 elapsedMs=$elapsedMs titleChars=${result.title.length} " +
+                "bulletCount=${result.bullets.size} actionCount=${result.actionItems.size}",
         )
         assertEquals(SummaryEngineType.QWEN_LOCAL, result.engine)
         assertTrue(result.title.isNotBlank())
-        assertTrue(result.bullets.isNotEmpty())
+        assertTrue(result.bullets.size in 1..2)
+        assertTrue(result.bullets.all { it.length <= 30 })
+        val persistedSummary = result.bullets.joinToString("\n")
+        val normalizedTranscript = transcript.replace(Regex("\\s+"), " ").trim()
+        assertTrue(persistedSummary.length < normalizedTranscript.length)
+        assertTrue(
+            persistedSummary.length <= minOf(80, (normalizedTranscript.length * 0.15).toInt()),
+        )
         assertTrue(result.sourceHash.isNotBlank())
     }
 }

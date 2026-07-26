@@ -12,7 +12,11 @@ internal object QwenOutputParser {
             ?.let { array ->
                 buildList {
                     for (index in 0 until minOf(array.length(), MAX_BULLETS)) {
-                        array.optString(index).normalize(MAX_ITEM).takeIf(String::isNotBlank)?.let(::add)
+                        array.optString(index)
+                            .normalize(MAX_ITEM)
+                            .takeIf(String::isNotBlank)
+                            ?.takeIf { hasSpecificSourceEvidence(it, source) }
+                            ?.let(::add)
                     }
                 }
             }
@@ -82,12 +86,25 @@ internal object QwenOutputParser {
         return evidenceTokens.isNotEmpty() && evidenceTokens.any(sourceLower::contains)
     }
 
+    private fun hasSpecificSourceEvidence(bullet: String, source: String): Boolean {
+        val sourceLower = source.lowercase()
+        val evidenceTokens = TOKEN.findAll(bullet.lowercase())
+            .map { it.value }
+            .filterNot { it in GENERIC_SUMMARY_WORDS }
+            .toSet()
+        return evidenceTokens.isNotEmpty() && evidenceTokens.any(sourceLower::contains)
+    }
+
     private val TOKEN = Regex("[가-힣A-Za-z0-9]{2,}")
     private val ACTION_STOP_WORDS = setOf(
         "해야", "하기", "한다", "하기로", "예정", "필요", "확인", "요청", "담당",
     )
+    private val GENERIC_SUMMARY_WORDS = setOf(
+        "운영", "전략", "계획", "분석", "가이드", "가이드라인", "성공", "사례", "수익",
+        "핵심", "내용", "설명", "정리", "소개", "사업", "결과", "방식", "전체", "최종",
+    )
     private const val MAX_TITLE = 60
     private const val MAX_ITEM = 300
-    private const val MAX_BULLETS = 3
+    private const val MAX_BULLETS = 2
     private const val MAX_ACTIONS = 5
 }

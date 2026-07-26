@@ -19,10 +19,14 @@ class ModelIntegrityVerifier(
         check(markerJson.optString("sourceSha256") == descriptor.expectedSha256) {
             "모델 원본 검증 정보가 일치하지 않습니다"
         }
-        val cacheKey = "${descriptor.id}:${marker.lastModified()}:${marker.length()}"
+        val manifest = markerJson.optJSONArray("files") ?: error("모델 파일 검증 정보가 없습니다")
+        val fileFingerprint = descriptor.requiredFiles.joinToString(separator = ":") { name ->
+            val file = File(dir, name)
+            "$name=${file.length()}:${file.lastModified()}"
+        }
+        val cacheKey = "${descriptor.id}:${marker.lastModified()}:${marker.length()}:$fileFingerprint"
         if (verified[cacheKey] == true) return
 
-        val manifest = markerJson.optJSONArray("files") ?: error("모델 파일 검증 정보가 없습니다")
         val entries = buildMap {
             for (index in 0 until manifest.length()) {
                 val entry = manifest.optJSONObject(index) ?: continue
@@ -53,7 +57,11 @@ class ModelIntegrityVerifier(
         return digest.digest().joinToString("") { "%02x".format(it) }
     }
 
-    private companion object {
-        val verified = ConcurrentHashMap<String, Boolean>()
+    companion object {
+        private val verified = ConcurrentHashMap<String, Boolean>()
+
+        fun invalidate(id: ModelId) {
+            verified.keys.removeAll { it.startsWith("${id}:") }
+        }
     }
 }

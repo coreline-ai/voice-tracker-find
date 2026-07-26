@@ -1,10 +1,26 @@
 package com.thinktank.recorder.ondevice.modelpack
 
+import java.io.File
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
 import org.junit.Assert.assertThrows
 import org.junit.Test
 
 class ArtifactValidationTest {
+    @Test
+    fun completeArtifactGateRequiresAnExistingFileWithTheExactSize() {
+        val artifact = File.createTempFile("artifact", ".bin")
+        try {
+            artifact.writeBytes(ByteArray(4))
+            assertTrue(hasCompleteArtifactFile(artifact, expectedBytes = 4))
+            assertFalse(hasCompleteArtifactFile(artifact, expectedBytes = 3))
+            assertFalse(hasCompleteArtifactFile(File(artifact.parentFile, "missing.bin"), expectedBytes = 4))
+        } finally {
+            artifact.delete()
+        }
+    }
+
     @Test
     fun exactSizeGuardRejectsOversizeAndUndersizeStreams() {
         val oversized = ExactArtifactSizeGuard(expectedBytes = 4, initialBytes = 0)

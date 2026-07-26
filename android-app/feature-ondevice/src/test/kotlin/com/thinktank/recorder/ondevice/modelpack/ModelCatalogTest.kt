@@ -18,22 +18,26 @@ class ModelCatalogTest {
     }
 
     @Test
-    fun pinnedArtifactsMatchApprovedModels() {
-        val moonshine = ModelCatalog.get(ModelId.MOONSHINE_KO)
+    fun pinnedQwenAndSenseVoiceArtifactsAreAvailable() {
         val qwen = ModelCatalog.get(ModelId.QWEN_SUMMARY_KO)
+        val senseVoice = ModelCatalog.get(ModelId.SENSEVOICE_STT_KO)
 
-        assertEquals(ModelPackaging.TAR_BZ2, moonshine.packaging)
-        assertEquals(49_153_415L, moonshine.exactArtifactBytes)
         assertEquals(
-            "d3b6c5390a7859c9ef20ff4f20b0766fcbad1dc06c0f509fe4840a3a302112dc",
-            moonshine.expectedSha256,
+            listOf(ModelId.QWEN_SUMMARY_KO, ModelId.SENSEVOICE_STT_KO),
+            ModelCatalog.models.map { it.id },
         )
-        assertEquals(ModelPackaging.SINGLE_GGUF, qwen.packaging)
         assertEquals(563_036_064L, qwen.exactArtifactBytes)
         assertEquals(
             "57d1997790d1744fba5b40a7317df71ea5e2acee28c47e78f0cce39c0703f8cf",
             qwen.expectedSha256,
         )
+        assertEquals(ModelArtifactFormat.TAR_BZ2, senseVoice.artifactFormat)
+        assertEquals(163_002_883L, senseVoice.exactArtifactBytes)
+        assertEquals(
+            setOf("model.int8.onnx", "tokens.txt"),
+            senseVoice.requiredFiles,
+        )
+        assertEquals(ModelCatalog.models, ModelCatalog.userManagedModels)
     }
 
     @Test

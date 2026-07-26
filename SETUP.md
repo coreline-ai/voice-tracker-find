@@ -127,8 +127,8 @@ New-NetFirewallRule -DisplayName "thinktank LAN 수신기" `
 
 ## 7. 🙋 폰 앱 (두 번째 기기라 손이 필요)
 
-1. 같은 폴더의 `thinktank-recorder.apk` 를 폰에 설치(또는 수신기 기동 후
-   폰 브라우저로 `http://<PC IP>:8765/apk?token=<토큰>`).
+1. 같은 폴더의 `thinktank-recorder.apk` 를 USB 등 안전한 전달 방식으로 폰에 설치한다.
+   Receiver bearer token을 URL에 넣는 브라우저 APK 다운로드는 지원하지 않는다.
 2. 앱 ③ 설정 탭:
    - 서버 주소: `http://<PC IP>:8765`
    - 토큰: 4-2 에서 만든 값

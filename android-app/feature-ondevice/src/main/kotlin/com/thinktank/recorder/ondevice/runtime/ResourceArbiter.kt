@@ -5,16 +5,16 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 
 enum class NativeWorkload {
-    MOONSHINE_STT,
+    SENSEVOICE_FILE_STT,
     QWEN_SUMMARY,
+    MODEL_MAINTENANCE,
 }
 
 /**
  * A process-wide gate for native model residency.
  *
- * Moonshine and Qwen are intentionally never loaded at the same time. The
- * active value is observable for diagnostics, while [withLease] provides the
- * actual mutual exclusion guarantee.
+ * Native STT and Qwen inference are isolated to one active lease. The active value is
+ * observable for diagnostics, while [withLease] provides the exclusion guarantee.
  */
 object ResourceArbiter {
     private val mutex = Mutex()

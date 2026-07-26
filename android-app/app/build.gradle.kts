@@ -68,6 +68,14 @@ android {
                 "\"${debugServerUrl}\"",
             )
         }
+        // A physical-device test package must not overwrite a developer's existing debug app.
+        // The connected runner removes only this isolated package after each QA execution.
+        create("deviceQa") {
+            initWith(getByName("debug"))
+            applicationIdSuffix = ".qa"
+            versionNameSuffix = "-qa"
+            matchingFallbacks += listOf("debug")
+        }
         release {
             isDebuggable = false
             isMinifyEnabled = true
@@ -79,6 +87,9 @@ android {
             )
         }
     }
+
+    // Keep physical instrumentation isolated from any separately signed .debug installation.
+    testBuildType = "deviceQa"
 
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17

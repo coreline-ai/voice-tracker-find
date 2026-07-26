@@ -6,6 +6,7 @@ import com.thinktank.recorder.next.data.local.ChunkEntity
 import com.thinktank.recorder.next.data.local.ChunkState
 import dagger.hilt.android.qualifiers.ApplicationContext
 import java.io.File
+import java.io.FileOutputStream
 import java.security.MessageDigest
 import java.time.Instant
 import java.time.ZoneOffset
@@ -79,8 +80,9 @@ class RecordingFileManager @Inject constructor(
                         lastError = "FILE_MISSING",
                     )
                     file.name.endsWith(".part") -> {
-                        quarantine(file)
+                        val quarantined = quarantine(file)
                         chunk.copy(
+                            path = quarantined.absolutePath,
                             state = ChunkState.QUARANTINED,
                             lastError = "INTERRUPTED_RECORDING",
                         )
@@ -89,6 +91,80 @@ class RecordingFileManager @Inject constructor(
                 }
             }
         }
+
+    suspend fun isVerifiedFinalizedFile(path: String, expectedSha256: String?): Boolean =
+        withContext(Dispatchers.IO) {
+            val file = File(path)
+            expectedSha256 != null &&
+                file.isFile &&
+                !file.name.endsWith(".part") &&
+                isManagedFile(file) &&
+                sha256(file).equals(expectedSha256, ignoreCase = true)
+        }
+
+    /**
+     * Copies a verified finalized source into a caller-owned working location. The main recording
+     * stays untouched; a partial copy is never exposed as [destination].
+     */
+    suspend fun copyVerifiedFinalizedFile(
+        path: String,
+        expectedSha256: String,
+        destination: File,
+    ): Boolean = withContext(Dispatchers.IO) {
+        val source = File(path)
+        if (
+            !source.isFile ||
+            source.name.endsWith(".part") ||
+            !isManagedFile(source) ||
+            !sha256(source).equals(expectedSha256, ignoreCase = true)
+        ) {
+            return@withContext false
+        }
+        val parent = destination.parentFile ?: return@withContext false
+        if (!parent.isDirectory && !parent.mkdirs()) return@withContext false
+        val partial = File(parent, "${destination.name}.copying")
+        if (partial.exists() && !partial.delete()) return@withContext false
+        if (destination.exists() && !destination.delete()) return@withContext false
+        try {
+            val digest = MessageDigest.getInstance("SHA-256")
+            source.inputStream().buffered().use { input ->
+                FileOutputStream(partial).buffered().use { output ->
+                    val buffer = ByteArray(DEFAULT_BUFFER_SIZE * 4)
+                    while (true) {
+                        val count = input.read(buffer)
+                        if (count < 0) break
+                        digest.update(buffer, 0, count)
+                        output.write(buffer, 0, count)
+                    }
+                    output.flush()
+                }
+            }
+            val copiedHash = digest.digest().joinToString("") { "%02x".format(it) }
+            if (!copiedHash.equals(expectedSha256, ignoreCase = true)) return@withContext false
+            partial.renameTo(destination)
+        } catch (_: Throwable) {
+            false
+        } finally {
+            if (partial.exists()) partial.delete()
+        }
+    }
+
+    suspend fun deleteManagedFinalizedFile(path: String): Boolean = withContext(Dispatchers.IO) {
+        val file = File(path)
+        if (!file.exists()) return@withContext true
+        if (!file.isFile || !isManagedFile(file)) return@withContext false
+        file.delete()
+    }
+
+    fun isManagedPath(path: String): Boolean = runCatching {
+        isManagedFile(File(path))
+    }.getOrDefault(false)
+
+    private fun isManagedFile(file: File): Boolean {
+        val parent = file.canonicalFile.parentFile
+        return parent == directory.canonicalFile ||
+            parent == File(directory, "quarantine").canonicalFile
+    }
 
     private fun sha256(file: File): String {
         val digest = MessageDigest.getInstance("SHA-256")

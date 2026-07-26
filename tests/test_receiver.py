@@ -673,15 +673,12 @@ def test_apk를_내려받는다(receiver_with_apk: Fixture) -> None:
     assert response.body == b"PK\x03\x04fake-apk"
 
 
-def test_브라우저용_쿼리_토큰으로도_받는다(receiver_with_apk: Fixture) -> None:
-    # 폰 브라우저는 Authorization 헤더를 붙일 수 없다.
+def test_쿼리_토큰으로_apk를_받을_수_없다(receiver_with_apk: Fixture) -> None:
     response = _request(
         f"{receiver_with_apk.base_url}/apk?token={TOKEN}", token=None
     )
 
-    assert response.status == 200
-    assert response.body == b"PK\x03\x04fake-apk"
-
+    assert response.status == 401
 
 def test_토큰_없이는_apk를_못_받는다(receiver_with_apk: Fixture) -> None:
     response = _request(f"{receiver_with_apk.base_url}/apk", token=None)

@@ -4,6 +4,7 @@ import android.content.Context
 import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
 import com.thinktank.recorder.ondevice.api.LocalSummary
+import com.thinktank.recorder.ondevice.api.MainRecordingSource
 import com.thinktank.recorder.ondevice.api.OnDeviceFailureStage
 import com.thinktank.recorder.ondevice.api.OnDeviceSessionState
 import com.thinktank.recorder.ondevice.api.SttEngineType
@@ -21,8 +22,10 @@ import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
+import org.robolectric.annotation.Config
 
 @RunWith(RobolectricTestRunner::class)
+@Config(sdk = [34])
 class OnDeviceRepositoryTest : Closeable {
     private lateinit var database: OnDeviceDatabase
     private var now = 1_000L
@@ -92,7 +95,7 @@ class OnDeviceRepositoryTest : Closeable {
         writeSilentWav(wav)
         repository.begin(
             id,
-            SttEngineType.MOONSHINE_LOCAL,
+            SttEngineType.ANDROID_ON_DEVICE,
             SummaryEngineType.NONE,
             OnDeviceSessionState.TRANSCRIBING,
             token,
@@ -135,26 +138,42 @@ class OnDeviceRepositoryTest : Closeable {
     }
 
     @Test
-    fun interruptedInvalidLocalCaptureDeletesPartialAndClearsPath() = runBlocking {
-        val context = ApplicationProvider.getApplicationContext<Context>()
-        val audioFiles = LocalAudioFileManager(context)
-        val repository = OnDeviceRepository(database.sessionDao(), audioFiles) { now++ }
-        val id = "invalid-capture"
-        val partial = audioFiles.recordingFile(id).apply { writeBytes(byteArrayOf(1, 2, 3)) }
-        repository.begin(
-            id,
-            SttEngineType.MOONSHINE_LOCAL,
-            SummaryEngineType.NONE,
-            OnDeviceSessionState.STARTING,
-            "capture-token",
+    fun mainRecordingFileSessionStoresOnlySourceMetadataAndNeedsReselectionAfterRestart() = runBlocking {
+        val repository = OnDeviceRepository(database.sessionDao(), clock = { now++ })
+        repository.beginFromMainRecording(
+            id = "main-recording-source",
+            source = MainRecordingSource(
+                id = "chunk-1",
+                createdAt = 100L,
+                durationMs = 20_000L,
+                sizeBytes = 80_000L,
+                sha256 = "a".repeat(64),
+                extension = "m4a",
+                storageState = "READY",
+            ),
+            sttEngine = SttEngineType.SENSEVOICE_LOCAL_FILE,
+            summaryEngine = SummaryEngineType.NONE,
+            operationToken = "file-token",
         )
-        assertTrue(repository.attachAudio(id, "capture-token", partial.absolutePath))
+        assertTrue(
+            repository.advanceOperation(
+                "main-recording-source",
+                "file-token",
+                setOf(OnDeviceSessionState.STARTING),
+                OnDeviceSessionState.TRANSCRIBING,
+            ),
+        )
+
+        val stored = requireNotNull(database.sessionDao().get("main-recording-source"))
+        assertEquals(OnDeviceSessionEntity.SOURCE_TYPE_MAIN_RECORDER_CHUNK, stored.sourceType)
+        assertEquals(SttEngineType.SENSEVOICE_LOCAL_FILE.name, stored.sttEngine)
+        assertEquals("chunk-1", stored.sourceChunkId)
+        assertEquals(null, stored.audioPath)
 
         assertEquals(1, repository.recoverInterrupted())
-        val recovered = database.sessionDao().get(id)!!
-        assertEquals(OnDeviceSessionState.CANCELLED.name, recovered.state)
-        assertEquals(null, recovered.audioPath)
-        assertTrue(!partial.exists())
+        val recovered = requireNotNull(database.sessionDao().get("main-recording-source"))
+        assertEquals(OnDeviceSessionState.FAILED_RECOVERABLE.name, recovered.state)
+        assertEquals(OnDeviceFailureStage.TRANSCRIBE.name, recovered.failureStage)
     }
 
     @Test
@@ -228,7 +247,7 @@ class OnDeviceRepositoryTest : Closeable {
         writeSilentWav(wav)
         repository.begin(
             id,
-            SttEngineType.MOONSHINE_LOCAL,
+            SttEngineType.ANDROID_ON_DEVICE,
             SummaryEngineType.NONE,
             OnDeviceSessionState.AUDIO_READY,
             null,
@@ -267,7 +286,7 @@ class OnDeviceRepositoryTest : Closeable {
         }
         repository.begin(
             id,
-            SttEngineType.MOONSHINE_LOCAL,
+            SttEngineType.ANDROID_ON_DEVICE,
             SummaryEngineType.NONE,
             OnDeviceSessionState.STARTING,
             "active-token",
@@ -291,7 +310,7 @@ class OnDeviceRepositoryTest : Closeable {
         }
         repository.begin(
             id,
-            SttEngineType.MOONSHINE_LOCAL,
+            SttEngineType.ANDROID_ON_DEVICE,
             SummaryEngineType.NONE,
             OnDeviceSessionState.CANCELLED,
             null,

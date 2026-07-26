@@ -5,6 +5,7 @@ import com.thinktank.recorder.ondevice.api.OnDeviceFailureStage
 import com.thinktank.recorder.ondevice.api.OnDeviceSessionState
 import com.thinktank.recorder.ondevice.api.SttEngineType
 import com.thinktank.recorder.ondevice.api.SummaryEngineType
+import com.thinktank.recorder.ondevice.api.MainRecordingSource
 import com.thinktank.recorder.ondevice.recording.LocalAudioFileManager
 import com.thinktank.recorder.ondevice.stt.Pcm16WavReader
 import java.io.File
@@ -36,17 +37,11 @@ class OnDeviceRepository(
                     if (hasTranscript) OnDeviceSessionState.TRANSCRIPT_READY
                     else OnDeviceSessionState.FAILED_RECOVERABLE
                 OnDeviceSessionState.TRANSCRIBING ->
-                    if (hasUsableAudio) OnDeviceSessionState.AUDIO_READY
+                    if (session.sourceType == OnDeviceSessionEntity.SOURCE_TYPE_MAIN_RECORDER_CHUNK) {
+                        OnDeviceSessionState.FAILED_RECOVERABLE
+                    } else if (hasUsableAudio) OnDeviceSessionState.AUDIO_READY
                     else OnDeviceSessionState.FAILED_RECOVERABLE
-                OnDeviceSessionState.LISTENING ->
-                    if (
-                        session.sttEngine == SttEngineType.MOONSHINE_LOCAL.name &&
-                        hasUsableAudio
-                    ) {
-                        OnDeviceSessionState.AUDIO_READY
-                    } else {
-                        OnDeviceSessionState.CANCELLED
-                    }
+                OnDeviceSessionState.LISTENING -> OnDeviceSessionState.CANCELLED
                 OnDeviceSessionState.DELETING -> OnDeviceSessionState.FAILED_RECOVERABLE
                 else -> OnDeviceSessionState.CANCELLED
             }
@@ -79,21 +74,6 @@ class OnDeviceRepository(
                 error = error,
             )
             recovered += transitioned
-            val discardInvalidCapture = session.sttEngine == SttEngineType.MOONSHINE_LOCAL.name &&
-                !hasUsableAudio &&
-                currentState in setOf(
-                    OnDeviceSessionState.STARTING,
-                    OnDeviceSessionState.LISTENING,
-                    OnDeviceSessionState.TRANSCRIBING,
-                    OnDeviceSessionState.CANCELLING,
-            )
-            if (discardInvalidCapture && transitioned == 1) {
-                val path = session.audioPath ?: runCatching {
-                    audioFiles?.recordingFile(session.id)?.absolutePath
-                }.getOrNull()
-                runCatching { audioFiles?.deleteRecording(path) }
-                dao.clearAudio(session.id, clock())
-            }
         }
         return recovered
     }
@@ -129,6 +109,31 @@ class OnDeviceRepository(
                 state = state.name,
                 sttEngine = sttEngine.name,
                 summaryEngine = summaryEngine.name,
+                operationToken = operationToken,
+            ),
+        )
+    }
+
+    suspend fun beginFromMainRecording(
+        id: String,
+        source: MainRecordingSource,
+        sttEngine: SttEngineType,
+        summaryEngine: SummaryEngineType,
+        operationToken: String,
+    ) {
+        val now = clock()
+        dao.insert(
+            OnDeviceSessionEntity(
+                id = id,
+                createdAt = now,
+                updatedAt = now,
+                state = OnDeviceSessionState.STARTING.name,
+                sttEngine = sttEngine.name,
+                summaryEngine = summaryEngine.name,
+                sourceType = OnDeviceSessionEntity.SOURCE_TYPE_MAIN_RECORDER_CHUNK,
+                sourceChunkId = source.id,
+                sourceDisplayName = "${source.extension.uppercase()} · ${source.durationMs / 1_000}초",
+                sourceDurationMs = source.durationMs,
                 operationToken = operationToken,
             ),
         )

@@ -8,8 +8,10 @@ import com.thinktank.recorder.next.data.local.SyncDao
 import com.thinktank.recorder.next.data.local.ThinkTankDatabase
 import com.thinktank.recorder.next.data.remote.NotesRemoteGateway
 import com.thinktank.recorder.next.data.remote.ReceiverApi
+import com.thinktank.recorder.next.data.repository.MainRecordingSourceGatewayImpl
 import com.thinktank.recorder.next.data.settings.AppPreferences
 import com.thinktank.recorder.next.data.settings.SettingsReader
+import com.thinktank.recorder.ondevice.api.MainRecordingSourceGateway
 import dagger.Binds
 import dagger.Module
 import dagger.Provides
@@ -62,4 +64,9 @@ abstract class RepositoryBindings {
 
     @Binds
     abstract fun settingsReader(preferences: AppPreferences): SettingsReader
+
+    @Binds
+    abstract fun mainRecordingSourceGateway(
+        gateway: MainRecordingSourceGatewayImpl,
+    ): MainRecordingSourceGateway
 }

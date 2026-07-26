@@ -21,16 +21,16 @@ class ModelDownloadManager(context: Context) {
     val workInfos: Flow<List<WorkInfo>> =
         workManager.getWorkInfosByTagFlow(ModelDownloadWorker.TAG_ALL_MODELS)
 
-    fun download(id: ModelId, wifiOnly: Boolean = true) {
+    fun download(id: ModelId) {
         check(NativeRuntimeCapabilities.current().supported) {
-            "Moonshine/Qwen 모델은 arm64 64비트 기기에서만 설치할 수 있습니다"
+            "로컬 AI 모델은 arm64 64비트 기기에서만 설치할 수 있습니다"
         }
-        enqueue(id, sourceUri = null, wifiOnly = wifiOnly)
+        enqueue(id, sourceUri = null)
     }
 
     fun import(id: ModelId, uri: Uri) {
         check(NativeRuntimeCapabilities.current().supported) {
-            "Moonshine/Qwen 모델은 arm64 64비트 기기에서만 설치할 수 있습니다"
+            "로컬 AI 모델은 arm64 64비트 기기에서만 설치할 수 있습니다"
         }
         runCatching {
             applicationContext.contentResolver.takePersistableUriPermission(
@@ -38,7 +38,7 @@ class ModelDownloadManager(context: Context) {
                 IntentFlags.READ,
             )
         }
-        enqueue(id, sourceUri = uri.toString(), wifiOnly = false)
+        enqueue(id, sourceUri = uri.toString())
     }
 
     suspend fun pause(id: ModelId) {
@@ -52,20 +52,54 @@ class ModelDownloadManager(context: Context) {
         }
     }
 
+    suspend fun recoverInterruptedInstalls() {
+        ModelCatalog.models.forEach { descriptor ->
+            ModelOperationCoordinator.withLock(descriptor.id) {
+                store.recoverInterruptedInstall(descriptor.id)
+            }
+        }
+    }
+
+    /**
+     * App replacement stops WorkManager work. When the pinned archive was already downloaded,
+     * continue only the local SHA-256 verification and installation on the next launch. This path
+     * has no network constraint and never initiates a network transfer.
+     */
+    fun resumeCompletedDownloadsLocally() {
+        ModelCatalog.models.forEach { descriptor ->
+            if (
+                !store.snapshot(descriptor).ready &&
+                hasCompleteArtifactFile(store.partialFile(descriptor.id), descriptor.exactArtifactBytes)
+            ) {
+                enqueue(
+                    id = descriptor.id,
+                    sourceUri = null,
+                    requiresUnmeteredNetwork = false,
+                    policy = ExistingWorkPolicy.KEEP,
+                )
+            }
+        }
+    }
+
     fun installedModels(): Map<ModelId, InstalledModel> =
         ModelCatalog.models.associate { it.id to store.snapshot(it) }
 
-    private fun enqueue(id: ModelId, sourceUri: String?, wifiOnly: Boolean) {
+    private fun enqueue(
+        id: ModelId,
+        sourceUri: String?,
+        requiresUnmeteredNetwork: Boolean = sourceUri == null,
+        policy: ExistingWorkPolicy = ExistingWorkPolicy.REPLACE,
+    ) {
         val input = Data.Builder()
             .putString(ModelDownloadWorker.KEY_MODEL_ID, id.name)
             .apply { if (sourceUri != null) putString(ModelDownloadWorker.KEY_SOURCE_URI, sourceUri) }
             .build()
         val constraints = Constraints.Builder()
             .apply {
-                if (sourceUri == null) {
-                    setRequiredNetworkType(
-                        if (wifiOnly) NetworkType.UNMETERED else NetworkType.CONNECTED,
-                    )
+                if (requiresUnmeteredNetwork) {
+                    // Scheduler gate only. The worker binds actual sockets and DNS
+                    // lookup to a validated Wi-Fi network before transferring bytes.
+                    setRequiredNetworkType(NetworkType.UNMETERED)
                 }
             }
             .build()
@@ -77,7 +111,7 @@ class ModelDownloadManager(context: Context) {
             .build()
         workManager.enqueueUniqueWork(
             ModelDownloadWorker.workName(id),
-            ExistingWorkPolicy.REPLACE,
+            policy,
             request,
         )
     }

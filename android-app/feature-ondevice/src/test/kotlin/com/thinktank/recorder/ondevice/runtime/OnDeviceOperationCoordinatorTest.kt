@@ -36,7 +36,7 @@ class OnDeviceOperationCoordinatorTest {
     @Test
     fun cancelTargetsOnlyAttachedActiveJob() {
         val job: CompletableJob = Job()
-        coordinator.reserve("token", "session", OnDeviceOperationKind.LOCAL_CAPTURE)
+        coordinator.reserve("token", "session", OnDeviceOperationKind.QWEN_SUMMARY)
         assertTrue(coordinator.attach("token", job))
 
         assertEquals("token", coordinator.cancelActive()?.token)

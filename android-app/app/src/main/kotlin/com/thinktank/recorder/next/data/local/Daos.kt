@@ -16,6 +16,9 @@ abstract class RecordingDao {
     @Query("SELECT * FROM recording_sessions ORDER BY startedAt DESC LIMIT 1")
     abstract fun observeLatestSession(): Flow<RecordingSessionEntity?>
 
+    @Query("SELECT * FROM recording_sessions ORDER BY startedAt DESC LIMIT 1")
+    abstract suspend fun latestSession(): RecordingSessionEntity?
+
     @Query("SELECT * FROM recording_sessions WHERE id = :id")
     abstract suspend fun session(id: String): RecordingSessionEntity?
 
@@ -44,6 +47,9 @@ abstract class RecordingDao {
     @Query("SELECT * FROM chunks WHERE id = :id")
     abstract suspend fun chunk(id: String): ChunkEntity?
 
+    @Query("SELECT * FROM chunks WHERE sessionId = :sessionId ORDER BY createdAt ASC")
+    abstract suspend fun chunksForSession(sessionId: String): List<ChunkEntity>
+
     @Query("SELECT * FROM chunks ORDER BY createdAt DESC LIMIT 1")
     abstract fun observeLatestChunk(): Flow<ChunkEntity?>
 
@@ -61,8 +67,39 @@ abstract class RecordingDao {
     )
     abstract fun observeRecentChunks(limit: Int): Flow<List<ChunkEntity>>
 
+    /**
+     * Finished originals that can be safely copied to the local-AI feature. A SHA-256 receipt is
+     * mandatory because upload failures and interrupted recording can otherwise look selectable.
+     */
+    @Query(
+        """
+        SELECT * FROM chunks
+        WHERE state IN ('READY', 'UPLOADED', 'RETRY', 'FAILED', 'CONFLICT')
+          AND sha256 IS NOT NULL
+          AND sizeBytes IS NOT NULL AND sizeBytes > 0
+          AND durationMs IS NOT NULL AND durationMs > 0
+          AND path NOT LIKE '%.part'
+        ORDER BY createdAt DESC
+        LIMIT :limit
+        """,
+    )
+    abstract fun observeOnDeviceAnalysisCandidates(limit: Int): Flow<List<ChunkEntity>>
+
     @Query("SELECT COUNT(*) FROM chunks WHERE state IN ('READY','RETRY','CLAIMED','UPLOADING')")
     abstract fun observePendingCount(): Flow<Int>
+
+    @Query("SELECT COUNT(*) FROM chunks WHERE state IN ('FAILED','CONFLICT','QUARANTINED','DELETING')")
+    abstract fun observeAttentionCount(): Flow<Int>
+
+    @Query(
+        """
+        SELECT * FROM chunks
+        WHERE state IN ('READY','RETRY','FAILED','CONFLICT','QUARANTINED','DELETING')
+        ORDER BY createdAt DESC
+        LIMIT :limit
+        """,
+    )
+    abstract fun observeSyncQueue(limit: Int): Flow<List<ChunkEntity>>
 
     @Query("SELECT COUNT(*) FROM chunks WHERE sessionId = :sessionId")
     abstract fun observeSessionChunkCount(sessionId: String): Flow<Int>
@@ -167,6 +204,45 @@ abstract class RecordingDao {
 
     @Query("SELECT * FROM upload_attempts WHERE id = :id")
     abstract suspend fun attempt(id: Long): UploadAttemptEntity?
+
+    @Query(
+        """
+        UPDATE chunks
+        SET state = 'READY', claimOwner = NULL, claimedAt = NULL, leaseExpiresAt = NULL,
+            nextRetryAt = NULL, lastError = NULL
+        WHERE id = :id
+          AND state IN ('RETRY', 'FAILED')
+          AND claimOwner IS NULL
+        """,
+    )
+    abstract suspend fun requeueForManualRetry(id: String): Int
+
+    @Query(
+        """
+        UPDATE chunks
+        SET state = 'DELETING', claimOwner = NULL, claimedAt = NULL, leaseExpiresAt = NULL,
+            nextRetryAt = NULL, lastError = NULL
+        WHERE id = :id
+          AND state NOT IN ('RECORDING', 'FINALIZING', 'CLAIMED', 'UPLOADING', 'DELETING')
+          AND claimOwner IS NULL
+        """,
+    )
+    abstract suspend fun markDeleting(id: String): Int
+
+    @Query("SELECT * FROM chunks WHERE state = 'DELETING'")
+    abstract suspend fun deletingChunks(): List<ChunkEntity>
+
+    @Query("DELETE FROM chunks WHERE id = :id AND state = 'DELETING'")
+    abstract suspend fun deleteDeletingChunk(id: String): Int
+
+    @Query(
+        """
+        UPDATE chunks
+        SET state = 'FAILED', lastError = :error
+        WHERE id = :id AND state = 'DELETING'
+        """,
+    )
+    abstract suspend fun failDeletingChunk(id: String, error: String): Int
 
     @Query(
         """

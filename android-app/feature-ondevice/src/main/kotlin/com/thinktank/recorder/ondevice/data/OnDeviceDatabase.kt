@@ -9,7 +9,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
 
 @Database(
     entities = [OnDeviceSessionEntity::class],
-    version = 3,
+    version = 4,
     exportSchema = true,
 )
 abstract class OnDeviceDatabase : RoomDatabase() {
@@ -26,7 +26,7 @@ abstract class OnDeviceDatabase : RoomDatabase() {
                     OnDeviceDatabase::class.java,
                     "ondevice.db",
                 )
-                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3)
+                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4)
                     .build()
                     .also { instance = it }
             }
@@ -52,6 +52,23 @@ abstract class OnDeviceDatabase : RoomDatabase() {
                 )
                 db.execSQL(
                     "ALTER TABLE ondevice_sessions ADD COLUMN failureStage TEXT DEFAULT NULL",
+                )
+            }
+        }
+
+        val MIGRATION_3_4 = object : Migration(3, 4) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    "ALTER TABLE ondevice_sessions ADD COLUMN sourceType TEXT NOT NULL DEFAULT 'LIVE_MIC'",
+                )
+                db.execSQL(
+                    "ALTER TABLE ondevice_sessions ADD COLUMN sourceChunkId TEXT DEFAULT NULL",
+                )
+                db.execSQL(
+                    "ALTER TABLE ondevice_sessions ADD COLUMN sourceDisplayName TEXT DEFAULT NULL",
+                )
+                db.execSQL(
+                    "ALTER TABLE ondevice_sessions ADD COLUMN sourceDurationMs INTEGER DEFAULT NULL",
                 )
             }
         }

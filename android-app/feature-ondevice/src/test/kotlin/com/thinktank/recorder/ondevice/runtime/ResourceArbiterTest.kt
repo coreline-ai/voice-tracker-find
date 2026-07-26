@@ -15,13 +15,13 @@ class ResourceArbiterTest {
         val firstEntered = CompletableDeferred<Unit>()
         val releaseFirst = CompletableDeferred<Unit>()
         val first = async {
-            ResourceArbiter.withLease(NativeWorkload.MOONSHINE_STT) {
+            ResourceArbiter.withLease(NativeWorkload.QWEN_SUMMARY) {
                 firstEntered.complete(Unit)
                 releaseFirst.await()
             }
         }
         firstEntered.await()
-        assertEquals(NativeWorkload.MOONSHINE_STT, ResourceArbiter.activeWorkload())
+        assertEquals(NativeWorkload.QWEN_SUMMARY, ResourceArbiter.activeWorkload())
 
         val second = async {
             ResourceArbiter.withLease(NativeWorkload.QWEN_SUMMARY) {

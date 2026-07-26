@@ -17,6 +17,13 @@ class LocalAudioFileManager(context: Context) {
         return File(tempRoot, name)
     }
 
+    fun deleteTemporary(file: File): Boolean {
+        val canonicalRoot = tempRoot.canonicalFile
+        val canonicalFile = file.canonicalFile
+        check(canonicalFile.parentFile == canonicalRoot) { "관리 경로 밖의 임시 파일은 삭제하지 않습니다" }
+        return !canonicalFile.exists() || canonicalFile.delete()
+    }
+
     fun deleteRecording(path: String?): Boolean {
         if (path.isNullOrBlank()) return true
         val file = File(path)

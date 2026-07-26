@@ -134,6 +134,8 @@ fun ThinkTankApp(
                         state = recording,
                         onStart = recordingViewModel::start,
                         onStop = recordingViewModel::stop,
+                        onRetryUpload = recordingViewModel::retryUpload,
+                        onDeleteStoredChunk = recordingViewModel::deleteStoredChunk,
                         blockedByLocalAi = onDevice.micBusy,
                     )
                 }
@@ -159,14 +161,16 @@ fun ThinkTankApp(
                     OnDeviceScreen(
                         state = onDevice,
                         mainRecorderActive = recording.isActive,
-                        onSelectStt = onDeviceViewModel::selectStt,
+                        onSelectMainRecording = onDeviceViewModel::selectMainRecording,
+                        onTranscribeSelectedRecording = onDeviceViewModel::transcribeSelectedRecording,
+                        onSelectSttProfile = onDeviceViewModel::selectSttProfile,
                         onSelectSummary = onDeviceViewModel::selectSummary,
                         onStartListening = onDeviceViewModel::startListening,
                         onStopListening = onDeviceViewModel::stopListening,
                         onCancelListening = onDeviceViewModel::cancelListening,
                         onHostStopped = onDeviceViewModel::onHostStopped,
+                        onClearMessage = onDeviceViewModel::clearMessage,
                         onSummarize = onDeviceViewModel::summarize,
-                        onRetryTranscription = onDeviceViewModel::retryTranscription,
                         onDeleteSession = onDeviceViewModel::deleteSession,
                         onDownloadModel = onDeviceViewModel::downloadModel,
                         onImportModel = onDeviceViewModel::importModel,
