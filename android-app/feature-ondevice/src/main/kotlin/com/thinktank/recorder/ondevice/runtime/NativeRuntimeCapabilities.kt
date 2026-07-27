@@ -25,7 +25,7 @@ object NativeRuntimeCapabilities {
         )
         "arm64-v8a" !in supported64BitAbis -> NativeRuntimeCapability(
             supported = false,
-            reason = "Qwen 로컬 요약은 arm64 기기에서만 사용할 수 있습니다.",
+            reason = "로컬 STT·AI 모델은 arm64 기기에서만 사용할 수 있습니다.",
         )
         else -> NativeRuntimeCapability(supported = true)
     }

@@ -44,6 +44,10 @@ android {
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables.useSupportLibrary = true
         buildConfigField("String", "DEFAULT_SERVER_URL", "\"\"")
+        ndk {
+            // Native STT/LLM support is intentionally fixed to the Samsung arm64 target.
+            abiFilters += "arm64-v8a"
+        }
     }
 
     signingConfigs {

@@ -3,15 +3,15 @@ package com.thinktank.recorder.ondevice.summary
 import com.thinktank.recorder.ondevice.api.LocalSummary
 
 internal object SummaryPolicy {
-    const val VERSION = 2
-    const val PROMPT_VERSION = 2
+    const val VERSION = 3
+    const val PROMPT_VERSION = 3
     const val MAX_BULLETS = 2
-    const val MAX_BULLET_CHARS = 44
-    const val MAX_TOTAL_CHARS = 60
+    const val MAX_BULLET_CHARS = 80
+    const val MAX_TOTAL_CHARS = 100
     const val MAX_TITLE_CHARS = 28
     const val MIN_BULLET_CHARS = 10
-    private const val MIN_TOTAL_BUDGET = 24
-    private const val MAX_SOURCE_RATIO = 0.12
+    private const val MIN_TOTAL_BUDGET = 32
+    private const val MAX_SOURCE_RATIO = 0.20
 
     fun totalBudget(transcript: String): Int {
         val sourceLength = normalizeText(transcript).length
@@ -219,7 +219,9 @@ internal class SummaryQualityGate(
         )
         const val TITLE_DUPLICATE_THRESHOLD = 0.85
         const val BULLET_DUPLICATE_THRESHOLD = 0.60
-        const val MIN_EVIDENCE_TOKEN_RATIO = 0.60
+        // Evidence IDs establish provenance. A lower lexical threshold permits normal Korean
+        // predicate/synonym compression while number and Latin-entity checks remain strict.
+        const val MIN_EVIDENCE_TOKEN_RATIO = 0.30
         val PARTICLE_SUFFIXES = listOf(
             "으로부터", "에게서", "으로", "에서", "에게", "보다", "까지", "부터",
             "하고", "이며", "에는", "으로", "은", "는", "이", "가", "을", "를",

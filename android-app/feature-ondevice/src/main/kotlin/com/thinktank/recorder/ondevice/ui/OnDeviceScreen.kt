@@ -495,9 +495,8 @@ private fun SummaryChoices(
     state: OnDeviceUiState,
     onSelect: (SummaryEngineType) -> Unit,
 ) {
-    val qwenReady = state.models
-        .firstOrNull { it.descriptor.id == ModelId.QWEN_SUMMARY_KO }
-        ?.status == ModelUiStatus.READY
+    fun ready(id: ModelId): Boolean =
+        state.models.firstOrNull { it.descriptor.id == id }?.status == ModelUiStatus.READY
     listOf(
         Triple(SummaryEngineType.EXTRACTIVE_KOTLIN, "빠른 요약", "추가 모델 없음 · 원문 문장만 선별"),
         Triple(
@@ -505,10 +504,28 @@ private fun SummaryChoices(
             "Qwen 로컬 AI · 실험적",
             if (!state.nativeAiAvailable) {
                 state.nativeAiUnavailableReason ?: "이 기기에서 사용할 수 없음"
-            } else if (qwenReady) {
+            } else if (ready(ModelId.QWEN_SUMMARY_KO)) {
                 "모델 설치됨 · 생성형 제목·요약 · RAM 3GB 이상"
             } else {
                 "563MB 모델 설치 필요 · RAM 3GB 이상"
+            },
+        ),
+        Triple(
+            SummaryEngineType.EXAONE_LOCAL,
+            "EXAONE 한국어 AI · 후보",
+            if (ready(ModelId.EXAONE_SUMMARY_KO)) {
+                "812MB 모델 설치됨 · 한국어 2단계 요약"
+            } else {
+                "812MB 모델 설치 필요 · 한국어 품질 우선 후보"
+            },
+        ),
+        Triple(
+            SummaryEngineType.GEMMA_LOCAL,
+            "Gemma 3 경량 AI · 후보",
+            if (ready(ModelId.GEMMA_SUMMARY_KO)) {
+                "공식 모델 설치됨 · LiteRT-LM CPU 실행"
+            } else {
+                "공식 .litertlm 파일 가져오기 필요 · 약 557MB"
             },
         ),
         Triple(SummaryEngineType.NONE, "요약하지 않음", "전사 원문만 기기에 저장"),
@@ -517,6 +534,8 @@ private fun SummaryChoices(
             SummaryEngineType.EXTRACTIVE_KOTLIN -> Icons.Default.GraphicEq
             SummaryEngineType.QWEN_LOCAL,
             SummaryEngineType.QWEN_LOCAL_GROUNDED,
+            SummaryEngineType.EXAONE_LOCAL,
+            SummaryEngineType.GEMMA_LOCAL,
             -> Icons.Default.Memory
             SummaryEngineType.NONE -> Icons.Default.Stop
         }
@@ -525,10 +544,18 @@ private fun SummaryChoices(
             description = item.third,
             icon = icon,
             selected = state.selectedSummary == item.first,
-            available = item.first != SummaryEngineType.QWEN_LOCAL || state.nativeAiAvailable,
+            available = when (item.first) {
+                SummaryEngineType.QWEN_LOCAL ->
+                    state.nativeAiAvailable && ready(ModelId.QWEN_SUMMARY_KO)
+                SummaryEngineType.EXAONE_LOCAL ->
+                    state.nativeAiAvailable && ready(ModelId.EXAONE_SUMMARY_KO)
+                SummaryEngineType.GEMMA_LOCAL ->
+                    state.nativeAiAvailable && ready(ModelId.GEMMA_SUMMARY_KO)
+                else -> true
+            },
             onClick = { onSelect(item.first) },
         )
-        if (index < 2) Spacer(Modifier.height(8.dp))
+        if (index < 4) Spacer(Modifier.height(8.dp))
     }
 }
 
@@ -861,6 +888,12 @@ private fun ModelCard(
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
+                    Text(
+                        "실행 방식 · ${model.descriptor.runtimeType.name.replace('_', '-')}",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.padding(top = 3.dp),
+                    )
                 }
                 if (model.status == ModelUiStatus.READY) {
                     Icon(Icons.Default.Check, contentDescription = "설치 완료")
@@ -919,12 +952,20 @@ private fun ModelCard(
                         OutlinedButton(onClick = onImport, enabled = installationAvailable) {
                             Icon(Icons.Default.UploadFile, contentDescription = null)
                             Spacer(Modifier.size(6.dp))
-                            Text("파일")
+                            Text(
+                                if (model.descriptor.remoteDownloadEnabled) {
+                                    "파일"
+                                } else {
+                                    "공식 파일 가져오기"
+                                },
+                            )
                         }
-                        FilledTonalButton(onClick = onDownload, enabled = installationAvailable) {
-                            Icon(Icons.Default.Download, contentDescription = null)
-                            Spacer(Modifier.size(6.dp))
-                            Text(if (model.status == ModelUiStatus.PAUSED) "Wi‑Fi에서 이어받기" else "Wi‑Fi 설치")
+                        if (model.descriptor.remoteDownloadEnabled) {
+                            FilledTonalButton(onClick = onDownload, enabled = installationAvailable) {
+                                Icon(Icons.Default.Download, contentDescription = null)
+                                Spacer(Modifier.size(6.dp))
+                                Text(if (model.status == ModelUiStatus.PAUSED) "Wi‑Fi에서 이어받기" else "Wi‑Fi 설치")
+                            }
                         }
                     }
                 }
@@ -1137,7 +1178,11 @@ private fun FullTranscriptSheet(
 }
 
 private fun modelStatusText(model: ModelUiState): String = when (model.status) {
-    ModelUiStatus.NOT_INSTALLED -> "${formatBytes(model.descriptor.approximateDownloadBytes)} · 설치되지 않음"
+    ModelUiStatus.NOT_INSTALLED -> if (model.descriptor.remoteDownloadEnabled) {
+        "${formatBytes(model.descriptor.approximateDownloadBytes)} · 설치되지 않음"
+    } else {
+        "${formatBytes(model.descriptor.approximateDownloadBytes)} · 공식 모델 파일 가져오기 필요"
+    }
     ModelUiStatus.WAITING_FOR_WIFI -> "Wi-Fi 연결 대기 · ${formatBytes(model.downloadedBytes)}"
     ModelUiStatus.DOWNLOADING ->
         buildString {
@@ -1172,6 +1217,8 @@ private fun summaryEngineLabel(engine: String): String = when (engine) {
     SummaryEngineType.EXTRACTIVE_KOTLIN.name -> "빠른 요약 · Kotlin 추출형"
     SummaryEngineType.QWEN_LOCAL.name -> "Qwen 로컬 AI"
     SummaryEngineType.QWEN_LOCAL_GROUNDED.name -> "Qwen 로컬 AI · 원문 근거 보강"
+    SummaryEngineType.EXAONE_LOCAL.name -> "EXAONE 한국어 로컬 AI"
+    SummaryEngineType.GEMMA_LOCAL.name -> "Gemma 3 LiteRT-LM"
     SummaryEngineType.NONE.name -> "요약하지 않음"
     else -> "알 수 없는 방식"
 }
@@ -1181,16 +1228,27 @@ private fun summaryProcessingLabel(session: OnDeviceSessionEntity): String {
     val requested = session.requestedSummaryEngine
         ?.takeIf { it != session.summaryEngine }
         ?.let(::summaryEngineLabel)
-    return if (requested == null) {
+    val engineLabel = if (requested == null) {
         "처리 방식 · $actual"
     } else {
         "요청 · $requested / 실제 · $actual"
     }
+    val modelLabel = listOfNotNull(
+        session.actualSummaryModelId?.let { "모델 $it" },
+        session.summaryRuntimeType,
+        session.summaryModelVersion?.let { "v$it" },
+    ).joinToString(" · ")
+    return if (modelLabel.isBlank()) engineLabel else "$engineLabel\n$modelLabel"
 }
 
 private fun fallbackLabel(reason: String): String = when {
-    reason.contains("QWEN_QUALITY_REJECTED") -> "Qwen 품질 검사 후 원문 기반 요약으로 대체"
-    reason.contains("QWEN_RUNTIME_FAILED") -> "Qwen 실행 실패 후 원문 기반 요약으로 대체"
+    reason.contains("QWEN_QUALITY_REJECTED") -> if (':' in reason) {
+        "선택한 AI 품질 검사 후 원문 기반 요약으로 대체 · ${reason.substringAfter(':')}"
+    } else {
+        "선택한 AI 품질 검사 후 원문 기반 요약으로 대체"
+    }
+    reason.contains("LOCAL_LLM_RUNTIME_FAILED") || reason.contains("QWEN_RUNTIME_FAILED") ->
+        "선택한 AI 실행 실패 후 원문 기반 요약으로 대체"
     reason.contains("NO_SAFE_EXTRACTIVE_SUMMARY") -> "안전한 핵심을 만들지 못해 전사 원문만 보존"
     else -> "원문 기반 안전 대체 요약"
 }

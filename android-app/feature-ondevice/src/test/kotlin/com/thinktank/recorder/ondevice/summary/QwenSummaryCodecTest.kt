@@ -18,6 +18,14 @@ class QwenSummaryCodecTest {
             promptVersion = 2,
             modelVersion = "qwen-test",
             validationStatus = "PASSED",
+            requestedModelId = "QWEN_SUMMARY_KO",
+            actualModelId = "QWEN_SUMMARY_KO",
+            runtimeType = "LLAMA_CPP",
+            generationProfile = "qwen-greedy-json-v1",
+            violationCodes = null,
+            durationMs = 1_234,
+            inputChars = 556,
+            outputChars = 42,
         )
 
         assertEquals(summary, QwenSummaryCodec.decode(QwenSummaryCodec.encode(summary)))

@@ -95,8 +95,49 @@ class OnDeviceDatabaseMigrationTest {
         }
     }
 
+    @Test
+    fun migration5To6AddsModelProvenanceWithoutChangingExistingRows() {
+        helper.createDatabase(DATABASE_NAME_V6, 5).use { db ->
+            db.execSQL(
+                """
+                INSERT INTO ondevice_sessions (
+                    id, createdAt, updatedAt, state, sttEngine, summaryEngine,
+                    transcript, title, summary, actionItems, sourceType,
+                    summarySourceHash, requestedSummaryEngine, dataPolicy
+                ) VALUES (
+                    'legacy-v5', 1, 1, 'COMPLETE', 'SENSEVOICE_LOCAL_FILE',
+                    'QWEN_LOCAL', '보존할 전사', '제목', '보존할 요약', '',
+                    'MAIN_RECORDER_CHUNK', 'hash', 'QWEN_LOCAL', 'LOCAL_ONLY'
+                )
+                """.trimIndent(),
+            )
+        }
+
+        helper.runMigrationsAndValidate(
+            DATABASE_NAME_V6,
+            6,
+            true,
+            OnDeviceDatabase.MIGRATION_5_6,
+        ).use { db ->
+            db.query(
+                """
+                SELECT transcript, summary, requestedSummaryModelId, actualSummaryModelId,
+                       summaryRuntimeType, summaryGenerationProfile, summaryViolationCodes,
+                       summaryDurationMs, summaryInputChars, summaryOutputChars
+                FROM ondevice_sessions WHERE id = 'legacy-v5'
+                """.trimIndent(),
+            ).use { cursor ->
+                assertTrue(cursor.moveToFirst())
+                assertTrue(cursor.getString(0) == "보존할 전사")
+                assertTrue(cursor.getString(1) == "보존할 요약")
+                for (index in 2..9) assertTrue(cursor.isNull(index))
+            }
+        }
+    }
+
     private companion object {
         const val DATABASE_NAME = "ondevice-migration-test"
         const val DATABASE_NAME_V5 = "ondevice-migration-v5-test"
+        const val DATABASE_NAME_V6 = "ondevice-migration-v6-test"
     }
 }

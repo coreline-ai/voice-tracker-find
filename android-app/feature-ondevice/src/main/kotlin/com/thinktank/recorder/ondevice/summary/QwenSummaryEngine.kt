@@ -16,9 +16,10 @@ import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
 
-class QwenSummaryEngine(
+class LocalLlmSummaryEngine(
     context: Context,
     private val modelStore: ModelStore,
+    private val modelId: ModelId,
 ) : SummaryEngine {
     private val applicationContext = context.applicationContext
     private val resourceGuard = DeviceResourceGuard(applicationContext)
@@ -32,16 +33,20 @@ class QwenSummaryEngine(
         return ResourceArbiter.withLease(NativeWorkload.QWEN_SUMMARY) {
             try {
                 withTimeout(MAX_TOTAL_TIME_MS) {
-                    val descriptor = ModelCatalog.get(ModelId.QWEN_SUMMARY_KO)
+                    val descriptor = ModelCatalog.get(modelId)
                     check(modelStore.snapshot(descriptor).ready) {
-                        "Qwen 로컬 요약 모델이 설치되지 않았습니다"
+                        "${descriptor.displayName} 모델이 설치되지 않았습니다"
                     }
                     integrityVerifier.requireValid(descriptor)
-                    resourceGuard.requireQwenCapacity()
-                    val modelFile = File(modelStore.installDir(descriptor.id), "model.gguf")
+                    resourceGuard.requireLocalLlmCapacity()
+                    val modelFile = File(
+                        modelStore.installDir(descriptor.id),
+                        descriptor.requiredFiles.single(),
+                    )
                     val promptInput = inputReducer.reduce(transcript)
                     qualityGate.requireValid(
                         summary = client.summarize(
+                            modelId = modelId,
                             modelPath = modelFile.absolutePath,
                             transcript = promptInput,
                             originalSourceHash = sourceHash(transcript),
@@ -53,11 +58,13 @@ class QwenSummaryEngine(
                         policyVersion = SummaryPolicy.VERSION,
                         promptVersion = SummaryPolicy.PROMPT_VERSION,
                         validationStatus = SUMMARY_VALIDATION_PASSED,
+                        requestedModelId = modelId.name,
+                        actualModelId = modelId.name,
+                        runtimeType = descriptor.runtimeType.name,
+                        inputChars = transcript.length,
                     )
                 }
             } catch (cancelled: CancellationException) {
-                // Cancellation handlers cannot wait. Hold the native lease for a bounded drain so
-                // Model deletion cannot overlap a still-alive Qwen worker.
                 withContext(NonCancellable) {
                     client.awaitActiveDrain(PROCESS_DRAIN_TIMEOUT_MS)
                 }
@@ -67,7 +74,13 @@ class QwenSummaryEngine(
     }
 
     private companion object {
-        const val MAX_TOTAL_TIME_MS = 120_000L
+        const val MAX_TOTAL_TIME_MS = 180_000L
         const val PROCESS_DRAIN_TIMEOUT_MS = 5_000L
     }
 }
+
+/** Source-compatible wrapper retained for existing tests and callers. */
+class QwenSummaryEngine(
+    context: Context,
+    modelStore: ModelStore,
+) : SummaryEngine by LocalLlmSummaryEngine(context, modelStore, ModelId.QWEN_SUMMARY_KO)

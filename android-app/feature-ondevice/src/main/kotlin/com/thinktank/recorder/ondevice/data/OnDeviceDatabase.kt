@@ -9,7 +9,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
 
 @Database(
     entities = [OnDeviceSessionEntity::class],
-    version = 5,
+    version = 6,
     exportSchema = true,
 )
 abstract class OnDeviceDatabase : RoomDatabase() {
@@ -26,7 +26,13 @@ abstract class OnDeviceDatabase : RoomDatabase() {
                     OnDeviceDatabase::class.java,
                     "ondevice.db",
                 )
-                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5)
+                    .addMigrations(
+                        MIGRATION_1_2,
+                        MIGRATION_2_3,
+                        MIGRATION_3_4,
+                        MIGRATION_4_5,
+                        MIGRATION_5_6,
+                    )
                     .build()
                     .also { instance = it }
             }
@@ -92,6 +98,35 @@ abstract class OnDeviceDatabase : RoomDatabase() {
                 )
                 db.execSQL(
                     "ALTER TABLE ondevice_sessions ADD COLUMN summaryValidationStatus TEXT DEFAULT NULL",
+                )
+            }
+        }
+
+        val MIGRATION_5_6 = object : Migration(5, 6) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    "ALTER TABLE ondevice_sessions ADD COLUMN requestedSummaryModelId TEXT DEFAULT NULL",
+                )
+                db.execSQL(
+                    "ALTER TABLE ondevice_sessions ADD COLUMN actualSummaryModelId TEXT DEFAULT NULL",
+                )
+                db.execSQL(
+                    "ALTER TABLE ondevice_sessions ADD COLUMN summaryRuntimeType TEXT DEFAULT NULL",
+                )
+                db.execSQL(
+                    "ALTER TABLE ondevice_sessions ADD COLUMN summaryGenerationProfile TEXT DEFAULT NULL",
+                )
+                db.execSQL(
+                    "ALTER TABLE ondevice_sessions ADD COLUMN summaryViolationCodes TEXT DEFAULT NULL",
+                )
+                db.execSQL(
+                    "ALTER TABLE ondevice_sessions ADD COLUMN summaryDurationMs INTEGER DEFAULT NULL",
+                )
+                db.execSQL(
+                    "ALTER TABLE ondevice_sessions ADD COLUMN summaryInputChars INTEGER DEFAULT NULL",
+                )
+                db.execSQL(
+                    "ALTER TABLE ondevice_sessions ADD COLUMN summaryOutputChars INTEGER DEFAULT NULL",
                 )
             }
         }

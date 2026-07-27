@@ -71,6 +71,7 @@ ksp {
 
 dependencies {
     implementation(files("libs/llama-android-b10107-arm64.aar"))
+    implementation(project(":litert-bridge"))
 
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.activity.compose)
@@ -133,7 +134,7 @@ val verifyOnDeviceNativeArtifacts by tasks.registering {
     doLast {
         val expected = mapOf(
             file("libs/llama-android-b10107-arm64.aar") to
-                "96e22269f12a56d04be5577065d729677b0a61d606d38a8963d211a6cca4937c",
+                "ee0934ae4288108a5e6976820dd51ae5558c51891e79bdf85e8d9af6104c7268",
             file("src/main/jniLibs/arm64-v8a/libsherpa-onnx-jni.so") to
                 "a79ff75fbe1c3813cc239037b458a7828298a90a5b77f5314056508eefdf72bc",
             file("src/main/jniLibs/arm64-v8a/libonnxruntime.so") to

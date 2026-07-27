@@ -10,7 +10,7 @@ explicit user action and is verified against the hash in `ModelCatalog.kt`.
 - Source: `examples/llama.android/lib`
 - Output: `libs/llama-android-b10107-arm64.aar`
 - SHA-256:
-  `96e22269f12a56d04be5577065d729677b0a61d606d38a8963d211a6cca4937c`
+  `ee0934ae4288108a5e6976820dd51ae5558c51891e79bdf85e8d9af6104c7268`
 - License: MIT; packaged as
   `src/main/assets/licenses/LLAMA-CPP-MIT.txt`
 
@@ -23,7 +23,10 @@ The upstream Android binding uses an API-30 loggability helper; for the
 minSdk-26 build its log predicate was changed to a local minimum-level
 comparison. Inference and model code were not modified except for mobile
 resource limits: context was reduced from 8192 to 4096 tokens and the prompt
-batch from 512 to 256. The upstream information-level message that included
+batch from 512 to 256. The binding also exposes deterministic temperature,
+top-k, top-p, min-p, repeat/presence penalty, seed and GBNF grammar settings;
+fixes the generation-token ceiling; and closes a JSON response as soon as its
+root object is complete. The upstream information-level message that included
 formatted prompt content was also reduced to role-only metadata so transcripts
 and summaries cannot be written to logcat.
 

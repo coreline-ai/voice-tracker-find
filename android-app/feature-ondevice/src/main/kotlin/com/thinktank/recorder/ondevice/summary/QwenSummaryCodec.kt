@@ -18,6 +18,14 @@ internal object QwenSummaryCodec {
             .put("promptVersion", summary.promptVersion)
             .put("modelVersion", summary.modelVersion)
             .put("validationStatus", summary.validationStatus)
+            .put("requestedModelId", summary.requestedModelId)
+            .put("actualModelId", summary.actualModelId)
+            .put("runtimeType", summary.runtimeType)
+            .put("generationProfile", summary.generationProfile)
+            .put("violationCodes", summary.violationCodes)
+            .put("durationMs", summary.durationMs)
+            .put("inputChars", summary.inputChars)
+            .put("outputChars", summary.outputChars)
             .toString()
 
     fun decode(json: String): LocalSummary {
@@ -35,6 +43,14 @@ internal object QwenSummaryCodec {
             promptVersion = root.optNullableInt("promptVersion"),
             modelVersion = root.optNullableString("modelVersion"),
             validationStatus = root.optNullableString("validationStatus"),
+            requestedModelId = root.optNullableString("requestedModelId"),
+            actualModelId = root.optNullableString("actualModelId"),
+            runtimeType = root.optNullableString("runtimeType"),
+            generationProfile = root.optNullableString("generationProfile"),
+            violationCodes = root.optNullableString("violationCodes"),
+            durationMs = root.optNullableLong("durationMs"),
+            inputChars = root.optNullableInt("inputChars"),
+            outputChars = root.optNullableInt("outputChars"),
         )
     }
 
@@ -48,4 +64,7 @@ internal object QwenSummaryCodec {
 
     private fun JSONObject.optNullableInt(key: String): Int? =
         if (isNull(key) || !has(key)) null else optInt(key).takeIf { it > 0 }
+
+    private fun JSONObject.optNullableLong(key: String): Long? =
+        if (isNull(key) || !has(key)) null else optLong(key).takeIf { it >= 0 }
 }

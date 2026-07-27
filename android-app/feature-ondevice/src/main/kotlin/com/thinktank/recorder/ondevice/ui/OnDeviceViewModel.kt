@@ -39,6 +39,7 @@ import com.thinktank.recorder.ondevice.stt.SenseVoiceFileSpeechEngine
 import com.thinktank.recorder.ondevice.stt.SenseVoiceFileSttAvailability
 import com.thinktank.recorder.ondevice.stt.SpeechRecognitionException
 import com.thinktank.recorder.ondevice.summary.ExtractiveSummaryEngine
+import com.thinktank.recorder.ondevice.summary.LocalLlmSummaryEngine
 import com.thinktank.recorder.ondevice.summary.QwenSummaryEngine
 import com.thinktank.recorder.ondevice.summary.QWEN_QUALITY_REJECTED
 import com.thinktank.recorder.ondevice.summary.SUMMARY_VALIDATION_FALLBACK
@@ -74,8 +75,18 @@ enum class ModelUiStatus {
     FAILED,
 }
 
-private fun SummaryEngineType.usesQwen(): Boolean =
-    this == SummaryEngineType.QWEN_LOCAL || this == SummaryEngineType.QWEN_LOCAL_GROUNDED
+private fun SummaryEngineType.localModelId(): ModelId? = when (this) {
+    SummaryEngineType.QWEN_LOCAL,
+    SummaryEngineType.QWEN_LOCAL_GROUNDED,
+    -> ModelId.QWEN_SUMMARY_KO
+    SummaryEngineType.EXAONE_LOCAL -> ModelId.EXAONE_SUMMARY_KO
+    SummaryEngineType.GEMMA_LOCAL -> ModelId.GEMMA_SUMMARY_KO
+    SummaryEngineType.NONE,
+    SummaryEngineType.EXTRACTIVE_KOTLIN,
+    -> null
+}
+
+private fun SummaryEngineType.usesLocalLlm(): Boolean = localModelId() != null
 
 data class ModelUiState(
     val descriptor: ModelDescriptor,
@@ -138,6 +149,12 @@ class OnDeviceViewModel @Inject constructor(
     private val summaryQualityGate = SummaryQualityGate()
     private val qwenDelegate = lazy { QwenSummaryEngine(application, modelStore) }
     private val qwen by qwenDelegate
+    private val exaoneDelegate = lazy {
+        LocalLlmSummaryEngine(application, modelStore, ModelId.EXAONE_SUMMARY_KO)
+    }
+    private val gemmaDelegate = lazy {
+        LocalLlmSummaryEngine(application, modelStore, ModelId.GEMMA_SUMMARY_KO)
+    }
     private val modelManager = ModelDownloadManager(application)
     private val coordinator = OnDeviceOperationCoordinator()
     private val nativeCapability = NativeRuntimeCapabilities.current()
@@ -147,7 +164,7 @@ class OnDeviceViewModel @Inject constructor(
             ?.let { runCatching { SummaryEngineType.valueOf(it) }.getOrNull() }
             ?.let { if (it == SummaryEngineType.QWEN_LOCAL_GROUNDED) SummaryEngineType.QWEN_LOCAL else it }
             ?.takeUnless {
-                it.usesQwen() && !nativeCapability.supported
+                it.usesLocalLlm() && !nativeCapability.supported
             }
             ?: SummaryEngineType.EXTRACTIVE_KOTLIN,
     )
@@ -272,7 +289,12 @@ class OnDeviceViewModel @Inject constructor(
 
     fun selectSummary(engine: SummaryEngineType) {
         if (coordinator.active.value != null) return
-        if (engine.usesQwen() && !requireNativeCapability()) return
+        if (engine.usesLocalLlm() && !requireNativeCapability()) return
+        val modelId = engine.localModelId()
+        if (modelId != null && !modelStore.snapshot(ModelCatalog.get(modelId)).ready) {
+            message.value = "${ModelCatalog.get(modelId).displayName} 모델을 먼저 설치하세요."
+            return
+        }
         selectedSummary.value = engine
         preferences.edit().putString(KEY_SUMMARY, engine.name).apply()
     }
@@ -674,29 +696,33 @@ class OnDeviceViewModel @Inject constructor(
             return
         }
         if (
-            engine.usesQwen() &&
+            engine.usesLocalLlm() &&
             !requireNativeCapability()
         ) {
             return
         }
         if (
-            engine.usesQwen() &&
-            !modelStore.snapshot(ModelCatalog.get(ModelId.QWEN_SUMMARY_KO)).ready
+            engine.localModelId()?.let { id ->
+                !modelStore.snapshot(ModelCatalog.get(id)).ready
+            } == true
         ) {
-            message.value = "전사는 저장했습니다. Qwen 로컬 AI 요약 모델을 먼저 설치하세요."
+            message.value =
+                "전사는 저장했습니다. ${ModelCatalog.get(requireNotNull(engine.localModelId())).displayName} 모델을 먼저 설치하세요."
             return
         }
         val kind = when (engine) {
             SummaryEngineType.EXTRACTIVE_KOTLIN -> OnDeviceOperationKind.KOTLIN_SUMMARY
             SummaryEngineType.QWEN_LOCAL,
             SummaryEngineType.QWEN_LOCAL_GROUNDED,
+            SummaryEngineType.EXAONE_LOCAL,
+            SummaryEngineType.GEMMA_LOCAL,
             -> OnDeviceOperationKind.QWEN_SUMMARY
             SummaryEngineType.NONE -> return
         }
         val operation = reserve(sessionId, kind) ?: return
         processing.value = true
-        processingLabel.value = if (engine.usesQwen()) {
-            "Qwen 로컬 요약 중"
+        processingLabel.value = if (engine.usesLocalLlm()) {
+            "${ModelCatalog.get(requireNotNull(engine.localModelId())).displayName} 처리 중"
         } else {
             "빠른 요약 중"
         }
@@ -716,9 +742,14 @@ class OnDeviceViewModel @Inject constructor(
                     )
                 }
                 check(started) { "현재 상태에서는 요약을 시작할 수 없습니다." }
-                val result = if (engine.usesQwen()) {
+                val result = if (engine.usesLocalLlm()) {
                     try {
-                        qwen.summarize(transcript)
+                        when (engine.localModelId()) {
+                            ModelId.QWEN_SUMMARY_KO -> qwen.summarize(transcript)
+                            ModelId.EXAONE_SUMMARY_KO -> exaoneDelegate.value.summarize(transcript)
+                            ModelId.GEMMA_SUMMARY_KO -> gemmaDelegate.value.summarize(transcript)
+                            else -> error("선택한 로컬 AI 모델을 찾을 수 없습니다")
+                        }
                     } catch (cancelled: CancellationException) {
                         throw cancelled
                     } catch (error: Throwable) {
@@ -726,16 +757,17 @@ class OnDeviceViewModel @Inject constructor(
                         createSafeExtractiveFallback(
                             transcript = transcript,
                             reason = fallbackReason,
+                            requestedModelId = engine.localModelId(),
                         ).also {
                             message.value = when {
-                                fallbackReason == QWEN_QUALITY_REJECTED && it.bullets.isEmpty() ->
-                                    "Qwen 결과가 품질 기준을 통과하지 못해 전사 원문만 보존했습니다."
-                                fallbackReason == QWEN_QUALITY_REJECTED ->
-                                    "Qwen 결과가 품질 기준을 통과하지 못해 원문 기반 요약으로 대체했습니다."
+                                fallbackReason.startsWith(QWEN_QUALITY_REJECTED) && it.bullets.isEmpty() ->
+                                    "선택한 AI 결과가 품질 기준을 통과하지 못해 전사 원문만 보존했습니다."
+                                fallbackReason.startsWith(QWEN_QUALITY_REJECTED) ->
+                                    "선택한 AI 결과가 품질 기준을 통과하지 못해 원문 기반 요약으로 대체했습니다."
                                 it.bullets.isEmpty() ->
-                                    "Qwen 실행에 실패해 전사 원문만 보존했습니다."
+                                    "선택한 AI 실행에 실패해 전사 원문만 보존했습니다."
                                 else ->
-                                    "Qwen 실행에 실패해 원문 기반 요약으로 대체했습니다."
+                                    "선택한 AI 실행에 실패해 원문 기반 요약으로 대체했습니다."
                             }
                         }
                     }
@@ -752,8 +784,8 @@ class OnDeviceViewModel @Inject constructor(
                 }
                 check(saved) { "만료된 요약 결과는 저장하지 않았습니다." }
                 if (result.fallbackReason == null) {
-                    message.value = if (engine.usesQwen()) {
-                        "Qwen 로컬 AI 요약을 완료했습니다."
+                    message.value = if (engine.usesLocalLlm()) {
+                        "${ModelCatalog.get(requireNotNull(engine.localModelId())).displayName} 요약을 완료했습니다."
                     } else {
                         "빠른 요약을 완료했습니다."
                     }
@@ -793,12 +825,21 @@ class OnDeviceViewModel @Inject constructor(
     private suspend fun createSafeExtractiveFallback(
         transcript: String,
         reason: String?,
+        requestedModelId: ModelId? = null,
     ) = withContext(Dispatchers.Default) {
         val candidate = extractiveSummary.summarize(transcript)
         val validation = summaryQualityGate.validate(candidate, transcript)
         if (validation.valid) {
             summaryQualityGate.requireValid(candidate, transcript).copy(
                 fallbackReason = reason,
+                requestedModelId = requestedModelId?.name,
+                actualModelId = null,
+                runtimeType = "KOTLIN",
+                violationCodes = reason
+                    ?.substringAfter(':', missingDelimiterValue = "")
+                    ?.takeIf(String::isNotBlank),
+                inputChars = transcript.length,
+                outputChars = candidate.bullets.sumOf(String::length),
                 validationStatus = if (reason == null) {
                     candidate.validationStatus
                 } else {
@@ -813,6 +854,14 @@ class OnDeviceViewModel @Inject constructor(
                     reason,
                     "NO_SAFE_EXTRACTIVE_SUMMARY",
                 ).joinToString("+"),
+                requestedModelId = requestedModelId?.name,
+                actualModelId = null,
+                runtimeType = "KOTLIN",
+                violationCodes = reason
+                    ?.substringAfter(':', missingDelimiterValue = "")
+                    ?.takeIf(String::isNotBlank),
+                inputChars = transcript.length,
+                outputChars = 0,
                 validationStatus = "FALLBACK_EMPTY",
             )
         }

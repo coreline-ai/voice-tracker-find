@@ -6,6 +6,7 @@ import android.content.Intent
 import android.content.ServiceConnection
 import android.os.IBinder
 import com.thinktank.recorder.ondevice.api.LocalSummary
+import com.thinktank.recorder.ondevice.modelpack.ModelId
 import java.util.UUID
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
@@ -27,6 +28,7 @@ class QwenInferenceClient(context: Context) {
     private val activeDrain = AtomicReference<CompletableDeferred<Unit>?>(null)
 
     suspend fun summarize(
+        modelId: ModelId,
         modelPath: String,
         transcript: String,
         originalSourceHash: String = sourceHash(transcript),
@@ -110,7 +112,7 @@ class QwenInferenceClient(context: Context) {
                     }
                     deathRecipient.set(recipient)
                     service.linkToDeath(recipient, 0)
-                    inference.summarize(requestId, modelPath, transcript, callback)
+                    inference.summarize(requestId, modelId.name, modelPath, transcript, callback)
                 }.onFailure { finish(Result.failure(it)) }
             }
 

@@ -25,6 +25,9 @@ class ModelDownloadManager(context: Context) {
         check(NativeRuntimeCapabilities.current().supported) {
             "로컬 AI 모델은 arm64 64비트 기기에서만 설치할 수 있습니다"
         }
+        check(ModelCatalog.get(id).remoteDownloadEnabled) {
+            "이 모델은 공식 배포 페이지에서 받은 파일을 '파일 가져오기'로 설치해야 합니다"
+        }
         enqueue(id, sourceUri = null)
     }
 

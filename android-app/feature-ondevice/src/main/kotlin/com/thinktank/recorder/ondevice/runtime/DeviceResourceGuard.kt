@@ -19,26 +19,32 @@ object RuntimeResourcePolicy {
     private const val MIN_QWEN_TOTAL_MEMORY = 3L * 1024 * 1024 * 1024
     private const val MIN_QWEN_AVAILABLE_MEMORY = 1_050L * 1024 * 1024
 
-    fun qwenBlockReason(snapshot: RuntimeResourceSnapshot): String? = when {
+    fun localLlmBlockReason(snapshot: RuntimeResourceSnapshot): String? = when {
         snapshot.totalMemoryBytes < MIN_QWEN_TOTAL_MEMORY ->
-            "Qwen 실행에는 RAM 3GB 이상이 필요합니다."
+            "로컬 AI 실행에는 RAM 3GB 이상이 필요합니다."
         snapshot.lowMemory || snapshot.availableMemoryBytes < MIN_QWEN_AVAILABLE_MEMORY ->
-            "Qwen 실행에 필요한 여유 메모리가 부족합니다. 다른 앱을 닫고 다시 시도하세요."
+            "로컬 AI 실행에 필요한 여유 메모리가 부족합니다. 다른 앱을 닫고 다시 시도하세요."
         snapshot.thermalStatus >= PowerManager.THERMAL_STATUS_SEVERE ->
-            "기기가 과열되어 Qwen 실행을 중단했습니다. 식힌 뒤 다시 시도하세요."
+            "기기가 과열되어 로컬 AI 실행을 중단했습니다. 식힌 뒤 다시 시도하세요."
         snapshot.powerSaveMode && snapshot.batteryPercent != null && snapshot.batteryPercent <= 15 ->
-            "배터리가 부족하고 절전 모드가 켜져 있어 Qwen 실행을 중단했습니다."
+            "배터리가 부족하고 절전 모드가 켜져 있어 로컬 AI 실행을 중단했습니다."
         else -> null
     }
+
+    /** Compatibility alias for the existing policy tests and older callers. */
+    fun qwenBlockReason(snapshot: RuntimeResourceSnapshot): String? =
+        localLlmBlockReason(snapshot)
 }
 
 class DeviceResourceGuard(context: Context) {
     private val applicationContext = context.applicationContext
 
-    fun requireQwenCapacity() {
-        val reason = RuntimeResourcePolicy.qwenBlockReason(snapshot())
+    fun requireLocalLlmCapacity() {
+        val reason = RuntimeResourcePolicy.localLlmBlockReason(snapshot())
         if (reason != null) error(reason)
     }
+
+    fun requireQwenCapacity() = requireLocalLlmCapacity()
 
     private fun snapshot(): RuntimeResourceSnapshot {
         val activityManager = applicationContext.getSystemService(ActivityManager::class.java)

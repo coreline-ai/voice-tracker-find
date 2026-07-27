@@ -7,7 +7,7 @@ class QwenFailureContractTest {
     @Test
     fun remoteOutputRejectionStaysQualityFailureAcrossBinder() {
         assertEquals(
-            QWEN_QUALITY_REJECTED,
+            "$QWEN_QUALITY_REJECTED:INVALID_JSON_OR_SCHEMA",
             classifyQwenFailure(
                 IllegalStateException("$QWEN_QUALITY_REJECTED:INVALID_JSON_OR_SCHEMA"),
             ),

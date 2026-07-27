@@ -243,6 +243,14 @@ class OnDeviceRepositoryTest : Closeable {
                     promptVersion = 2,
                     modelVersion = "qwen-test",
                     validationStatus = "FALLBACK_PASSED",
+                    requestedModelId = "QWEN_SUMMARY_KO",
+                    actualModelId = null,
+                    runtimeType = "KOTLIN",
+                    generationProfile = "qwen-greedy-json-v1",
+                    violationCodes = "WEAK_SOURCE_EVIDENCE",
+                    durationMs = 1_234,
+                    inputChars = 556,
+                    outputChars = 22,
                 ),
             ),
         )
@@ -255,6 +263,14 @@ class OnDeviceRepositoryTest : Closeable {
         assertEquals(2, stored.summaryPromptVersion)
         assertEquals("qwen-test", stored.summaryModelVersion)
         assertEquals("FALLBACK_PASSED", stored.summaryValidationStatus)
+        assertEquals("QWEN_SUMMARY_KO", stored.requestedSummaryModelId)
+        assertEquals(null, stored.actualSummaryModelId)
+        assertEquals("KOTLIN", stored.summaryRuntimeType)
+        assertEquals("qwen-greedy-json-v1", stored.summaryGenerationProfile)
+        assertEquals("WEAK_SOURCE_EVIDENCE", stored.summaryViolationCodes)
+        assertEquals(1_234L, stored.summaryDurationMs)
+        assertEquals(556, stored.summaryInputChars)
+        assertEquals(22, stored.summaryOutputChars)
     }
 
     @Test

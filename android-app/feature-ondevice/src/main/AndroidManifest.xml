@@ -16,7 +16,7 @@
         <service
             android:name=".summary.QwenInferenceService"
             android:exported="false"
-            android:process=":local_ai_qwen"
+            android:process=":local_ai_llm"
             android:stopWithTask="true" />
         <service
             android:name="androidx.work.impl.foreground.SystemForegroundService"

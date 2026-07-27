@@ -31,7 +31,13 @@ class QwenInferenceProcessTest {
         val model = File(store.installDir(descriptor.id), "model.gguf")
 
         val startedAt = System.nanoTime()
-        runCatching { client.summarize(model.absolutePath, "별도 프로세스 실패 경로 확인") }
+        runCatching {
+            client.summarize(
+                ModelId.QWEN_SUMMARY_KO,
+                model.absolutePath,
+                "별도 프로세스 실패 경로 확인",
+            )
+        }
         val remotePid = client.lastServicePid.get()
         assertTrue(remotePid > 0)
         assertNotEquals(Process.myPid(), remotePid)

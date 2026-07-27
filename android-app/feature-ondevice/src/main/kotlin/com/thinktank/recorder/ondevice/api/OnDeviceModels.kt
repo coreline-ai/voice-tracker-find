@@ -11,6 +11,8 @@ enum class SummaryEngineType {
     NONE,
     EXTRACTIVE_KOTLIN,
     QWEN_LOCAL,
+    EXAONE_LOCAL,
+    GEMMA_LOCAL,
     /** Qwen generated the title/summary, then local source sentences filled missing detail rows. */
     QWEN_LOCAL_GROUNDED,
 }
@@ -99,6 +101,14 @@ data class LocalSummary(
     val promptVersion: Int? = null,
     val modelVersion: String? = null,
     val validationStatus: String? = null,
+    val requestedModelId: String? = null,
+    val actualModelId: String? = null,
+    val runtimeType: String? = null,
+    val generationProfile: String? = null,
+    val violationCodes: String? = null,
+    val durationMs: Long? = null,
+    val inputChars: Int? = null,
+    val outputChars: Int? = null,
 )
 
 sealed interface SpeechEvent {

@@ -82,6 +82,9 @@ class ModelDownloadWorker(
                 setProgress(progressData(descriptor, partial.length(), partial.length(), STATUS_VERIFYING))
                 updateNotification(descriptor, partial.length(), partial.length(), "다운로드 파일 확인 완료")
             } else if (sourceUri.isNullOrBlank()) {
+                check(descriptor.remoteDownloadEnabled) {
+                    "이 모델은 공식 파일 가져오기로만 설치할 수 있습니다"
+                }
                 val wifi = WifiOnlyDownloadPolicy.validatedWifi(applicationContext)
                     ?: return Result.retry()
                 download(descriptor, partial, wifi)
