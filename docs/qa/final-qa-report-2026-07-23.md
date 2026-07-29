@@ -1,11 +1,12 @@
 # ThinkTank Recorder Next — 최종 QA 보고서
 
 작성 일시: `2026-07-23 KST`
-최근 갱신: `2026-07-24 04:10 KST`
+최근 갱신: `2026-07-24 08:10 KST`
 
 ## 판정
 
-**코드·자동 테스트·Android 15 emulator E2E·QA 서명 APK 검증 완료.**
+**코드·자동 테스트·Android 15 emulator E2E·Samsung Android 16 짧은 실기기
+smoke·QA 서명 APK 검증 완료.**
 
 운영 배포 승인은 아래 외부 항목이 충족된 뒤에만 가능하다.
 
@@ -24,6 +25,8 @@
 | Android lint | `:app:lintDebug`, `:app:lintRelease` | 통과 |
 | Android 빌드 | AGP 8.9.1 / Gradle 8.12, `:app:assembleDebug`, `:app:assembleRelease` | 통과 |
 | Compose 기기 테스트 | Android 15 API 35 emulator | **3/3 통과** — 다크·라이트 primary action/상태 화면 |
+| Samsung 실기기 Compose | SM-S931N, Android 16/API 36 | **3/3 통과** — serial·제조사·모델 고정 후 직접 계측 |
+| Samsung 실기기 녹음 smoke | SM-S931N, Android 16/API 36 | 실제 마이크, FGS type `0x80`, `.part`→`.m4a`, 홈 이동·복귀·정상 종료 통과 |
 | 디자인·에셋 게이트 | `verifyRasterAssets`, `verifyBundledFontLicenses` | 7개 WebP SHA/provenance 및 APK 내 font license 검증 통과 |
 | PD20 재실행 | Android 12 PD20 | 외부 `com.coreline.cbot`가 테스트 Activity의 전면을 점유해 Compose hierarchy가 사라져 자동 UI test는 무효 실패. 기존 수동 화면 검증 증거는 유지하되, 이 실행은 통과로 집계하지 않음. |
 | QA APK 설치 | Android 15 API 35 emulator | 최신 R8 축소 release APK 설치·cold start·패키지 정보 확인 통과 |
@@ -94,6 +97,30 @@ Android 15 Compose 재검증은 `adb shell am instrument -w`로 실행해 `OK (3
 - [노트 목록 화면](screenshots/android15-e2e-notes-list.png)
 - [Markdown 표·위키링크 화면](screenshots/android15-e2e-note-detail.png)
 
+## Samsung Android 16 실기기 Smoke
+
+Samsung `SM-S931N`(serial `R3CY40PXCAP`, Android 16/API 36)을 현재 고정 실기기
+기준선으로 등록했다. 다른 연결 기기로 명령이 넘어가지 않도록 serial·제조사·모델을
+모두 확인하는 [전용 실행 스크립트](../../scripts/run_samsung_device_tests.sh)를 추가했다.
+
+- debug/test APK 직접 설치 성공
+- QA APK `com.thinktank.recorder.next` v1.0.0 설치·cold start와 non-debuggable 확인
+- QA, `.debug`, `.debug.test` 세 package 병행 설치 확인
+- `ComposeScreensTest` **3/3 통과**
+- 온보딩 2단계와 녹음 대기 화면 전환 확인
+- `RECORD_AUDIO`, `POST_NOTIFICATIONS` 권한 확인
+- 실제 마이크 녹음 중 FGS microphone type `0x80`과 32KB `.m4a.part` 확인
+- 정상 종료 후 91KB `.m4a` 확정 및 FGS 종료 확인
+- 두 번째 녹음은 홈 이동 8초 동안 40KB `.part`와 FGS가 유지됐고, 앱 복귀·종료 후
+  101KB `.m4a`로 확정
+- 실행 구간에서 `FATAL EXCEPTION` 없음
+
+USB ADB transport가 여러 번 재등록되고 PNG `adb pull`에서 다시 끊기는 시험 환경
+이슈가 있었다. 앱 설치·계측·녹음 기능은 재연결 후 모두 통과했지만, 장시간 시험 전
+직결 데이터 케이블/포트를 교체해야 한다. 상세 결과와 미검증 범위는
+[Samsung Android 16 smoke 기록](samsung-sm-s931n-android16-smoke-2026-07-24.md)에
+분리했다.
+
 ## PD20 녹음 불가 분석
 
 Android 12 PD20에서 `RECORD_AUDIO` 권한과 microphone FGS 시작은 정상이나, 시스템 audio policy가 `REMOTE_SUBMIX` 외 실제 입력 장치를 제공하지 않았다. 그 결과 `MediaRecorder`와 `AudioRecord`가 Android HAL 단계에서 실패했다.
@@ -118,7 +145,7 @@ Android 12 PD20에서 `RECORD_AUDIO` 권한과 microphone FGS 시작은 정상�
 | version | `1.0.0 (1)` |
 | APK SHA-256 | `2fc058b127e68c00a8d1801c1a1db9d7b4c35679d602f4c749cb95d08bd5e38f` |
 | 서명 | Android debug certificate, v2/v3 검증 통과 |
-| 설치 검증 | Android 15 emulator 설치·cold start 통과, `zipalign -c -v 4` 통과 |
+| 설치 검증 | Android 15 emulator 및 Samsung Android 16 실기기 설치·cold start 통과, `zipalign -c -v 4` 통과 |
 
 이 APK는 **QA 설치용**이다. Android debug certificate로 서명했으므로 운영 배포·사용자 업데이트용으로 배포해서는 안 된다.
 
@@ -138,7 +165,8 @@ Android 12 PD20에서 `RECORD_AUDIO` 권한과 microphone FGS 시작은 정상�
 ## 미완료 운영 게이트
 
 - 운영 서명키/인증서 rotation 정책 확정 및 서명 APK 생성
-- Android 14 및 15 실제 기기에서 잠금·홈 이동·권한 취소·Bluetooth/USB 마이크·1시간 이상 녹음 검증
+- Android 16 Samsung 짧은 녹음·홈 이동 smoke는 통과했으나, Android 14/15 실제
+  기기의 잠금·회전·알림 정지·권한 취소·Bluetooth/USB 마이크·1시간 이상 녹음은 미검증
 - 5/20/120분 청크 PTS gap/overlap 및 8~24시간 soak 검증
 - 실제 GCP HTTPS staging에서 인증서·proxy body limit·영속 storage smoke 검증. 현재 file/SQLite receiver의 Cloud Run 직접 운영 배포는 금지하며 [전환 준비도](../gcp-cloud-run-readiness-2026-07-23.md)를 먼저 충족해야 함
 - PD20의 외부 앱 전면 점유를 해소한 뒤 Compose 자동 UI test 재실행

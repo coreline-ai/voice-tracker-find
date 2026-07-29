@@ -76,7 +76,7 @@ internal object LocalLlmProfiles {
                     You summarize Korean transcripts locally. Use only the supplied source.
                     Return exactly one JSON object and never add unsupported facts.
                 """.trimIndent(),
-                generationProfile = "gemma-litert-cpu-greedy-v1",
+                generationProfile = "gemma-litert-cpu8-direct-greedy-v2",
                 selectionTokens = 48,
                 summaryTokens = 160,
                 generationConfig = GenerationConfig(

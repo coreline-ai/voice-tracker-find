@@ -1,5 +1,6 @@
 package com.thinktank.recorder.ondevice.summary.litert;
 
+import android.util.Log;
 import com.google.ai.edge.litertlm.Backend;
 import com.google.ai.edge.litertlm.Content;
 import com.google.ai.edge.litertlm.Contents;
@@ -9,6 +10,7 @@ import com.google.ai.edge.litertlm.Engine;
 import com.google.ai.edge.litertlm.EngineConfig;
 import com.google.ai.edge.litertlm.Message;
 import com.google.ai.edge.litertlm.SamplerConfig;
+import java.io.File;
 import java.util.Collections;
 
 /**
@@ -19,44 +21,47 @@ import java.util.Collections;
  * tasks in the main feature.
  */
 public final class GemmaLiteRtBridge implements AutoCloseable {
+    public enum BackendMode {
+        CPU,
+        GPU
+    }
+
     private final Engine engine;
-    private final Conversation conversation;
+    private final String systemPrompt;
+    private final BackendMode backendMode;
+    private volatile Conversation activeConversation;
 
     public GemmaLiteRtBridge(String modelPath, String cacheDir, String systemPrompt) {
+        this(modelPath, cacheDir, systemPrompt, BackendMode.CPU);
+    }
+
+    public GemmaLiteRtBridge(
+            String modelPath,
+            String cacheDir,
+            String systemPrompt,
+            BackendMode backendMode
+    ) {
         Engine createdEngine = null;
-        Conversation createdConversation = null;
         try {
+            File cacheDirectory = new File(cacheDir);
+            if (!cacheDirectory.isDirectory() && !cacheDirectory.mkdirs()) {
+                throw new IllegalStateException(
+                        "LiteRT-LM cache directory could not be created: " + cacheDir
+                );
+            }
             createdEngine = new Engine(
                     new EngineConfig(
                             modelPath,
-                            new Backend.CPU(),
+                            createBackend(backendMode),
                             null,
                             null,
                             4096,
                             null,
-                            cacheDir
+                            cacheDirectory.getAbsolutePath()
                     )
             );
             createdEngine.initialize();
-            createdConversation = createdEngine.createConversation(
-                    new ConversationConfig(
-                            Contents.Companion.of(systemPrompt),
-                            Collections.emptyList(),
-                            Collections.emptyList(),
-                            new SamplerConfig(1, 1.0, 0.0, 1),
-                            false,
-                            Collections.emptyList(),
-                            Collections.emptyMap()
-                    )
-            );
         } catch (Throwable error) {
-            if (createdConversation != null) {
-                try {
-                    createdConversation.close();
-                } catch (Throwable ignored) {
-                    // Preserve the initialization error.
-                }
-            }
             if (createdEngine != null) {
                 try {
                     createdEngine.close();
@@ -67,30 +72,83 @@ public final class GemmaLiteRtBridge implements AutoCloseable {
             throw error;
         }
         engine = createdEngine;
-        conversation = createdConversation;
+        this.systemPrompt = systemPrompt;
+        this.backendMode = backendMode;
+    }
+
+    private static Backend createBackend(BackendMode backendMode) {
+        if (backendMode == BackendMode.GPU) {
+            return new Backend.GPU();
+        }
+        int availableProcessors = Runtime.getRuntime().availableProcessors();
+        int threadCount = Math.min(MAX_CPU_THREADS, Math.max(1, availableProcessors));
+        return new Backend.CPU(threadCount, null);
+    }
+
+    public BackendMode getBackendMode() {
+        return backendMode;
     }
 
     public String generate(String prompt) {
-        Message response = conversation.sendMessage(prompt, Collections.emptyMap());
-        StringBuilder text = new StringBuilder();
-        for (Content content : response.getContents().getContents()) {
-            if (content instanceof Content.Text) {
-                text.append(((Content.Text) content).getText());
+        Conversation conversation = engine.createConversation(
+                new ConversationConfig(
+                        Contents.Companion.of(systemPrompt),
+                        Collections.emptyList(),
+                        Collections.emptyList(),
+                        new SamplerConfig(1, 1.0, 0.0, 1),
+                        false,
+                        Collections.emptyList(),
+                        Collections.emptyMap()
+                )
+        );
+        activeConversation = conversation;
+        long startedAt = System.nanoTime();
+        try {
+            Message response = conversation.sendMessage(prompt, Collections.emptyMap());
+            StringBuilder text = new StringBuilder();
+            for (Content content : response.getContents().getContents()) {
+                if (content instanceof Content.Text) {
+                    text.append(((Content.Text) content).getText());
+                }
             }
+            long elapsedMs = (System.nanoTime() - startedAt) / 1_000_000L;
+            int tokenCount = conversation.getTokenCount();
+            Log.i(
+                    TAG,
+                    "generate backend=" + backendMode +
+                            " elapsedMs=" + elapsedMs +
+                            " tokenCount=" + tokenCount +
+                            " outputChars=" + text.length()
+            );
+            return text.toString();
+        } finally {
+            if (activeConversation == conversation) {
+                activeConversation = null;
+            }
+            conversation.close();
         }
-        return text.toString();
     }
 
     public void cancel() {
-        conversation.cancelProcess();
+        Conversation conversation = activeConversation;
+        if (conversation != null) {
+            conversation.cancelProcess();
+        }
     }
 
     @Override
     public void close() {
-        try {
-            conversation.close();
-        } finally {
-            engine.close();
+        Conversation conversation = activeConversation;
+        if (conversation != null) {
+            try {
+                conversation.close();
+            } finally {
+                activeConversation = null;
+            }
         }
+        engine.close();
     }
+
+    private static final String TAG = "GemmaLiteRtBridge";
+    private static final int MAX_CPU_THREADS = 8;
 }

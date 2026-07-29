@@ -4,7 +4,7 @@ import com.thinktank.recorder.ondevice.api.LocalSummary
 
 internal object SummaryPolicy {
     const val VERSION = 3
-    const val PROMPT_VERSION = 3
+    const val PROMPT_VERSION = 4
     const val MAX_BULLETS = 2
     const val MAX_BULLET_CHARS = 80
     const val MAX_TOTAL_CHARS = 100
@@ -175,7 +175,7 @@ internal class SummaryQualityGate(
 
     private fun isCompleteStatement(value: String): Boolean {
         val compact = value.trim().trimEnd('.', '!', '?', '。', '！', '？')
-        return COMPLETE_ENDING.containsMatchIn(compact)
+        return COMPLETE_ENDING.containsMatchIn(compact) || COMPACT_HEADLINE_ENDING.containsMatchIn(compact)
     }
 
     private fun hasEllipsis(value: String): Boolean =
@@ -216,6 +216,11 @@ internal class SummaryQualityGate(
         val LATIN = Regex("[A-Za-z][A-Za-z0-9_-]+")
         val COMPLETE_ENDING = Regex(
             """(?:다|요|함|임|음|됨|한다|했다|된다|이다|였다|있다|없다)$""",
+        )
+        // Korean notes commonly use source-grounded nominal endings such as "출시일 확정".
+        // They remain subject to token, number, and evidence validation in [validate].
+        val COMPACT_HEADLINE_ENDING = Regex(
+            """(?:확정|완료|예정|필요|진행|보류|배포|출시|작성|처리)$""",
         )
         const val TITLE_DUPLICATE_THRESHOLD = 0.85
         const val BULLET_DUPLICATE_THRESHOLD = 0.60

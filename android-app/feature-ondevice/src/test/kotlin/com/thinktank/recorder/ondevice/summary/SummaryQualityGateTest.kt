@@ -29,6 +29,21 @@ class SummaryQualityGateTest {
     }
 
     @Test
+    fun acceptsSourceGroundedCompactDecisionHeadline() {
+        val compactSource = "새 녹음 화면의 출시일은 8월 15일로 확정했다."
+        val result = gate.validate(
+            summary = qwenSummary(
+                title = "8월 출시일",
+                bullets = listOf("8월 15일 출시일 확정"),
+            ),
+            transcript = compactSource,
+            evidenceIds = listOf(setOf(1)),
+        )
+
+        assertTrue(result.violations.toString(), result.valid)
+    }
+
+    @Test
     fun rejectsCharacterSlicedOrGenericSummary() {
         val result = gate.validate(
             summary = qwenSummary(

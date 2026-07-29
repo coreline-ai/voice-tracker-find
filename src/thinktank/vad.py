@@ -35,6 +35,13 @@ _TIMESTAMP_FORMAT = "%Y-%m-%d %H:%M:%S"
 # 수행하기 위한 기본 청크 길이(초).
 VAD_CHUNK_SECONDS = 600  # 10분
 
+# Silero VAD는 노래처럼 길게 늘어지는 발성, 근접 마이크, 일부 AAC 녹음에서
+# 실제 음성이 있어도 발화 구간을 하나도 반환하지 않을 수 있다. 이때 바로
+# no_speech로 종료하면 원본과 내용이 함께 유실되므로, 충분한 신호가 있으면
+# 원본 전체를 전사기로 넘긴다. 0.003 RMS는 약 -50 dBFS로, 디지털 무음·미세한
+# 장비 노이즈는 제외하면서 조용한 음성은 보존하는 하한이다.
+AUDIBLE_FALLBACK_MIN_RMS = 0.003
+
 
 @dataclass(frozen=True)
 class VadSegment:
@@ -47,6 +54,21 @@ class VadSegment:
 Segments = list[VadSegment]
 DetectSpeechFn = Callable[[Path], Segments]
 CutAudioFn = Callable[[Path, Path, Segments], None]
+
+
+def fallback_segments_for_audible_audio(
+    duration_seconds: float,
+    rms: float,
+    min_rms: float = AUDIBLE_FALLBACK_MIN_RMS,
+) -> Segments:
+    """VAD가 비었어도 충분한 원본 신호가 있으면 전체 구간을 보존한다.
+
+    전사기는 자체 무음 확률 판단을 수행하므로, VAD의 단일 오판 때문에 실제
+    발화를 폐기하는 것보다 원본 전체를 한 번 전사하는 편이 안전하다.
+    """
+    if duration_seconds <= 0 or rms < min_rms:
+        return []
+    return [VadSegment(start=0.0, end=duration_seconds)]
 
 
 def iter_time_chunks(
@@ -153,6 +175,17 @@ def load_speech_detector(
                 VadSegment(start=chunk_start + ts["start"], end=chunk_start + ts["end"])
                 for ts in chunk_timestamps
             )
+
+        if not segments:
+            rms = float(wav.square().mean().sqrt()) if len(wav) else 0.0
+            fallback = fallback_segments_for_audible_audio(duration, rms)
+            if fallback:
+                logger.warning(
+                    "VAD 발화 구간 없음(원본 RMS=%.4f) — 원본 전체를 전사 단계로 보존: %s",
+                    rms,
+                    audio_path,
+                )
+                return fallback
         return segments
 
     return _detect

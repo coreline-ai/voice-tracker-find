@@ -104,6 +104,7 @@ class QwenInferenceService : Service() {
                                 canonicalModel.absolutePath,
                                 File(cacheDir, "litertlm").absolutePath,
                                 profile.systemPrompt,
+                                GemmaLiteRtBridge.BackendMode.CPU,
                             ).also(activeGemma::set)
                             TwoStageSummaryPipeline().summarize(
                                 transcript = transcript,

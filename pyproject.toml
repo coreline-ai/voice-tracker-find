@@ -12,6 +12,8 @@ dependencies = [
 
 [project.optional-dependencies]
 dev = [
+    "httpx>=0.28,<1",
+    "openapi-spec-validator>=0.7.2,<0.8",
     "pytest>=7.4.3",
     "ruff>=0.1.9",
 ]
@@ -30,6 +32,22 @@ gpu = [
 ]
 llm = [
     "anthropic>=0.25.0",
+]
+cloud-api = [
+    "google-cloud-storage>=3,<4",
+    "hypercorn>=0.17.3,<0.18",
+    "psycopg[binary]>=3.2,<4",
+    "sqlalchemy>=2.0,<3",
+    "starlette>=0.47,<1",
+]
+server = [
+    "alembic>=1.16,<2",
+    "google-cloud-storage>=3,<4",
+    "google-cloud-tasks>=2,<3",
+    "hypercorn>=0.17.3,<0.18",
+    "psycopg[binary]>=3.2,<4",
+    "sqlalchemy>=2.0,<3",
+    "starlette>=0.47,<1",
 ]
 # LAN 수신기 TLS용 자체서명 인증서 생성 (앱이 공개키를 피닝하므로 CA 불필요).
 tls = [
@@ -51,4 +69,5 @@ testpaths = ["tests"]
 addopts = "-m 'not real'"
 markers = [
     "real: 실물 의존성(torch/whisper/claude)과 입력이 있어야 실행되는 스모크 테스트. 평소 pytest 에서는 제외되고 `pytest -m real` 로만 실행.",
+    "postgres: ephemeral PostgreSQL이 필요한 server adapter 통합 테스트.",
 ]

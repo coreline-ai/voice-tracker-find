@@ -61,6 +61,97 @@ class TwoStageSummaryPipelineTest {
     }
 
     @Test
+    fun acceptsGemmaCompleteSummaryPrefixBeforeOuterJsonClosure() = runBlocking {
+        val responses = ArrayDeque(
+            listOf(
+                """
+                ```json
+                {"title":"쇼핑쇼츠 강의","summary":["수강생의 쇼핑쇼츠 판매 경험을 설명한다."]
+                ```
+                """.trimIndent(),
+            ),
+        )
+
+        val result = TwoStageSummaryPipeline().summarize(
+            transcript = source,
+            profile = LocalLlmProfiles.get(ModelId.GEMMA_SUMMARY_KO),
+            generator = LocalTextGenerator { responses.removeFirst() },
+        )
+
+        assertEquals(SummaryEngineType.GEMMA_LOCAL, result.engine)
+        assertEquals(listOf("수강생의 쇼핑쇼츠 판매 경험을 설명한다."), result.bullets)
+    }
+
+    @Test
+    fun acceptsGemmaSingleStringSummary() = runBlocking {
+        val responses = ArrayDeque(
+            listOf(
+                """{"title":"쇼핑쇼츠 강의","summary":"수강생의 쇼핑쇼츠 판매 경험을 설명한다."}""",
+            ),
+        )
+        var calls = 0
+
+        val result = TwoStageSummaryPipeline().summarize(
+            transcript = source,
+            profile = LocalLlmProfiles.get(ModelId.GEMMA_SUMMARY_KO),
+            generator = LocalTextGenerator {
+                calls += 1
+                responses.removeFirst()
+            },
+        )
+
+        assertEquals(1, calls)
+        assertEquals(listOf("수강생의 쇼핑쇼츠 판매 경험을 설명한다."), result.bullets)
+    }
+
+    @Test
+    fun compactsVerboseGemmaTitleWithoutAnotherGeneration() = runBlocking {
+        var calls = 0
+
+        val result = TwoStageSummaryPipeline().summarize(
+            transcript = source,
+            profile = LocalLlmProfiles.get(ModelId.GEMMA_SUMMARY_KO),
+            generator = LocalTextGenerator {
+                calls += 1
+                """
+                {"title":"실제 수강생의 쇼핑쇼츠 판매 경험을 상세하게 설명하는 강의 내용",
+                "summary":"수강생의 쇼핑쇼츠 판매 경험을 설명한다."}
+                """.trimIndent()
+            },
+        )
+
+        assertEquals(1, calls)
+        assertTrue(result.title.length <= SummaryPolicy.MAX_TITLE_CHARS)
+        assertFalse(result.title.endsWith("설명하는 강의 내용"))
+    }
+
+    @Test
+    fun keepsEvidenceSelectionForLongGemmaInput() = runBlocking {
+        val longSource = List(5) { index ->
+            "${index + 1}번째 검토 내용이며 제품 출시 전에 확인해야 하는 상세 항목을 기록한다."
+        }.joinToString(" ")
+        val responses = ArrayDeque(
+            listOf(
+                """{"selectedIds":[1]}""",
+                """{"title":"출시 검토","summary":["제품 출시 전 상세 항목을 확인한다."]}""",
+            ),
+        )
+        val requests = mutableListOf<GenerationRequest>()
+
+        TwoStageSummaryPipeline().summarize(
+            transcript = longSource,
+            profile = LocalLlmProfiles.get(ModelId.GEMMA_SUMMARY_KO),
+            generator = LocalTextGenerator { request ->
+                requests += request
+                responses.removeFirst()
+            },
+        )
+
+        assertEquals(2, requests.size)
+        assertTrue(requests.first().prompt.contains("selectedIds"))
+    }
+
+    @Test
     fun modelPromptsDoNotContainUnsupportedThinkingSwitches() {
         listOf(ModelId.QWEN_SUMMARY_KO, ModelId.EXAONE_SUMMARY_KO).forEach { id ->
             val prompt = LocalLlmProfiles.get(id).systemPrompt

@@ -1,6 +1,7 @@
 package com.thinktank.recorder.ondevice.summary
 
 import com.thinktank.recorder.ondevice.api.LocalSummary
+import com.thinktank.recorder.ondevice.modelpack.ModelRuntimeType
 import org.json.JSONObject
 
 internal fun interface LocalTextGenerator {
@@ -29,37 +30,11 @@ internal class TwoStageSummaryPipeline(
         val candidates = candidateReducer.reduce(transcript)
         require(candidates.isNotEmpty()) { "요약할 원문 구간이 없습니다" }
 
-        val allowedIds = candidates.map(SourceSegment::id).toSet()
-        val selectionRequest = GenerationRequest(
-            prompt = buildSelectionPrompt(candidates),
-            maxTokens = profile.selectionTokens,
-            grammar = selectionGrammar(candidates.map(SourceSegment::id)),
-        )
-        val firstSelection = runCatching {
-            parseSelectedIds(generator.generate(selectionRequest), allowedIds)
+        val selected = if (canSummarizeDirectly(transcript, candidates, profile)) {
+            candidates
+        } else {
+            selectEvidence(candidates, profile, generator)
         }
-        val selectedIds = firstSelection.getOrElse { firstError ->
-            runCatching {
-                parseSelectedIds(
-                    generator.generate(
-                        selectionRequest.copy(
-                            prompt = """
-                                이전 구간 선택 응답이 잘못되었습니다: ${rejectionReason(firstError)}
-                                허용된 ID만 사용하고 설명 없이 JSON 하나만 반환하세요.
-                                ${buildSelectionPrompt(candidates)}
-                            """.trimIndent(),
-                        ),
-                    ),
-                    allowedIds,
-                )
-            }.getOrElse { secondError ->
-                throw FinalLocalLlmOutputRejectedException(
-                    rejectionReason(secondError),
-                    secondError,
-                )
-            }
-        }
-        val selected = candidates.filter { it.id in selectedIds }
         check(selected.isNotEmpty()) { "선택된 원문 구간이 없습니다" }
 
         val first = runCatching {
@@ -97,29 +72,66 @@ internal class TwoStageSummaryPipeline(
         }
     }
 
+    private suspend fun selectEvidence(
+        candidates: List<SourceSegment>,
+        profile: LocalLlmProfile,
+        generator: LocalTextGenerator,
+    ): List<SourceSegment> {
+        val allowedIds = candidates.map(SourceSegment::id).toSet()
+        val selectionRequest = GenerationRequest(
+            prompt = buildSelectionPrompt(candidates),
+            maxTokens = profile.selectionTokens,
+            grammar = selectionGrammar(candidates.map(SourceSegment::id)),
+        )
+        val firstSelection = runCatching {
+            parseSelectedIds(generator.generate(selectionRequest), allowedIds)
+        }
+        val selectedIds = firstSelection.getOrElse { firstError ->
+            runCatching {
+                parseSelectedIds(
+                    generator.generate(
+                        selectionRequest.copy(
+                            prompt = """
+                                이전 구간 선택 응답이 잘못되었습니다: ${rejectionReason(firstError)}
+                                허용된 ID만 사용하고 설명 없이 JSON 하나만 반환하세요.
+                                ${buildSelectionPrompt(candidates)}
+                            """.trimIndent(),
+                        ),
+                    ),
+                    allowedIds,
+                )
+            }.getOrElse { secondError ->
+                throw FinalLocalLlmOutputRejectedException(
+                    rejectionReason(secondError),
+                    secondError,
+                )
+            }
+        }
+        return candidates.filter { it.id in selectedIds }
+    }
+
+    private fun canSummarizeDirectly(
+        transcript: String,
+        candidates: List<SourceSegment>,
+        profile: LocalLlmProfile,
+    ): Boolean =
+        profile.runtimeType == ModelRuntimeType.LITERT_LM &&
+            transcript.length <= DIRECT_SUMMARY_MAX_CHARS &&
+            candidates.size <= DIRECT_SUMMARY_MAX_SEGMENTS
+
     private fun parseAndValidate(
         raw: String,
         transcript: String,
         selected: List<SourceSegment>,
         profile: LocalLlmProfile,
     ): LocalSummary {
-        val root = JSONObject(QwenOutputParser.extractJsonObject(raw))
-        val title = normalizeText(root.optString("title"))
-        val rows = root.optJSONArray("summary")
-            ?: throw IllegalArgumentException("응답에 summary 배열이 없습니다")
-        val bullets = buildList {
-            for (index in 0 until minOf(rows.length(), SummaryPolicy.MAX_BULLETS + 1)) {
-                val text = when (val value = rows.opt(index)) {
-                    is String -> value
-                    is JSONObject -> value.optString("text")
-                    else -> ""
-                }
-                normalizeText(text).takeIf(String::isNotBlank)?.let(::add)
-            }
-        }
+        val payload = SummaryPayloadParser.parse(
+            raw = raw,
+            allowCompletePrefix = profile.runtimeType == ModelRuntimeType.LITERT_LM,
+        )
         val summary = LocalSummary(
-            title = title,
-            bullets = bullets,
+            title = compactTitle(payload.title),
+            bullets = payload.bullets,
             actionItems = ExplicitActionItemExtractor.extract(selected),
             engine = profile.engineType,
             sourceHash = sourceHash(transcript),
@@ -132,13 +144,38 @@ internal class TwoStageSummaryPipeline(
             runtimeType = profile.runtimeType.name,
             generationProfile = profile.generationProfile,
             inputChars = transcript.length,
-            outputChars = bullets.sumOf(String::length),
+            outputChars = payload.bullets.sumOf(String::length),
         )
         return qualityGate.requireValid(
             summary = summary,
             transcript = transcript,
-            evidenceIds = bullets.map { selected.map(SourceSegment::id).toSet() },
+            evidenceIds = payload.bullets.map { selected.map(SourceSegment::id).toSet() },
         )
+    }
+
+    /**
+     * A title is a label rather than a factual sentence, so shortening it at a word boundary does
+     * not change the summary evidence. This avoids another expensive model pass when the only
+     * violation is a verbose title.
+     */
+    private fun compactTitle(raw: String): String {
+        val normalized = normalizeText(raw)
+            .replace("...", "")
+            .replace("…", "")
+            .trim()
+        if (normalized.length <= SummaryPolicy.MAX_TITLE_CHARS) return normalized
+
+        val words = normalized.split(' ')
+        val compact = StringBuilder()
+        for (word in words) {
+            val separator = if (compact.isEmpty()) 0 else 1
+            if (compact.length + separator + word.length > SummaryPolicy.MAX_TITLE_CHARS) break
+            if (separator == 1) compact.append(' ')
+            compact.append(word)
+        }
+        return compact.toString()
+            .takeIf(String::isNotBlank)
+            ?: normalized.take(SummaryPolicy.MAX_TITLE_CHARS)
     }
 
     private fun buildSelectionPrompt(candidates: List<SourceSegment>): String = """
@@ -156,10 +193,11 @@ internal class TwoStageSummaryPipeline(
         선택된 원문만 사용해 핵심 의미를 짧고 완결된 한국어 문장으로 압축하세요.
         summary는 기본 1개, 필요한 경우 최대 2개입니다.
         전체 ${SummaryPolicy.totalBudget(transcript)}자 이내이며 원문보다 반드시 짧아야 합니다.
+        title은 ${SummaryPolicy.MAX_TITLE_CHARS}자 이내의 짧은 명사형 제목으로 쓰세요.
         이름, 날짜, 숫자, 영문 용어를 원문에 없으면 만들지 마세요.
-        말줄임표, 문장 중간 절단, 일반적인 제목 반복을 금지합니다.
+        말줄임표, 문장 중간 절단, 일반적인 제목 반복을 금지합니다. 문장은 반드시 '다' 또는 '합니다'로 끝내세요.
         다른 설명 없이 다음 구조의 JSON만 반환하세요.
-        {"title":"짧은 제목","summary":["완결된 핵심 문장"],"actionItems":[]}
+        {"title":"짧은 제목","summary":["완결된 핵심 문장"]}
 
         ${selected.joinToString("\n") { "[${it.id}] ${it.text}" }}
     """.trimIndent()
@@ -171,9 +209,10 @@ internal class TwoStageSummaryPipeline(
     ): String = """
         이전 응답은 품질 검사에서 거절되었습니다: $reason
         아래 원문만 사용해 다시 작성하세요.
+        title은 ${SummaryPolicy.MAX_TITLE_CHARS}자 이내,
         summary 1개를 우선하고 최대 2개, 전체 ${SummaryPolicy.totalBudget(transcript)}자 이내,
-        완결된 한국어 문장만 허용합니다. 설명 없이 JSON 하나만 반환하세요.
-        {"title":"짧은 제목","summary":["완결된 핵심 문장"],"actionItems":[]}
+        완결된 한국어 문장만 허용하고 반드시 '다' 또는 '합니다'로 끝내세요. 설명 없이 JSON 하나만 반환하세요.
+        {"title":"짧은 제목","summary":["완결된 핵심 문장"]}
 
         ${selected.joinToString("\n") { "[${it.id}] ${it.text}" }}
     """.trimIndent()
@@ -209,8 +248,11 @@ internal class TwoStageSummaryPipeline(
         }
 
     private companion object {
+        const val DIRECT_SUMMARY_MAX_CHARS = 600
+        const val DIRECT_SUMMARY_MAX_SEGMENTS = 4
+
         val SUMMARY_GRAMMAR = """
-            root ::= "{" ws "\"title\"" ws ":" ws string ws "," ws "\"summary\"" ws ":" ws "[" ws string (ws "," ws string)? ws "]" ws "," ws "\"actionItems\"" ws ":" ws "[" ws "]" ws "}"
+            root ::= "{" ws "\"title\"" ws ":" ws string ws "," ws "\"summary\"" ws ":" ws "[" ws string (ws "," ws string)? ws "]" ws "}"
             string ::= "\"" chars "\""
             chars ::= char*
             char ::= [^"\\\x00-\x1F] | "\\" (["\\/bfnrt] | "u" [0-9a-fA-F]{4})

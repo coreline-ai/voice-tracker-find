@@ -16,8 +16,10 @@ from thinktank.db import (
     update_recording_status,
 )
 from thinktank.vad import (
+    AUDIBLE_FALLBACK_MIN_RMS,
     VAD_CHUNK_SECONDS,
     VadSegment,
+    fallback_segments_for_audible_audio,
     iter_time_chunks,
     process_vad,
     run_vad_batch,
@@ -88,6 +90,17 @@ def test_iter_time_chunks_zero_or_negative_duration_returns_empty():
 
 def test_vad_chunk_seconds_default_is_positive():
     assert VAD_CHUNK_SECONDS > 0
+
+
+def test_audible_fallback_preserves_full_recording_when_vad_misses_speech():
+    assert fallback_segments_for_audible_audio(114.496, AUDIBLE_FALLBACK_MIN_RMS) == [
+        VadSegment(start=0.0, end=114.496)
+    ]
+
+
+def test_audible_fallback_does_not_preserve_silent_or_empty_audio():
+    assert fallback_segments_for_audible_audio(30.0, AUDIBLE_FALLBACK_MIN_RMS - 0.0001) == []
+    assert fallback_segments_for_audible_audio(0.0, 1.0) == []
 
 
 # ---------------------------------------------------------------------------
