@@ -5,6 +5,58 @@
 > **설치하려는 경우** 이 README 가 아니라 **`DISTRIBUTE.md`**(빠른 안내) 또는
 > **`SETUP.md`**(Claude 실행 런북)를 보세요. 아래는 개발/참조용입니다.
 
+## 앱 미리보기
+
+`com.thinktank.recorder.next` v1.0.0은 기존 앱과 함께 설치할 수 있는 별도 Android Compose 앱입니다.
+녹음부터 로컬 음성 인식, Wi-Fi 동기화, 정리된 노트 확인까지 하나의 흐름으로 연결합니다.
+
+### 첫 실행 소개
+
+<table>
+  <tr>
+    <td align="center">
+      <img src="./docs/readme/app/onboarding-01-recording.png" width="220" alt="녹음 기능을 소개하는 첫 번째 시작 화면"><br>
+      <sub><b>1. 말을 놓치지 않는 기록</b></sub>
+    </td>
+    <td align="center">
+      <img src="./docs/readme/app/onboarding-02-notes.png" width="220" alt="노트 동기화를 소개하는 두 번째 시작 화면"><br>
+      <sub><b>2. 기록이 노트로 돌아오는 흐름</b></sub>
+    </td>
+  </tr>
+</table>
+
+### 주요 탭
+
+<table>
+  <tr>
+    <td align="center">
+      <img src="./docs/readme/app/tab-recording.png" width="220" alt="녹음 탭"><br>
+      <sub><b>녹음</b></sub>
+    </td>
+    <td align="center">
+      <img src="./docs/readme/app/tab-notes.png" width="220" alt="노트 탭"><br>
+      <sub><b>노트</b></sub>
+    </td>
+    <td align="center">
+      <img src="./docs/readme/app/tab-settings.png" width="220" alt="설정 탭"><br>
+      <sub><b>설정</b></sub>
+    </td>
+    <td align="center">
+      <img src="./docs/readme/app/tab-local-ai.png" width="220" alt="로컬 AI 탭"><br>
+      <sub><b>로컬 AI</b></sub>
+    </td>
+  </tr>
+</table>
+
+| 탭 | 주요 기능 |
+|---|---|
+| 녹음 | 음성 메모 녹음, 재생, 기기 저장공간 확인 |
+| 노트 | 서버가 정리한 노트와 원문 전사 확인, 수동 동기화 |
+| 설정 | 녹음 청크, 예약 시간, 자동 동기화 및 Wi-Fi 우선 정책 설정 |
+| 로컬 AI | 실시간 시스템 STT와 완료 녹음 파일용 로컬 STT 설정 |
+
+> 모든 화면은 삼성 실기기에서 동일한 `1080 × 2340` 해상도로 캡처했습니다.
+
 ## 개발 환경 설정
 
 ```bash
