@@ -21,11 +21,13 @@ import com.thinktank.recorder.ondevice.data.OnDeviceDatabase
 import com.thinktank.recorder.ondevice.data.OnDeviceRepository
 import com.thinktank.recorder.ondevice.data.OnDeviceSessionEntity
 import com.thinktank.recorder.ondevice.modelpack.ModelCatalog
+import com.thinktank.recorder.ondevice.modelpack.ModelDeleteScope
 import com.thinktank.recorder.ondevice.modelpack.ModelDescriptor
 import com.thinktank.recorder.ondevice.modelpack.ModelDownloadManager
 import com.thinktank.recorder.ondevice.modelpack.ModelDownloadWorker
 import com.thinktank.recorder.ondevice.modelpack.ModelId
 import com.thinktank.recorder.ondevice.modelpack.ModelStore
+import com.thinktank.recorder.ondevice.modelpack.ModelVaultState
 import com.thinktank.recorder.ondevice.recording.LocalAudioFileManager
 import com.thinktank.recorder.ondevice.runtime.ActiveOperation
 import com.thinktank.recorder.ondevice.runtime.MicrophoneArbiter
@@ -38,13 +40,7 @@ import com.thinktank.recorder.ondevice.stt.AndroidOnDeviceSpeechEngine
 import com.thinktank.recorder.ondevice.stt.SenseVoiceFileSpeechEngine
 import com.thinktank.recorder.ondevice.stt.SenseVoiceFileSttAvailability
 import com.thinktank.recorder.ondevice.stt.SpeechRecognitionException
-import com.thinktank.recorder.ondevice.summary.ExtractiveSummaryEngine
-import com.thinktank.recorder.ondevice.summary.LocalLlmSummaryEngine
-import com.thinktank.recorder.ondevice.summary.QwenSummaryEngine
-import com.thinktank.recorder.ondevice.summary.QWEN_QUALITY_REJECTED
-import com.thinktank.recorder.ondevice.summary.SUMMARY_VALIDATION_FALLBACK
-import com.thinktank.recorder.ondevice.summary.SummaryQualityGate
-import com.thinktank.recorder.ondevice.summary.classifyQwenFailure
+import com.thinktank.recorder.ondevice.summary.GemmaSummaryEngine
 import java.util.UUID
 import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
@@ -71,22 +67,10 @@ enum class ModelUiStatus {
     VERIFYING,
     INSTALLING,
     READY,
+    RETAINED,
     PAUSED,
     FAILED,
 }
-
-private fun SummaryEngineType.localModelId(): ModelId? = when (this) {
-    SummaryEngineType.QWEN_LOCAL,
-    SummaryEngineType.QWEN_LOCAL_GROUNDED,
-    -> ModelId.QWEN_SUMMARY_KO
-    SummaryEngineType.EXAONE_LOCAL -> ModelId.EXAONE_SUMMARY_KO
-    SummaryEngineType.GEMMA_LOCAL -> ModelId.GEMMA_SUMMARY_KO
-    SummaryEngineType.NONE,
-    SummaryEngineType.EXTRACTIVE_KOTLIN,
-    -> null
-}
-
-private fun SummaryEngineType.usesLocalLlm(): Boolean = localModelId() != null
 
 data class ModelUiState(
     val descriptor: ModelDescriptor,
@@ -94,6 +78,7 @@ data class ModelUiState(
     val downloadedBytes: Long = 0,
     val totalBytes: Long = descriptor.approximateDownloadBytes,
     val installedBytes: Long = 0,
+    val retainedArtifactBytes: Long = 0,
     val bytesPerSecond: Long = 0,
     val etaSeconds: Long = -1,
     val error: String? = null,
@@ -111,7 +96,6 @@ data class OnDeviceUiState(
     val fileSttAvailability: SenseVoiceFileSttAvailability =
         SenseVoiceFileSttAvailability.MODEL_NOT_INSTALLED,
     val selectedSttProfile: SttCaptureProfile = SttCaptureProfile.BALANCED,
-    val selectedSummary: SummaryEngineType = SummaryEngineType.EXTRACTIVE_KOTLIN,
     val systemSttAvailable: Boolean = false,
     val nativeAiAvailable: Boolean = false,
     val nativeAiUnavailableReason: String? = null,
@@ -125,6 +109,7 @@ data class OnDeviceUiState(
     val activeSessionId: String? = null,
     val message: String? = null,
     val models: List<ModelUiState> = emptyList(),
+    val modelVault: ModelVaultState = ModelVaultState(),
 ) {
     val micBusy: Boolean
         get() = listening || fileTranscribing
@@ -137,37 +122,19 @@ class OnDeviceViewModel @Inject constructor(
 ) : AndroidViewModel(application) {
     private val preferences = application.getSharedPreferences(PREFERENCES, 0)
     private val audioFiles = LocalAudioFileManager(application)
+    private val database = OnDeviceDatabase.get(application)
     private val repository = OnDeviceRepository(
-        dao = OnDeviceDatabase.get(application).sessionDao(),
+        dao = database.sessionDao(),
         audioFiles = audioFiles,
     )
     private val modelStore = ModelStore(application)
     private val speechEngine = AndroidOnDeviceSpeechEngine(application)
     private val fileSpeechEngine = SenseVoiceFileSpeechEngine(application, modelStore)
+    private val gemmaSummaryEngine = GemmaSummaryEngine(application, modelStore)
     private val pcmNormalizer = AndroidPcmNormalizer()
-    private val extractiveSummary = ExtractiveSummaryEngine()
-    private val summaryQualityGate = SummaryQualityGate()
-    private val qwenDelegate = lazy { QwenSummaryEngine(application, modelStore) }
-    private val qwen by qwenDelegate
-    private val exaoneDelegate = lazy {
-        LocalLlmSummaryEngine(application, modelStore, ModelId.EXAONE_SUMMARY_KO)
-    }
-    private val gemmaDelegate = lazy {
-        LocalLlmSummaryEngine(application, modelStore, ModelId.GEMMA_SUMMARY_KO)
-    }
     private val modelManager = ModelDownloadManager(application)
     private val coordinator = OnDeviceOperationCoordinator()
     private val nativeCapability = NativeRuntimeCapabilities.current()
-
-    private val selectedSummary = MutableStateFlow(
-        preferences.getString(KEY_SUMMARY, null)
-            ?.let { runCatching { SummaryEngineType.valueOf(it) }.getOrNull() }
-            ?.let { if (it == SummaryEngineType.QWEN_LOCAL_GROUNDED) SummaryEngineType.QWEN_LOCAL else it }
-            ?.takeUnless {
-                it.usesLocalLlm() && !nativeCapability.supported
-            }
-            ?: SummaryEngineType.EXTRACTIVE_KOTLIN,
-    )
     private val selectedSttProfile = MutableStateFlow(
         preferences.getString(KEY_STT_PROFILE, null)
             ?.let { runCatching { SttCaptureProfile.valueOf(it) }.getOrNull() }
@@ -185,10 +152,15 @@ class OnDeviceViewModel @Inject constructor(
     private val activeSessionId = MutableStateFlow<String?>(null)
     private val message = MutableStateFlow<String?>(null)
     private val refreshModels = MutableStateFlow(0)
+    private val modelVaultState = MutableStateFlow(modelManager.vaultState())
 
     init {
-        // Older builds may have persisted the retired system file-input policy.
-        preferences.edit().remove(KEY_STT).remove(KEY_FILE_STT_VALIDATED).apply()
+        // Gemma 3 1B is the single fixed local-summary model.
+        preferences.edit()
+            .remove(KEY_STT)
+            .remove(KEY_FILE_STT_VALIDATED)
+            .putString(KEY_SUMMARY, SummaryEngineType.GEMMA_LOCAL.name)
+            .apply()
     }
 
     private val recoveryJob: Job = viewModelScope.launch(Dispatchers.IO) {
@@ -197,6 +169,7 @@ class OnDeviceViewModel @Inject constructor(
         // A build/app replacement can stop extraction after the archive is fully downloaded.
         // Resume the verified local install automatically; no Wi-Fi or re-download is involved.
         modelManager.resumeCompletedDownloadsLocally()
+        modelVaultState.value = modelManager.vaultState()
         refreshModels.value += 1
     }
 
@@ -220,13 +193,10 @@ class OnDeviceViewModel @Inject constructor(
     private val activeState = combine(captureState, operationState) { capture, operation ->
         ActiveState(capture, operation)
     }
-    private val engineSelection = combine(selectedSttProfile, selectedSummary) { sttProfile, summary ->
-        EngineSelection(sttProfile, summary)
-    }
-    private val sessionAndSources = combine(repository.sessions, mainRecordingSources.sources) {
-            sessions,
-            sources,
-        ->
+    private val sessionAndSources = combine(
+        repository.sessions,
+        mainRecordingSources.sources,
+    ) { sessions, sources ->
         SessionsAndSources(sessions, sources)
     }
     private val fileSelection = selectedMainRecordingId
@@ -235,8 +205,11 @@ class OnDeviceViewModel @Inject constructor(
                 FileSelection(sourceId, fileSpeechEngine.availability())
             }
         }
-    private val localAiSelection = combine(engineSelection, fileSelection) { engine, file ->
-        LocalAiSelection(engine, file)
+    private val localAiSelection = combine(selectedSttProfile, fileSelection) { sttProfile, file ->
+        LocalAiSelection(sttProfile, file)
+    }
+    private val modelRefreshState = combine(refreshModels, modelVaultState) { _, vault ->
+        vault
     }
 
     val uiState: StateFlow<OnDeviceUiState> = combine(
@@ -244,15 +217,14 @@ class OnDeviceViewModel @Inject constructor(
         localAiSelection,
         activeState,
         modelManager.workInfos,
-        refreshModels,
-    ) { sessionSources, selection, active, workInfos, _ ->
+        modelRefreshState,
+    ) { sessionSources, selection, active, workInfos, vault ->
         OnDeviceUiState(
             sessions = sessionSources.sessions,
             mainRecordingSources = sessionSources.sources,
             selectedMainRecordingId = selection.file.sourceId,
             fileSttAvailability = fileSpeechEngine.availability(),
-            selectedSttProfile = selection.engine.sttProfile,
-            selectedSummary = selection.engine.summary,
+            selectedSttProfile = selection.sttProfile,
             systemSttAvailable = speechEngine.isAvailable(),
             nativeAiAvailable = nativeCapability.supported,
             nativeAiUnavailableReason = nativeCapability.reason,
@@ -268,6 +240,7 @@ class OnDeviceViewModel @Inject constructor(
             models = ModelCatalog.userManagedModels.map { descriptor ->
                 descriptor.toUiState(workInfos)
             },
+            modelVault = vault,
         )
     }.stateIn(
         viewModelScope,
@@ -278,26 +251,21 @@ class OnDeviceViewModel @Inject constructor(
             nativeAiUnavailableReason = nativeCapability.reason,
             models = ModelCatalog.userManagedModels.map { descriptor ->
                 val installed = modelStore.snapshot(descriptor)
+                val retainedArtifactBytes = modelStore.artifactBytes(descriptor)
                 ModelUiState(
                     descriptor = descriptor,
-                    status = if (installed.ready) ModelUiStatus.READY else ModelUiStatus.NOT_INSTALLED,
+                    status = when {
+                        installed.ready -> ModelUiStatus.READY
+                        retainedArtifactBytes > 0 -> ModelUiStatus.RETAINED
+                        else -> ModelUiStatus.NOT_INSTALLED
+                    },
                     installedBytes = installed.installedBytes,
+                    retainedArtifactBytes = retainedArtifactBytes,
                 )
             },
+            modelVault = modelVaultState.value,
         ),
     )
-
-    fun selectSummary(engine: SummaryEngineType) {
-        if (coordinator.active.value != null) return
-        if (engine.usesLocalLlm() && !requireNativeCapability()) return
-        val modelId = engine.localModelId()
-        if (modelId != null && !modelStore.snapshot(ModelCatalog.get(modelId)).ready) {
-            message.value = "${ModelCatalog.get(modelId).displayName} 모델을 먼저 설치하세요."
-            return
-        }
-        selectedSummary.value = engine
-        preferences.edit().putString(KEY_SUMMARY, engine.name).apply()
-    }
 
     fun selectSttProfile(profile: SttCaptureProfile) {
         if (coordinator.active.value != null) return
@@ -351,9 +319,7 @@ class OnDeviceViewModel @Inject constructor(
         when (active.kind) {
             OnDeviceOperationKind.LIVE_STT -> speechEngine.cancel()
             OnDeviceOperationKind.FILE_STT -> fileSpeechEngine.cancel()
-            OnDeviceOperationKind.KOTLIN_SUMMARY,
-            OnDeviceOperationKind.QWEN_SUMMARY,
-            -> Unit
+            OnDeviceOperationKind.GEMMA_SUMMARY -> Unit
         }
         stopRequested.value = true
         coordinator.cancelActive()
@@ -362,13 +328,6 @@ class OnDeviceViewModel @Inject constructor(
 
     fun onHostStopped() {
         cancelListening()
-    }
-
-    fun summarize(sessionId: String) {
-        val session = uiState.value.sessions.firstOrNull { it.id == sessionId } ?: return
-        if (session.failureStage == OnDeviceFailureStage.DELETE.name) return
-        if (session.transcript.isBlank()) return
-        startSummary(sessionId, session.transcript, selectedSummary.value)
     }
 
     fun deleteSession(sessionId: String) {
@@ -392,7 +351,7 @@ class OnDeviceViewModel @Inject constructor(
 
     fun downloadModel(id: ModelId) {
         if (!requireNativeCapability()) return
-        message.value = "Wi-Fi에서 모델 파일만 내려받습니다. 음성·전사·요약은 전송하지 않습니다."
+        message.value = "Wi-Fi에서 STT 모델 파일만 내려받습니다. 음성과 전사 원문은 전송하지 않습니다."
         runCatching { modelManager.download(id) }
             .onFailure { message.value = it.message }
     }
@@ -404,6 +363,26 @@ class OnDeviceViewModel @Inject constructor(
             .onFailure { message.value = it.message }
     }
 
+    fun connectModelVault(uri: Uri) {
+        viewModelScope.launch(Dispatchers.IO) {
+            val state = modelManager.connectVault(uri)
+            modelVaultState.value = state
+            if (state.connected) {
+                modelManager.resumeCompletedDownloadsLocally()
+                refreshModels.value += 1
+                message.value = "모델 보관함을 연결했습니다. 보관된 원본을 확인합니다."
+            } else {
+                message.value = state.error ?: "모델 보관함을 연결하지 못했습니다."
+            }
+        }
+    }
+
+    fun disconnectModelVault() {
+        modelManager.disconnectVault()
+        modelVaultState.value = modelManager.vaultState()
+        message.value = "모델 보관함 연결을 해제했습니다. 보관된 파일은 삭제하지 않았습니다."
+    }
+
     fun pauseModel(id: ModelId) {
         viewModelScope.launch {
             modelManager.pause(id)
@@ -412,18 +391,37 @@ class OnDeviceViewModel @Inject constructor(
         }
     }
 
-    fun deleteModel(id: ModelId) {
+    fun restoreModel(id: ModelId) {
+        if (!requireNativeCapability()) return
+        message.value = "보관된 원본을 검증해 모델 적용본을 복구합니다."
+        runCatching { modelManager.restore(id) }
+            .onFailure { message.value = it.message }
+    }
+
+    fun deleteModel(id: ModelId, scope: ModelDeleteScope) {
         message.value = if (ResourceArbiter.activeWorkload() == null) {
             "모델을 삭제하고 있습니다."
         } else {
             "실행 중인 로컬 AI 작업이 끝난 뒤 모델을 삭제합니다."
         }
         viewModelScope.launch(Dispatchers.IO) {
-            ResourceArbiter.withLease(NativeWorkload.MODEL_MAINTENANCE) {
-                modelManager.delete(id)
+            val result = runCatching {
+                ResourceArbiter.withLease(NativeWorkload.MODEL_MAINTENANCE) {
+                    modelManager.delete(id, scope)
+                }
             }
             refreshModels.value += 1
-            message.value = "모델을 이 기기에서 삭제했습니다."
+            modelVaultState.value = modelManager.vaultState()
+            message.value = result.fold(
+                onSuccess = {
+                    if (scope == ModelDeleteScope.INSTALLED_ONLY) {
+                        "모델 적용본만 삭제했습니다. 보관 원본은 유지됩니다."
+                    } else {
+                        "모델 적용본과 보관 원본을 완전히 삭제했습니다."
+                    }
+                },
+                onFailure = { it.message ?: "모델을 삭제하지 못했습니다." },
+            )
         }
     }
 
@@ -452,7 +450,6 @@ class OnDeviceViewModel @Inject constructor(
             message.value = "기본 녹음이 마이크를 사용 중입니다. 녹음을 마친 뒤 다시 시도하세요."
             return
         }
-        val summaryEngine = selectedSummary.value
         val captureProfile = selectedSttProfile.value
         listening.value = true
         liveTranscript.value = ""
@@ -460,14 +457,13 @@ class OnDeviceViewModel @Inject constructor(
         stopRequested.value = false
         message.value = "연속 온디바이스 음성 인식을 준비하고 있습니다."
         launchOperation(operation) {
-            var transcriptForSummary: String? = null
+            var completedTranscript: String? = null
             try {
                 recoveryJob.join()
                 withContext(Dispatchers.IO) {
                     repository.begin(
                         operation.sessionId,
                         SttEngineType.ANDROID_ON_DEVICE,
-                        summaryEngine,
                         OnDeviceSessionState.STARTING,
                         operation.token,
                     )
@@ -489,6 +485,7 @@ class OnDeviceViewModel @Inject constructor(
                                     message.value = "다음 문장을 준비했습니다. 말씀하세요."
                                 SpeechEvent.Listening ->
                                     message.value = "듣는 중 · 멈추면 자동으로 다음 문장을 준비합니다."
+                                SpeechEvent.Retrying -> Unit
                                 is SpeechEvent.Partial -> partialTranscript.value = event.text
                             }
                         }
@@ -513,8 +510,8 @@ class OnDeviceViewModel @Inject constructor(
                         delay(captureProfile.restartDelayMillis)
                     }
                 }
-                val completedTranscript = liveTranscript.value.trim()
-                if (completedTranscript.isBlank()) {
+                val recognizedText = liveTranscript.value.trim()
+                if (recognizedText.isBlank()) {
                     withContext(Dispatchers.IO) {
                         repository.finishOperation(
                             operation.sessionId,
@@ -528,12 +525,12 @@ class OnDeviceViewModel @Inject constructor(
                         repository.saveTranscript(
                             operation.sessionId,
                             operation.token,
-                            completedTranscript,
+                            recognizedText,
                         )
                     }
                     check(saved) { "만료된 음성 인식 결과는 저장하지 않았습니다." }
                     coroutineContext.ensureActive()
-                    transcriptForSummary = completedTranscript
+                    completedTranscript = recognizedText
                 }
             } catch (cancelled: CancellationException) {
                 withContext(NonCancellable + Dispatchers.IO) {
@@ -567,9 +564,9 @@ class OnDeviceViewModel @Inject constructor(
             } finally {
                 MicrophoneArbiter.release(MicrophoneOwner.LOCAL_AI)
                 finishUiOperation(operation)
-                transcriptForSummary?.let { transcript ->
+                completedTranscript?.let {
                     withContext(NonCancellable + Dispatchers.Main.immediate) {
-                        continueAfterTranscript(operation.sessionId, transcript, summaryEngine)
+                        continueAfterTranscript(operation.sessionId, it)
                     }
                 }
             }
@@ -578,7 +575,6 @@ class OnDeviceViewModel @Inject constructor(
 
     private fun startFileTranscription(source: MainRecordingSource) {
         val operation = reserve(UUID.randomUUID().toString(), OnDeviceOperationKind.FILE_STT) ?: return
-        val summaryEngine = selectedSummary.value
         val snapshot = audioFiles.temporaryFile("${operation.sessionId}.source")
         val pcm = audioFiles.temporaryFile("${operation.sessionId}.pcm")
         fileTranscribing.value = true
@@ -589,7 +585,7 @@ class OnDeviceViewModel @Inject constructor(
         partialTranscript.value = ""
         message.value = "1번 탭 원본을 안전하게 확인하고 있습니다."
         launchOperation(operation) {
-            var transcriptForSummary: String? = null
+            var completedTranscript: String? = null
             var sessionStarted = false
             var failureStage = OnDeviceFailureStage.NORMALIZE
             try {
@@ -602,7 +598,6 @@ class OnDeviceViewModel @Inject constructor(
                         id = operation.sessionId,
                         source = prepared.source,
                         sttEngine = SttEngineType.SENSEVOICE_LOCAL_FILE,
-                        summaryEngine = summaryEngine,
                         operationToken = operation.token,
                     )
                     sessionStarted = true
@@ -629,16 +624,39 @@ class OnDeviceViewModel @Inject constructor(
                     when (event) {
                         SpeechEvent.Ready -> message.value = "PCM 파일 전사를 준비했습니다."
                         SpeechEvent.Listening -> message.value = "녹음 파일을 분석하고 있습니다."
+                        SpeechEvent.Retrying -> {
+                            processingLabel.value = "전체 범위 안전 재처리 중"
+                            message.value = "누락 가능 구간을 전체 녹음 범위에서 한 번 더 확인하고 있습니다."
+                        }
                         is SpeechEvent.Partial -> partialTranscript.value = event.text
                     }
                 }
-                liveTranscript.value = result.text
                 partialTranscript.value = ""
-                val saved = withContext(Dispatchers.IO) {
-                    repository.saveTranscript(operation.sessionId, operation.token, result.text)
+                val diagnostics = requireNotNull(result.diagnostics) {
+                    "파일 전사 처리 범위를 확인할 수 없습니다."
                 }
-                check(saved) { "만료된 파일 전사 결과는 저장하지 않았습니다." }
-                transcriptForSummary = result.text
+                if (!diagnostics.passed) {
+                    liveTranscript.value = ""
+                    val failed = withContext(Dispatchers.IO) {
+                        repository.finishTranscriptQualityFailure(
+                            id = operation.sessionId,
+                            token = operation.token,
+                            diagnostics = diagnostics,
+                            error = "녹음 끝까지 신뢰할 수 있게 전사하지 못했습니다. 원본은 유지되며 다시 시도할 수 있습니다.",
+                            transcript = result.text,
+                        )
+                    }
+                    check(failed) { "만료된 파일 전사 품질 결과는 저장하지 않았습니다." }
+                    message.value =
+                        "전사 누락 가능성이 있어 결과를 완료하지 않았습니다. 원본 녹음은 그대로 유지됩니다."
+                } else {
+                    liveTranscript.value = result.text
+                    val saved = withContext(Dispatchers.IO) {
+                        repository.saveTranscript(operation.sessionId, operation.token, result)
+                    }
+                    check(saved) { "만료된 파일 전사 결과는 저장하지 않았습니다." }
+                    completedTranscript = result.text
+                }
             } catch (cancelled: CancellationException) {
                 if (sessionStarted) {
                     withContext(NonCancellable + Dispatchers.IO) {
@@ -675,133 +693,76 @@ class OnDeviceViewModel @Inject constructor(
                     runCatching { audioFiles.deleteTemporary(pcm) }
                 }
                 finishUiOperation(operation)
-                transcriptForSummary?.let { transcript ->
+                completedTranscript?.let {
                     withContext(NonCancellable + Dispatchers.Main.immediate) {
-                        continueAfterTranscript(operation.sessionId, transcript, summaryEngine)
+                        continueAfterTranscript(operation.sessionId, it)
                     }
                 }
             }
         }
     }
 
-    private fun startSummary(
-        sessionId: String,
-        transcript: String,
-        engine: SummaryEngineType,
-    ) {
-        if (engine == SummaryEngineType.NONE) {
-            viewModelScope.launch(Dispatchers.IO) {
-                repository.completeWithoutSummary(sessionId)
+    fun summarize(sessionId: String) {
+        if (coordinator.active.value != null) return
+        viewModelScope.launch(Dispatchers.IO) {
+            val session = repository.get(sessionId)
+            val transcript = session?.transcript.orEmpty()
+            withContext(Dispatchers.Main.immediate) {
+                if (transcript.isBlank()) {
+                    message.value = "Gemma로 요약할 전사 원문이 없습니다."
+                } else {
+                    startGemmaSummary(sessionId, transcript)
+                }
             }
-            return
         }
-        if (
-            engine.usesLocalLlm() &&
-            !requireNativeCapability()
-        ) {
-            return
-        }
-        if (
-            engine.localModelId()?.let { id ->
-                !modelStore.snapshot(ModelCatalog.get(id)).ready
-            } == true
-        ) {
+    }
+
+    private fun continueAfterTranscript(sessionId: String, transcript: String) {
+        val descriptor = ModelCatalog.get(ModelId.GEMMA_SUMMARY_KO)
+        if (!modelStore.snapshot(descriptor).ready) {
             message.value =
-                "전사는 저장했습니다. ${ModelCatalog.get(requireNotNull(engine.localModelId())).displayName} 모델을 먼저 설치하세요."
+                "전사를 저장했습니다. Gemma 3 1B 모델을 적용하면 기본 요약을 실행할 수 있습니다."
             return
         }
-        val kind = when (engine) {
-            SummaryEngineType.EXTRACTIVE_KOTLIN -> OnDeviceOperationKind.KOTLIN_SUMMARY
-            SummaryEngineType.QWEN_LOCAL,
-            SummaryEngineType.QWEN_LOCAL_GROUNDED,
-            SummaryEngineType.EXAONE_LOCAL,
-            SummaryEngineType.GEMMA_LOCAL,
-            -> OnDeviceOperationKind.QWEN_SUMMARY
-            SummaryEngineType.NONE -> return
-        }
-        val operation = reserve(sessionId, kind) ?: return
+        startGemmaSummary(sessionId, transcript)
+    }
+
+    private fun startGemmaSummary(sessionId: String, transcript: String) {
+        val operation = reserve(sessionId, OnDeviceOperationKind.GEMMA_SUMMARY) ?: return
         processing.value = true
-        processingLabel.value = if (engine.usesLocalLlm()) {
-            "${ModelCatalog.get(requireNotNull(engine.localModelId())).displayName} 처리 중"
-        } else {
-            "빠른 요약 중"
-        }
+        processingLabel.value = "Gemma 3 1B 기본 요약 중"
         processingProgress.value = null
+        message.value = "Gemma 3 1B가 전사 원문을 이 기기에서 요약하고 있습니다."
         launchOperation(operation) {
             try {
                 recoveryJob.join()
                 val started = withContext(Dispatchers.IO) {
                     repository.startOperation(
-                        sessionId,
-                        setOf(
+                        id = sessionId,
+                        allowedStates = setOf(
                             OnDeviceSessionState.TRANSCRIPT_READY,
                             OnDeviceSessionState.FAILED_RECOVERABLE,
+                            OnDeviceSessionState.COMPLETE,
                         ),
-                        OnDeviceSessionState.SUMMARIZING,
-                        operation.token,
-                    )
-                }
-                check(started) { "현재 상태에서는 요약을 시작할 수 없습니다." }
-                val result = if (engine.usesLocalLlm()) {
-                    try {
-                        when (engine.localModelId()) {
-                            ModelId.QWEN_SUMMARY_KO -> qwen.summarize(transcript)
-                            ModelId.EXAONE_SUMMARY_KO -> exaoneDelegate.value.summarize(transcript)
-                            ModelId.GEMMA_SUMMARY_KO -> gemmaDelegate.value.summarize(transcript)
-                            else -> error("선택한 로컬 AI 모델을 찾을 수 없습니다")
-                        }
-                    } catch (cancelled: CancellationException) {
-                        throw cancelled
-                    } catch (error: Throwable) {
-                        val fallbackReason = classifyQwenFailure(error)
-                        createSafeExtractiveFallback(
-                            transcript = transcript,
-                            reason = fallbackReason,
-                            requestedModelId = engine.localModelId(),
-                        ).also {
-                            message.value = when {
-                                fallbackReason.startsWith(QWEN_QUALITY_REJECTED) && it.bullets.isEmpty() ->
-                                    "선택한 AI 결과가 품질 기준을 통과하지 못해 전사 원문만 보존했습니다."
-                                fallbackReason.startsWith(QWEN_QUALITY_REJECTED) ->
-                                    "선택한 AI 결과가 품질 기준을 통과하지 못해 원문 기반 요약으로 대체했습니다."
-                                it.bullets.isEmpty() ->
-                                    "선택한 AI 실행에 실패해 전사 원문만 보존했습니다."
-                                else ->
-                                    "선택한 AI 실행에 실패해 원문 기반 요약으로 대체했습니다."
-                            }
-                        }
-                    }
-                } else {
-                    createSafeExtractiveFallback(transcript = transcript, reason = null)
-                }
-                val saved = withContext(Dispatchers.IO) {
-                    repository.saveSummary(
-                        id = sessionId,
+                        targetState = OnDeviceSessionState.SUMMARIZING,
                         token = operation.token,
-                        requestedEngine = engine,
-                        result = result,
                     )
                 }
-                check(saved) { "만료된 요약 결과는 저장하지 않았습니다." }
-                if (result.fallbackReason == null) {
-                    message.value = if (engine.usesLocalLlm()) {
-                        "${ModelCatalog.get(requireNotNull(engine.localModelId())).displayName} 요약을 완료했습니다."
-                    } else {
-                        "빠른 요약을 완료했습니다."
-                    }
+                check(started) { "현재 기록은 Gemma 요약을 시작할 수 없는 상태입니다." }
+                val summary = gemmaSummaryEngine.summarize(transcript)
+                val saved = withContext(Dispatchers.IO) {
+                    repository.saveGemmaSummary(sessionId, operation.token, summary)
                 }
+                check(saved) { "만료된 Gemma 요약 결과는 저장하지 않았습니다." }
+                message.value = "Gemma 3 1B 기본 요약을 완료했습니다."
             } catch (cancelled: CancellationException) {
                 withContext(NonCancellable + Dispatchers.IO) {
-                    repository.advanceOperation(
-                        sessionId,
-                        operation.token,
-                        setOf(OnDeviceSessionState.SUMMARIZING),
-                        OnDeviceSessionState.CANCELLING,
-                    )
                     repository.finishOperation(
                         sessionId,
                         operation.token,
                         OnDeviceSessionState.TRANSCRIPT_READY,
+                        OnDeviceFailureStage.SUMMARIZE,
+                        "Gemma 요약이 취소되었습니다.",
                     )
                 }
                 throw cancelled
@@ -810,75 +771,15 @@ class OnDeviceViewModel @Inject constructor(
                     repository.finishOperation(
                         sessionId,
                         operation.token,
-                        OnDeviceSessionState.FAILED_RECOVERABLE,
+                        OnDeviceSessionState.TRANSCRIPT_READY,
                         OnDeviceFailureStage.SUMMARIZE,
-                        error.message ?: "로컬 요약에 실패했습니다.",
+                        error.message ?: "Gemma 3 1B 요약에 실패했습니다.",
                     )
                 }
-                message.value = error.message ?: "로컬 요약에 실패했습니다."
+                message.value = error.message ?: "Gemma 3 1B 요약에 실패했습니다."
             } finally {
                 finishUiOperation(operation)
             }
-        }
-    }
-
-    private suspend fun createSafeExtractiveFallback(
-        transcript: String,
-        reason: String?,
-        requestedModelId: ModelId? = null,
-    ) = withContext(Dispatchers.Default) {
-        val candidate = extractiveSummary.summarize(transcript)
-        val validation = summaryQualityGate.validate(candidate, transcript)
-        if (validation.valid) {
-            summaryQualityGate.requireValid(candidate, transcript).copy(
-                fallbackReason = reason,
-                requestedModelId = requestedModelId?.name,
-                actualModelId = null,
-                runtimeType = "KOTLIN",
-                violationCodes = reason
-                    ?.substringAfter(':', missingDelimiterValue = "")
-                    ?.takeIf(String::isNotBlank),
-                inputChars = transcript.length,
-                outputChars = candidate.bullets.sumOf(String::length),
-                validationStatus = if (reason == null) {
-                    candidate.validationStatus
-                } else {
-                    SUMMARY_VALIDATION_FALLBACK
-                },
-            )
-        } else {
-            candidate.copy(
-                bullets = emptyList(),
-                actionItems = emptyList(),
-                fallbackReason = listOfNotNull(
-                    reason,
-                    "NO_SAFE_EXTRACTIVE_SUMMARY",
-                ).joinToString("+"),
-                requestedModelId = requestedModelId?.name,
-                actualModelId = null,
-                runtimeType = "KOTLIN",
-                violationCodes = reason
-                    ?.substringAfter(':', missingDelimiterValue = "")
-                    ?.takeIf(String::isNotBlank),
-                inputChars = transcript.length,
-                outputChars = 0,
-                validationStatus = "FALLBACK_EMPTY",
-            )
-        }
-    }
-
-    private fun continueAfterTranscript(
-        sessionId: String,
-        transcript: String,
-        engine: SummaryEngineType,
-    ) {
-        if (engine == SummaryEngineType.NONE) {
-            viewModelScope.launch(Dispatchers.IO) {
-                repository.completeWithoutSummary(sessionId)
-            }
-            message.value = "온디바이스 전사를 완료했습니다."
-        } else {
-            startSummary(sessionId, transcript, engine)
         }
     }
 
@@ -930,11 +831,6 @@ class OnDeviceViewModel @Inject constructor(
         recognitionCode == SpeechRecognizer.ERROR_NO_MATCH ||
             recognitionCode == SpeechRecognizer.ERROR_SPEECH_TIMEOUT
 
-    private fun parseSummaryEngine(value: String): SummaryEngineType =
-        runCatching { SummaryEngineType.valueOf(value) }
-            .getOrDefault(SummaryEngineType.EXTRACTIVE_KOTLIN)
-            .let { if (it == SummaryEngineType.QWEN_LOCAL_GROUNDED) SummaryEngineType.QWEN_LOCAL else it }
-
     private fun requireNativeCapability(): Boolean {
         if (nativeCapability.supported) return true
         message.value = nativeCapability.reason ?: "이 기기에서는 native AI를 사용할 수 없습니다."
@@ -943,6 +839,7 @@ class OnDeviceViewModel @Inject constructor(
 
     private fun ModelDescriptor.toUiState(workInfos: List<WorkInfo>): ModelUiState {
         val installed = modelStore.snapshot(this)
+        val retainedArtifactBytes = modelStore.artifactBytes(this)
         if (installed.ready) {
             return ModelUiState(
                 descriptor = this,
@@ -950,6 +847,7 @@ class OnDeviceViewModel @Inject constructor(
                 downloadedBytes = approximateDownloadBytes,
                 totalBytes = approximateDownloadBytes,
                 installedBytes = installed.installedBytes,
+                retainedArtifactBytes = retainedArtifactBytes,
             )
         }
         val work = workInfos
@@ -969,6 +867,7 @@ class OnDeviceViewModel @Inject constructor(
         val bytesPerSecond = progress?.getLong(ModelDownloadWorker.KEY_BYTES_PER_SECOND, 0) ?: 0
         val etaSeconds = progress?.getLong(ModelDownloadWorker.KEY_ETA_SECONDS, -1) ?: -1
         val status = when {
+            work == null && retainedArtifactBytes > 0 -> ModelUiStatus.RETAINED
             work == null && downloaded > 0 -> ModelUiStatus.PAUSED
             work == null -> ModelUiStatus.NOT_INSTALLED
             work.state == WorkInfo.State.ENQUEUED -> ModelUiStatus.WAITING_FOR_WIFI
@@ -979,6 +878,7 @@ class OnDeviceViewModel @Inject constructor(
             work.state == WorkInfo.State.RUNNING -> ModelUiStatus.DOWNLOADING
             work.state == WorkInfo.State.FAILED -> ModelUiStatus.FAILED
             work.state == WorkInfo.State.CANCELLED && downloaded > 0 -> ModelUiStatus.PAUSED
+            retainedArtifactBytes > 0 -> ModelUiStatus.RETAINED
             else -> ModelUiStatus.NOT_INSTALLED
         }
         return ModelUiState(
@@ -987,6 +887,7 @@ class OnDeviceViewModel @Inject constructor(
             downloadedBytes = downloaded,
             totalBytes = total,
             installedBytes = installed.installedBytes,
+            retainedArtifactBytes = retainedArtifactBytes,
             bytesPerSecond = bytesPerSecond,
             etaSeconds = etaSeconds,
             error = work?.outputData?.getString(ModelDownloadWorker.KEY_ERROR),
@@ -1013,18 +914,13 @@ class OnDeviceViewModel @Inject constructor(
         val operation: OperationState,
     )
 
-    private data class EngineSelection(
-        val sttProfile: SttCaptureProfile,
-        val summary: SummaryEngineType,
-    )
-
     private data class FileSelection(
         val sourceId: String?,
         val availability: SenseVoiceFileSttAvailability,
     )
 
     private data class LocalAiSelection(
-        val engine: EngineSelection,
+        val sttProfile: SttCaptureProfile,
         val file: FileSelection,
     )
 

@@ -6,13 +6,11 @@ import android.speech.tts.UtteranceProgressListener
 import android.util.Log
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
-import com.thinktank.recorder.ondevice.api.SummaryEngineType
 import com.thinktank.recorder.ondevice.audio.AndroidPcmNormalizer
 import com.thinktank.recorder.ondevice.modelpack.ModelCatalog
 import com.thinktank.recorder.ondevice.modelpack.ModelId
 import com.thinktank.recorder.ondevice.modelpack.ModelStore
 import com.thinktank.recorder.ondevice.stt.SenseVoiceFileSpeechEngine
-import com.thinktank.recorder.ondevice.summary.QwenSummaryEngine
 import java.io.File
 import java.util.Locale
 import kotlinx.coroutines.CompletableDeferred
@@ -29,19 +27,17 @@ import org.junit.runner.RunWith
  *
  * The source is created by the device's offline Korean TTS voice instead of recording a person,
  * so no user voice or transcript leaves the private test cache. It verifies the same core path
- * used after a completed recording is selected: audio file -> PCM -> SenseVoice -> Qwen.
+ * used after a completed recording is selected: audio file -> PCM -> SenseVoice.
  */
 @RunWith(AndroidJUnit4::class)
 class LocalAiSingleRecordedSampleDeviceTest {
     @Test
-    fun oneOfflineKoreanRecordingRunsSenseVoiceThenQwen() {
+    fun oneOfflineKoreanRecordingRunsSenseVoice() {
         runBlocking {
             val context = InstrumentationRegistry.getInstrumentation().targetContext
             val store = ModelStore(context)
             val senseVoice = ModelCatalog.get(ModelId.SENSEVOICE_STT_KO)
-            val qwen = ModelCatalog.get(ModelId.QWEN_SUMMARY_KO)
             assumeTrue("SenseVoice 모델이 설치되지 않아 단일 샘플 QA를 건너뜁니다.", store.snapshot(senseVoice).ready)
-            assumeTrue("Qwen 모델이 설치되지 않아 단일 샘플 QA를 건너뜁니다.", store.snapshot(qwen).ready)
 
             val recording = File(context.cacheDir, "local-ai-single-recording.wav")
             val pcm = File(context.cacheDir, "local-ai-single-recording.pcm")
@@ -59,28 +55,10 @@ class LocalAiSingleRecordedSampleDeviceTest {
                 assertTrue("SenseVoice 전사에 fixture 근거가 없습니다.", compact.contains("파일"))
                 assertTrue("SenseVoice 전사에 fixture 근거가 없습니다.", compact.contains("전사"))
 
-                val summary = withTimeout(QWEN_TIMEOUT_MS) {
-                    QwenSummaryEngine(context, store).summarize(transcript)
-                }
-                assertEquals(SummaryEngineType.QWEN_LOCAL, summary.engine)
-                assertTrue("Qwen 제목이 비어 있습니다.", summary.title.isNotBlank())
-                assertTrue("Qwen 핵심 요약 항목 수가 허용 범위를 벗어났습니다.", summary.bullets.size in 1..2)
-                assertTrue("Qwen 핵심 요약 항목이 너무 깁니다.", summary.bullets.all { it.length <= 44 })
-                val persistedSummary = summary.bullets.joinToString("\n")
-                val normalizedTranscript = transcript.replace(Regex("\\s+"), " ").trim()
-                assertTrue("Qwen 요약은 전사보다 짧아야 합니다.", persistedSummary.length < normalizedTranscript.length)
-                assertTrue(
-                    "Qwen 요약이 정책 글자 상한을 초과했습니다.",
-                    persistedSummary.length <= minOf(60, (normalizedTranscript.length * 0.12).toInt())
-                        .coerceAtLeast(24)
-                        .coerceAtMost(normalizedTranscript.length - 1),
-                )
-                assertTrue("Qwen 원문 hash가 비어 있습니다.", summary.sourceHash.isNotBlank())
                 Log.i(
                     LOG_TAG,
                     "single recorded sample pipeline verified: pcmSamples=${normalized.sampleCount}, " +
-                        "transcriptChars=${transcript.length}, titleChars=${summary.title.length}, " +
-                        "bulletCount=${summary.bullets.size}",
+                        "transcriptChars=${transcript.length}",
                 )
             } finally {
                 speech.release()
@@ -144,6 +122,5 @@ class LocalAiSingleRecordedSampleDeviceTest {
         const val UTTERANCE_ID = "local-ai-single-recording-device-qa"
         const val TTS_TIMEOUT_MS = 30_000L
         const val STT_TIMEOUT_MS = 90_000L
-        const val QWEN_TIMEOUT_MS = 130_000L
     }
 }

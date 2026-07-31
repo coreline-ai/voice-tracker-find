@@ -30,6 +30,7 @@ import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Download
+import androidx.compose.material.icons.filled.FolderOpen
 import androidx.compose.material.icons.filled.GraphicEq
 import androidx.compose.material.icons.filled.Memory
 import androidx.compose.material.icons.filled.Mic
@@ -38,6 +39,7 @@ import androidx.compose.material.icons.filled.Security
 import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material.icons.filled.UploadFile
 import androidx.compose.material3.Button
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.FilledTonalButton
@@ -80,9 +82,14 @@ import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.thinktank.recorder.ondevice.api.OnDeviceSessionState
 import com.thinktank.recorder.ondevice.api.MainRecordingSource
 import com.thinktank.recorder.ondevice.api.SttCaptureProfile
-import com.thinktank.recorder.ondevice.api.SummaryEngineType
+import com.thinktank.recorder.ondevice.api.SttQualityStatus
+import com.thinktank.recorder.ondevice.api.SttCoverageStatus
+import com.thinktank.recorder.ondevice.api.SttRecognitionQualityStatus
 import com.thinktank.recorder.ondevice.data.OnDeviceSessionEntity
 import com.thinktank.recorder.ondevice.modelpack.ModelId
+import com.thinktank.recorder.ondevice.modelpack.ModelDeleteScope
+import com.thinktank.recorder.ondevice.modelpack.ModelVaultConnection
+import com.thinktank.recorder.ondevice.modelpack.ModelVaultState
 import com.thinktank.recorder.ondevice.stt.SenseVoiceFileSttAvailability
 import java.time.Instant
 import java.time.ZoneId
@@ -95,7 +102,6 @@ fun OnDeviceScreen(
     onSelectMainRecording: (String) -> Unit,
     onTranscribeSelectedRecording: () -> Unit,
     onSelectSttProfile: (SttCaptureProfile) -> Unit,
-    onSelectSummary: (SummaryEngineType) -> Unit,
     onStartListening: () -> Unit,
     onStopListening: () -> Unit,
     onCancelListening: () -> Unit,
@@ -106,7 +112,10 @@ fun OnDeviceScreen(
     onDownloadModel: (ModelId) -> Unit,
     onImportModel: (ModelId, android.net.Uri) -> Unit,
     onPauseModel: (ModelId) -> Unit,
-    onDeleteModel: (ModelId) -> Unit,
+    onRestoreModel: (ModelId) -> Unit,
+    onDeleteModel: (ModelId, ModelDeleteScope) -> Unit,
+    onConnectModelVault: (android.net.Uri) -> Unit = {},
+    onDisconnectModelVault: () -> Unit = {},
     modifier: Modifier = Modifier,
     heroImageRes: Int? = null,
 ) {
@@ -114,6 +123,7 @@ fun OnDeviceScreen(
     val lifecycleOwner = LocalLifecycleOwner.current
     val latestHostStopped by rememberUpdatedState(onHostStopped)
     var pendingImport by remember { mutableStateOf<ModelId?>(null) }
+    var pendingModelDelete by remember { mutableStateOf<ModelUiState?>(null) }
     var sourcePickerShown by rememberSaveable { mutableStateOf(false) }
     val permissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission(),
@@ -126,6 +136,11 @@ fun OnDeviceScreen(
         val model = pendingImport
         pendingImport = null
         if (uri != null && model != null) onImportModel(model, uri)
+    }
+    val vaultLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.OpenDocumentTree(),
+    ) { uri ->
+        if (uri != null) onConnectModelVault(uri)
     }
 
     DisposableEffect(lifecycleOwner) {
@@ -220,19 +235,15 @@ fun OnDeviceScreen(
         }
         item {
             Column(Modifier.padding(horizontal = 20.dp)) {
-                SectionTitle("요약 방식", "전사 후 적용할 기기 내 처리 방식을 고르세요.")
-                Spacer(Modifier.height(10.dp))
-                SummaryChoices(state, onSelectSummary)
-            }
-        }
-        item {
-            Column(Modifier.padding(horizontal = 20.dp)) {
                 Row(
                     Modifier.fillMaxWidth(),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Column(Modifier.weight(1f)) {
-                        SectionTitle("로컬 모델 관리", "파일 전사와 요약은 기기에서 실행합니다.")
+                        SectionTitle(
+                            "로컬 모델 관리",
+                            "SenseVoice 파일 STT와 Gemma 3 1B 기본 요약을 기기에서 실행합니다.",
+                        )
                     }
                     Row(
                         horizontalArrangement = Arrangement.spacedBy(10.dp),
@@ -241,6 +252,18 @@ fun OnDeviceScreen(
                         Text("Wi‑Fi 전용", style = MaterialTheme.typography.labelMedium)
                     }
                 }
+                Spacer(Modifier.height(10.dp))
+                DefaultGemmaCard(
+                    ready = state.models.firstOrNull {
+                        it.descriptor.id == ModelId.GEMMA_SUMMARY_KO
+                    }?.status == ModelUiStatus.READY,
+                )
+                Spacer(Modifier.height(10.dp))
+                ModelVaultCard(
+                    state = state.modelVault,
+                    onConnect = { vaultLauncher.launch(null) },
+                    onDisconnect = onDisconnectModelVault,
+                )
                 Spacer(Modifier.height(10.dp))
                 state.models.forEach { model ->
                     ModelCard(
@@ -252,7 +275,8 @@ fun OnDeviceScreen(
                             fileLauncher.launch(arrayOf("*/*"))
                         },
                         onPause = { onPauseModel(model.descriptor.id) },
-                        onDelete = { onDeleteModel(model.descriptor.id) },
+                        onRestore = { onRestoreModel(model.descriptor.id) },
+                        onDelete = { pendingModelDelete = model },
                     )
                     Spacer(Modifier.height(10.dp))
                 }
@@ -298,6 +322,43 @@ fun OnDeviceScreen(
         )
     }
 
+    pendingModelDelete?.let { model ->
+        AlertDialog(
+            onDismissRequest = { pendingModelDelete = null },
+            title = { Text("${model.descriptor.displayName} 삭제") },
+            text = {
+                Text(
+                    "적용본만 삭제하면 보관 원본은 남아 나중에 다시 적용할 수 있습니다. " +
+                        "완전 삭제는 내부 원본과 연결된 공유 보관함 원본까지 제거합니다.",
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        pendingModelDelete = null
+                        onDeleteModel(model.descriptor.id, ModelDeleteScope.INSTALLED_ONLY)
+                    },
+                ) {
+                    Text("적용본만 삭제")
+                }
+            },
+            dismissButton = {
+                Row {
+                    TextButton(
+                        onClick = {
+                            pendingModelDelete = null
+                            onDeleteModel(model.descriptor.id, ModelDeleteScope.COMPLETE)
+                        },
+                    ) {
+                        Text("보관본까지 완전 삭제", color = MaterialTheme.colorScheme.error)
+                    }
+                    TextButton(onClick = { pendingModelDelete = null }) {
+                        Text("취소")
+                    }
+                }
+            },
+        )
+    }
 }
 
 @Composable
@@ -358,7 +419,7 @@ private fun Hero(imageRes: Int?) {
             )
             Spacer(Modifier.height(4.dp))
             Text(
-                "목소리에서\n정리된 기록까지",
+                "목소리에서\n전사된 기록까지",
                 style = MaterialTheme.typography.headlineMedium,
                 fontWeight = FontWeight.SemiBold,
                 color = Color.White,
@@ -385,7 +446,7 @@ private fun PrivacyBanner(modifier: Modifier = Modifier) {
             Column {
                 Text("이 기기에서만 처리", style = MaterialTheme.typography.titleMedium)
                 Text(
-                    "음성·전사·요약은 기기 밖으로 전송하지 않습니다.",
+                    "음성과 전사 원문은 기기 밖으로 전송하지 않습니다.",
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.78f),
                 )
@@ -445,7 +506,7 @@ private fun SystemSttCard(available: Boolean) {
 }
 
 @Composable
-private fun SummaryChoice(
+private fun SelectionChoice(
     title: String,
     description: String,
     icon: ImageVector,
@@ -491,81 +552,12 @@ private fun SummaryChoice(
 }
 
 @Composable
-private fun SummaryChoices(
-    state: OnDeviceUiState,
-    onSelect: (SummaryEngineType) -> Unit,
-) {
-    fun ready(id: ModelId): Boolean =
-        state.models.firstOrNull { it.descriptor.id == id }?.status == ModelUiStatus.READY
-    listOf(
-        Triple(SummaryEngineType.EXTRACTIVE_KOTLIN, "빠른 요약", "추가 모델 없음 · 원문 문장만 선별"),
-        Triple(
-            SummaryEngineType.QWEN_LOCAL,
-            "Qwen 로컬 AI · 실험적",
-            if (!state.nativeAiAvailable) {
-                state.nativeAiUnavailableReason ?: "이 기기에서 사용할 수 없음"
-            } else if (ready(ModelId.QWEN_SUMMARY_KO)) {
-                "모델 설치됨 · 생성형 제목·요약 · RAM 3GB 이상"
-            } else {
-                "563MB 모델 설치 필요 · RAM 3GB 이상"
-            },
-        ),
-        Triple(
-            SummaryEngineType.EXAONE_LOCAL,
-            "EXAONE 한국어 AI · 후보",
-            if (ready(ModelId.EXAONE_SUMMARY_KO)) {
-                "812MB 모델 설치됨 · 한국어 2단계 요약"
-            } else {
-                "812MB 모델 설치 필요 · 한국어 품질 우선 후보"
-            },
-        ),
-        Triple(
-            SummaryEngineType.GEMMA_LOCAL,
-            "Gemma 3 경량 AI · 후보",
-            if (ready(ModelId.GEMMA_SUMMARY_KO)) {
-                "공식 모델 설치됨 · LiteRT-LM CPU 실행"
-            } else {
-                "공식 .litertlm 파일 가져오기 필요 · 약 557MB"
-            },
-        ),
-        Triple(SummaryEngineType.NONE, "요약하지 않음", "전사 원문만 기기에 저장"),
-    ).forEachIndexed { index, item ->
-        val icon = when (item.first) {
-            SummaryEngineType.EXTRACTIVE_KOTLIN -> Icons.Default.GraphicEq
-            SummaryEngineType.QWEN_LOCAL,
-            SummaryEngineType.QWEN_LOCAL_GROUNDED,
-            SummaryEngineType.EXAONE_LOCAL,
-            SummaryEngineType.GEMMA_LOCAL,
-            -> Icons.Default.Memory
-            SummaryEngineType.NONE -> Icons.Default.Stop
-        }
-        SummaryChoice(
-            title = item.second,
-            description = item.third,
-            icon = icon,
-            selected = state.selectedSummary == item.first,
-            available = when (item.first) {
-                SummaryEngineType.QWEN_LOCAL ->
-                    state.nativeAiAvailable && ready(ModelId.QWEN_SUMMARY_KO)
-                SummaryEngineType.EXAONE_LOCAL ->
-                    state.nativeAiAvailable && ready(ModelId.EXAONE_SUMMARY_KO)
-                SummaryEngineType.GEMMA_LOCAL ->
-                    state.nativeAiAvailable && ready(ModelId.GEMMA_SUMMARY_KO)
-                else -> true
-            },
-            onClick = { onSelect(item.first) },
-        )
-        if (index < 4) Spacer(Modifier.height(8.dp))
-    }
-}
-
-@Composable
 private fun SttCaptureChoices(
     state: OnDeviceUiState,
     onSelect: (SttCaptureProfile) -> Unit,
 ) {
     SttCaptureProfile.entries.forEachIndexed { index, profile ->
-        SummaryChoice(
+        SelectionChoice(
             title = profile.title,
             description = profile.description,
             icon = Icons.Default.GraphicEq,
@@ -705,7 +697,7 @@ private fun MainRecordingSourceSheet(
                     contentPadding = PaddingValues(bottom = 32.dp),
                 ) {
                     items(sources, key = { it.id }) { source ->
-                        SummaryChoice(
+                        SelectionChoice(
                             title = "${formatTime(source.createdAt)} · ${formatDuration(source.durationMs / 1_000)}",
                             description = "${source.extension.uppercase()} · ${formatBytes(source.sizeBytes)} · ${sourceStorageLabel(source.storageState)}",
                             icon = Icons.Default.GraphicEq,
@@ -764,7 +756,7 @@ private fun ListeningCard(
                     )
                     if (!state.listening && !state.processing && !mainRecorderActive) {
                         Text(
-                            "문장마다 자동으로 다시 듣고, 완료하면 전사와 요약을 저장합니다.",
+                            "문장마다 자동으로 다시 듣고, 완료하면 전사 원문을 저장합니다.",
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
@@ -864,12 +856,114 @@ private fun ListeningCard(
 }
 
 @Composable
+private fun DefaultGemmaCard(ready: Boolean) {
+    Card(
+        shape = RoundedCornerShape(18.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.primaryContainer,
+        ),
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier.padding(16.dp),
+        ) {
+            Icon(Icons.Default.Memory, contentDescription = null)
+            Spacer(Modifier.size(12.dp))
+            Column(Modifier.weight(1f)) {
+                Text("기본 요약 모델", style = MaterialTheme.typography.labelMedium)
+                Text("Gemma 3 1B", style = MaterialTheme.typography.titleMedium)
+                Text(
+                    "전사가 끝나면 자동으로 적용됩니다.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onPrimaryContainer,
+                )
+            }
+            Text(
+                if (ready) "사용 가능" else "모델 필요",
+                style = MaterialTheme.typography.labelMedium,
+                color = if (ready) {
+                    MaterialTheme.colorScheme.primary
+                } else {
+                    MaterialTheme.colorScheme.error
+                },
+            )
+        }
+    }
+}
+
+@Composable
+private fun ModelVaultCard(
+    state: ModelVaultState,
+    onConnect: () -> Unit,
+    onDisconnect: () -> Unit,
+) {
+    Card(
+        shape = RoundedCornerShape(18.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
+        modifier = Modifier.fillMaxWidth().testTag("model-vault-card"),
+    ) {
+        Column(Modifier.padding(16.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(Icons.Default.FolderOpen, contentDescription = null)
+                Spacer(Modifier.size(12.dp))
+                Column(Modifier.weight(1f)) {
+                    Text("모델 보관함", style = MaterialTheme.typography.titleMedium)
+                    Text(
+                        when (state.connection) {
+                            ModelVaultConnection.CONNECTED ->
+                                "연결됨 · ${state.displayName ?: "선택한 폴더"}"
+                            ModelVaultConnection.PERMISSION_REQUIRED ->
+                                "같은 보관함을 다시 연결해야 합니다"
+                            ModelVaultConnection.ERROR -> "보관함 상태를 확인할 수 없습니다"
+                            ModelVaultConnection.NOT_CONNECTED -> "아직 연결되지 않았습니다"
+                        },
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                if (state.connected) {
+                    Icon(Icons.Default.Check, contentDescription = "모델 보관함 연결됨")
+                }
+            }
+            Spacer(Modifier.height(8.dp))
+            Text(
+                "다운로드·가져오기 원본을 이 폴더에 보관합니다. 앱을 다시 설치해도 파일은 남습니다.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            state.error?.let { error ->
+                Spacer(Modifier.height(6.dp))
+                Text(
+                    error,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.error,
+                )
+            }
+            Spacer(Modifier.height(10.dp))
+            Row(
+                Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End),
+            ) {
+                if (state.connected) {
+                    TextButton(onClick = onDisconnect) { Text("연결 해제") }
+                }
+                OutlinedButton(onClick = onConnect) {
+                    Text(if (state.connected) "보관함 변경" else "보관함 연결")
+                }
+            }
+        }
+    }
+}
+
+@Composable
 private fun ModelCard(
     model: ModelUiState,
     installationAvailable: Boolean,
     onDownload: () -> Unit,
     onImport: () -> Unit,
     onPause: () -> Unit,
+    onRestore: () -> Unit,
     onDelete: () -> Unit,
 ) {
     Card(
@@ -948,6 +1042,11 @@ private fun ModelCard(
                         Spacer(Modifier.size(6.dp))
                         Text("일시정지")
                     }
+                    ModelUiStatus.RETAINED -> FilledTonalButton(onClick = onRestore) {
+                        Icon(Icons.Default.Download, contentDescription = null)
+                        Spacer(Modifier.size(6.dp))
+                        Text("보관본 적용")
+                    }
                     else -> {
                         OutlinedButton(onClick = onImport, enabled = installationAvailable) {
                             Icon(Icons.Default.UploadFile, contentDescription = null)
@@ -984,6 +1083,10 @@ private fun SessionCard(
     modifier: Modifier = Modifier,
 ) {
     var fullTranscriptShown by rememberSaveable(session.id) { mutableStateOf(false) }
+    val hasTrustedGemmaSummary =
+        session.summaryEngine == "GEMMA_LOCAL" &&
+            session.summaryValidationStatus == "PASSED_GROUNDED_V4" &&
+            session.summary.isNotBlank()
     Card(
         shape = RoundedCornerShape(18.dp),
         modifier = modifier.fillMaxWidth().testTag("session-${session.id}"),
@@ -999,7 +1102,11 @@ private fun SessionCard(
                         )
                     }
                     Text(
-                        session.title.ifBlank { "로컬 음성 기록" },
+                        if (hasTrustedGemmaSummary) {
+                            "Gemma 요약 기록"
+                        } else {
+                            "로컬 전사 기록"
+                        },
                         style = MaterialTheme.typography.titleMedium,
                     )
                     Text(
@@ -1029,6 +1136,58 @@ private fun SessionCard(
                 color = MaterialTheme.colorScheme.primary,
                 modifier = Modifier.padding(top = 4.dp),
             )
+            session.sttQualityStatus?.let { qualityStatus ->
+                Text(
+                    sttCoverageLabel(session),
+                    style = MaterialTheme.typography.labelMedium,
+                    color = if (qualityStatus == SttQualityStatus.INSUFFICIENT.name) {
+                        MaterialTheme.colorScheme.error
+                    } else {
+                        MaterialTheme.colorScheme.primary
+                    },
+                    modifier = Modifier
+                        .padding(top = 3.dp)
+                        .testTag("stt-quality-${session.id}"),
+                )
+            }
+            if (hasTrustedGemmaSummary) {
+                HorizontalDivider(Modifier.padding(vertical = 10.dp))
+                Text(
+                    "Gemma 3 1B 요약 · 기본 모델",
+                    style = MaterialTheme.typography.labelLarge,
+                    color = MaterialTheme.colorScheme.primary,
+                )
+                if (session.title.isNotBlank()) {
+                    Text(
+                        session.title,
+                        style = MaterialTheme.typography.titleMedium,
+                        modifier = Modifier.padding(top = 6.dp),
+                    )
+                }
+                session.summary.lineSequence()
+                    .map(String::trim)
+                    .filter(String::isNotBlank)
+                    .forEach { bullet ->
+                        Text(
+                            "• $bullet",
+                            style = MaterialTheme.typography.bodyMedium,
+                            modifier = Modifier.padding(top = 4.dp),
+                        )
+                    }
+                if (session.actionItems.isNotBlank()) {
+                    Text(
+                        "할 일",
+                        style = MaterialTheme.typography.labelLarge,
+                        modifier = Modifier.padding(top = 10.dp),
+                    )
+                    session.actionItems.lineSequence()
+                        .map(String::trim)
+                        .filter(String::isNotBlank)
+                        .forEach { action ->
+                            Text("• $action", style = MaterialTheme.typography.bodyMedium)
+                        }
+                }
+            }
             if (session.transcript.isNotBlank()) {
                 HorizontalDivider(Modifier.padding(vertical = 10.dp))
                 Text(
@@ -1047,54 +1206,18 @@ private fun SessionCard(
                 ) {
                     Text("전체 전사 보기")
                 }
-            }
-            if (session.summary.isNotBlank()) {
-                Spacer(Modifier.height(12.dp))
-                Text("핵심 요약", style = MaterialTheme.typography.labelLarge)
-                Text(
-                    summaryProcessingLabel(session),
-                    style = MaterialTheme.typography.labelMedium,
-                    color = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.padding(top = 3.dp),
-                )
-                session.summary.lines().filter(String::isNotBlank).forEachIndexed { index, text ->
-                    Text(
-                        "• $text",
-                        style = MaterialTheme.typography.bodyMedium,
-                        modifier = Modifier.testTag("summary-${session.id}-$index"),
-                    )
-                }
-                Text(
-                    session.summaryPolicyVersion?.let { "요약 정책 v$it" } ?: "이전 요약 정책",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                OutlinedButton(
+                    onClick = onSummarize,
+                    enabled = !active && !session.state.isActiveSessionState(),
                     modifier = Modifier.padding(top = 4.dp),
-                )
-                if (!session.summaryFallbackReason.isNullOrBlank()) {
+                ) {
                     Text(
-                        fallbackLabel(session.summaryFallbackReason),
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.tertiary,
-                        modifier = Modifier.padding(top = 2.dp),
+                        if (hasTrustedGemmaSummary) {
+                            "Gemma 3 1B로 다시 요약"
+                        } else {
+                            "Gemma 3 1B 요약"
+                        },
                     )
-                }
-            }
-            if (
-                session.summary.isBlank() &&
-                session.state == OnDeviceSessionState.COMPLETE.name
-            ) {
-                Spacer(Modifier.height(12.dp))
-                Text(
-                    "요약 방식 · ${summaryEngineLabel(session.summaryEngine)}",
-                    style = MaterialTheme.typography.labelMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
-            if (session.actionItems.isNotBlank()) {
-                Spacer(Modifier.height(12.dp))
-                Text("확인할 일", style = MaterialTheme.typography.labelLarge)
-                session.actionItems.lines().filter(String::isNotBlank).forEach {
-                    Text("□ $it", style = MaterialTheme.typography.bodyMedium)
                 }
             }
             session.error?.let {
@@ -1104,19 +1227,6 @@ private fun SessionCard(
                     color = MaterialTheme.colorScheme.error,
                     modifier = Modifier.padding(top = 8.dp),
                 )
-            }
-            if (
-                session.transcript.isNotBlank() &&
-                session.state in setOf(
-                    OnDeviceSessionState.TRANSCRIPT_READY.name,
-                    OnDeviceSessionState.FAILED_RECOVERABLE.name,
-                ) &&
-                session.failureStage !=
-                com.thinktank.recorder.ondevice.api.OnDeviceFailureStage.DELETE.name
-            ) {
-                OutlinedButton(onClick = onSummarize, modifier = Modifier.padding(top = 10.dp)) {
-                    Text("현재 방식으로 요약")
-                }
             }
         }
     }
@@ -1193,6 +1303,7 @@ private fun modelStatusText(model: ModelUiState): String = when (model.status) {
     ModelUiStatus.VERIFYING -> "SHA-256 검증 중"
     ModelUiStatus.INSTALLING -> "안전하게 설치 중"
     ModelUiStatus.READY -> "사용 준비 완료 · ${formatBytes(model.installedBytes)}"
+    ModelUiStatus.RETAINED -> "원본 보관됨 · ${formatBytes(model.retainedArtifactBytes)}"
     ModelUiStatus.PAUSED -> "일시정지 · ${formatBytes(model.downloadedBytes)} 받음"
     ModelUiStatus.FAILED -> "설치 실패"
 }
@@ -1203,7 +1314,7 @@ private fun sessionStateLabel(state: String): String = when (state) {
     OnDeviceSessionState.AUDIO_READY.name -> "전사 대기"
     OnDeviceSessionState.TRANSCRIBING.name -> "전사 중"
     OnDeviceSessionState.TRANSCRIPT_READY.name -> "전사 완료"
-    OnDeviceSessionState.SUMMARIZING.name -> "요약 중"
+    OnDeviceSessionState.SUMMARIZING.name -> "이전 작업 정리 중"
     OnDeviceSessionState.CANCELLING.name -> "취소 정리 중"
     OnDeviceSessionState.DELETING.name -> "삭제 중"
     OnDeviceSessionState.COMPLETE.name -> "완료"
@@ -1213,52 +1324,58 @@ private fun sessionStateLabel(state: String): String = when (state) {
     else -> "대기"
 }
 
-private fun summaryEngineLabel(engine: String): String = when (engine) {
-    SummaryEngineType.EXTRACTIVE_KOTLIN.name -> "빠른 요약 · Kotlin 추출형"
-    SummaryEngineType.QWEN_LOCAL.name -> "Qwen 로컬 AI"
-    SummaryEngineType.QWEN_LOCAL_GROUNDED.name -> "Qwen 로컬 AI · 원문 근거 보강"
-    SummaryEngineType.EXAONE_LOCAL.name -> "EXAONE 한국어 로컬 AI"
-    SummaryEngineType.GEMMA_LOCAL.name -> "Gemma 3 LiteRT-LM"
-    SummaryEngineType.NONE.name -> "요약하지 않음"
-    else -> "알 수 없는 방식"
-}
-
-private fun summaryProcessingLabel(session: OnDeviceSessionEntity): String {
-    val actual = summaryEngineLabel(session.summaryEngine)
-    val requested = session.requestedSummaryEngine
-        ?.takeIf { it != session.summaryEngine }
-        ?.let(::summaryEngineLabel)
-    val engineLabel = if (requested == null) {
-        "처리 방식 · $actual"
-    } else {
-        "요청 · $requested / 실제 · $actual"
-    }
-    val modelLabel = listOfNotNull(
-        session.actualSummaryModelId?.let { "모델 $it" },
-        session.summaryRuntimeType,
-        session.summaryModelVersion?.let { "v$it" },
-    ).joinToString(" · ")
-    return if (modelLabel.isBlank()) engineLabel else "$engineLabel\n$modelLabel"
-}
-
-private fun fallbackLabel(reason: String): String = when {
-    reason.contains("QWEN_QUALITY_REJECTED") -> if (':' in reason) {
-        "선택한 AI 품질 검사 후 원문 기반 요약으로 대체 · ${reason.substringAfter(':')}"
-    } else {
-        "선택한 AI 품질 검사 후 원문 기반 요약으로 대체"
-    }
-    reason.contains("LOCAL_LLM_RUNTIME_FAILED") || reason.contains("QWEN_RUNTIME_FAILED") ->
-        "선택한 AI 실행 실패 후 원문 기반 요약으로 대체"
-    reason.contains("NO_SAFE_EXTRACTIVE_SUMMARY") -> "안전한 핵심을 만들지 못해 전사 원문만 보존"
-    else -> "원문 기반 안전 대체 요약"
-}
-
 private fun sttEngineLabel(engine: String): String = when (engine) {
     "SENSEVOICE_LOCAL_FILE" -> "SenseVoice 로컬 파일 STT"
     "ANDROID_ON_DEVICE" -> "Android 시스템 온디바이스 STT"
     "ANDROID_ON_DEVICE_FILE" -> "이전 시스템 파일 STT 기록"
     else -> "알 수 없는 방식"
 }
+
+private fun sttCoverageLabel(session: OnDeviceSessionEntity): String {
+    val status = when (session.sttCoverageStatus) {
+        SttCoverageStatus.COMPLETE.name -> "전체 처리"
+        SttCoverageStatus.INCOMPLETE.name -> "끝 구간 누락"
+        SttCoverageStatus.UNKNOWN.name -> "처리 범위 확인 안 됨"
+        else -> when (session.sttQualityStatus) {
+            SttQualityStatus.COMPLETE.name -> "전체 처리"
+            SttQualityStatus.RETRIED_COMPLETE.name -> "재처리 후 전체 처리"
+            SttQualityStatus.INSUFFICIENT.name -> "전사 범위 부족"
+            else -> "처리 범위 확인 안 됨"
+        }
+    }
+    val coverage = if (
+        session.sttProcessedThroughMs != null &&
+        session.sttInputDurationMs != null
+    ) {
+        " · ${formatSttDuration(session.sttProcessedThroughMs)} / " +
+            formatSttDuration(session.sttInputDurationMs)
+    } else {
+        ""
+    }
+    val segments = if (
+        session.sttRecognizedSegmentCount != null &&
+        session.sttSegmentCount != null
+    ) {
+        " · ${session.sttRecognizedSegmentCount}/${session.sttSegmentCount}구간"
+    } else {
+        ""
+    }
+    val recognition = when (session.sttRecognitionQualityStatus) {
+        SttRecognitionQualityStatus.ADEQUATE.name -> " · 인식 품질 양호"
+        SttRecognitionQualityStatus.NOISY.name -> " · 인식 품질 주의"
+        SttRecognitionQualityStatus.INSUFFICIENT.name -> " · 인식 품질 부족"
+        SttRecognitionQualityStatus.UNMEASURED.name -> " · 인식 품질 미측정"
+        else -> ""
+    }
+    return "전사 범위 · $status$coverage$segments$recognition"
+}
+
+private fun formatSttDuration(durationMs: Long): String =
+    if (durationMs < 60_000L) {
+        "%.1f초".format(durationMs / 1_000.0)
+    } else {
+        formatDuration(durationMs / 1_000L)
+    }
 
 private fun sourceStorageLabel(state: String): String = when (state) {
     "READY" -> "기기 보관됨"

@@ -16,31 +16,15 @@ import java.util.Collections;
 /**
  * Java-only boundary around LiteRT-LM.
  *
- * LiteRT-LM 0.14.0 publishes Kotlin 2.x metadata while the application remains on Kotlin 1.9.
- * Isolating it in this Java Android library avoids exposing those Kotlin types to KSP/compiler
- * tasks in the main feature.
+ * LiteRT-LM publishes Kotlin 2.x metadata while the app remains on Kotlin 1.9. Keeping this API
+ * Java-only prevents those Kotlin types from entering the feature's KSP/compiler tasks.
  */
 public final class GemmaLiteRtBridge implements AutoCloseable {
-    public enum BackendMode {
-        CPU,
-        GPU
-    }
-
     private final Engine engine;
     private final String systemPrompt;
-    private final BackendMode backendMode;
     private volatile Conversation activeConversation;
 
     public GemmaLiteRtBridge(String modelPath, String cacheDir, String systemPrompt) {
-        this(modelPath, cacheDir, systemPrompt, BackendMode.CPU);
-    }
-
-    public GemmaLiteRtBridge(
-            String modelPath,
-            String cacheDir,
-            String systemPrompt,
-            BackendMode backendMode
-    ) {
         Engine createdEngine = null;
         try {
             File cacheDirectory = new File(cacheDir);
@@ -52,7 +36,7 @@ public final class GemmaLiteRtBridge implements AutoCloseable {
             createdEngine = new Engine(
                     new EngineConfig(
                             modelPath,
-                            createBackend(backendMode),
+                            createCpuBackend(),
                             null,
                             null,
                             4096,
@@ -73,20 +57,12 @@ public final class GemmaLiteRtBridge implements AutoCloseable {
         }
         engine = createdEngine;
         this.systemPrompt = systemPrompt;
-        this.backendMode = backendMode;
     }
 
-    private static Backend createBackend(BackendMode backendMode) {
-        if (backendMode == BackendMode.GPU) {
-            return new Backend.GPU();
-        }
+    private static Backend createCpuBackend() {
         int availableProcessors = Runtime.getRuntime().availableProcessors();
         int threadCount = Math.min(MAX_CPU_THREADS, Math.max(1, availableProcessors));
         return new Backend.CPU(threadCount, null);
-    }
-
-    public BackendMode getBackendMode() {
-        return backendMode;
     }
 
     public String generate(String prompt) {
@@ -111,13 +87,10 @@ public final class GemmaLiteRtBridge implements AutoCloseable {
                     text.append(((Content.Text) content).getText());
                 }
             }
-            long elapsedMs = (System.nanoTime() - startedAt) / 1_000_000L;
-            int tokenCount = conversation.getTokenCount();
             Log.i(
                     TAG,
-                    "generate backend=" + backendMode +
-                            " elapsedMs=" + elapsedMs +
-                            " tokenCount=" + tokenCount +
+                    "generate elapsedMs=" + ((System.nanoTime() - startedAt) / 1_000_000L) +
+                            " tokenCount=" + conversation.getTokenCount() +
                             " outputChars=" + text.length()
             );
             return text.toString();

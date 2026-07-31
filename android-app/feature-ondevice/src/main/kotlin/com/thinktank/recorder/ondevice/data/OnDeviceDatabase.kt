@@ -8,8 +8,12 @@ import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
 
 @Database(
-    entities = [OnDeviceSessionEntity::class],
-    version = 6,
+    entities = [
+        OnDeviceSessionEntity::class,
+        OnDeviceSummaryBatchEntity::class,
+        OnDeviceSummaryRunEntity::class,
+    ],
+    version = 8,
     exportSchema = true,
 )
 abstract class OnDeviceDatabase : RoomDatabase() {
@@ -32,6 +36,8 @@ abstract class OnDeviceDatabase : RoomDatabase() {
                         MIGRATION_3_4,
                         MIGRATION_4_5,
                         MIGRATION_5_6,
+                        MIGRATION_6_7,
+                        MIGRATION_7_8,
                     )
                     .build()
                     .also { instance = it }
@@ -127,6 +133,147 @@ abstract class OnDeviceDatabase : RoomDatabase() {
                 )
                 db.execSQL(
                     "ALTER TABLE ondevice_sessions ADD COLUMN summaryOutputChars INTEGER DEFAULT NULL",
+                )
+            }
+        }
+
+        val MIGRATION_6_7 = object : Migration(6, 7) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    "ALTER TABLE ondevice_sessions ADD COLUMN sttInputDurationMs INTEGER DEFAULT NULL",
+                )
+                db.execSQL(
+                    "ALTER TABLE ondevice_sessions ADD COLUMN sttProcessedThroughMs INTEGER DEFAULT NULL",
+                )
+                db.execSQL(
+                    "ALTER TABLE ondevice_sessions ADD COLUMN sttSegmentCount INTEGER DEFAULT NULL",
+                )
+                db.execSQL(
+                    "ALTER TABLE ondevice_sessions ADD COLUMN sttRecognizedSegmentCount INTEGER DEFAULT NULL",
+                )
+                db.execSQL(
+                    "ALTER TABLE ondevice_sessions ADD COLUMN sttRetryCount INTEGER DEFAULT NULL",
+                )
+                db.execSQL(
+                    "ALTER TABLE ondevice_sessions ADD COLUMN sttMeaningfulChars INTEGER DEFAULT NULL",
+                )
+                db.execSQL(
+                    "ALTER TABLE ondevice_sessions ADD COLUMN sttCharsPerSecond REAL DEFAULT NULL",
+                )
+                db.execSQL(
+                    "ALTER TABLE ondevice_sessions ADD COLUMN sttQualityStatus TEXT DEFAULT NULL",
+                )
+                db.execSQL(
+                    "ALTER TABLE ondevice_sessions ADD COLUMN sttSegmentDiagnostics TEXT DEFAULT NULL",
+                )
+            }
+        }
+
+        val MIGRATION_7_8 = object : Migration(7, 8) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    "ALTER TABLE ondevice_sessions ADD COLUMN sttCoverageStatus TEXT DEFAULT NULL",
+                )
+                db.execSQL(
+                    "ALTER TABLE ondevice_sessions ADD COLUMN sttRecognitionQualityStatus TEXT DEFAULT NULL",
+                )
+                db.execSQL(
+                    "ALTER TABLE ondevice_sessions ADD COLUMN sttRecognitionDiagnostics TEXT DEFAULT NULL",
+                )
+                db.execSQL(
+                    "ALTER TABLE ondevice_sessions ADD COLUMN selectedSummaryRunId TEXT DEFAULT NULL",
+                )
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS ondevice_summary_batches (
+                        id TEXT NOT NULL,
+                        sessionId TEXT NOT NULL,
+                        createdAt INTEGER NOT NULL,
+                        updatedAt INTEGER NOT NULL,
+                        state TEXT NOT NULL,
+                        sourceHash TEXT NOT NULL,
+                        inputHash TEXT NOT NULL,
+                        inputBuilderVersion INTEGER NOT NULL,
+                        inputPayload TEXT NOT NULL,
+                        requestedEngines TEXT NOT NULL,
+                        selectedRunId TEXT,
+                        error TEXT,
+                        operationToken TEXT,
+                        dataPolicy TEXT NOT NULL,
+                        PRIMARY KEY(id),
+                        FOREIGN KEY(sessionId) REFERENCES ondevice_sessions(id)
+                            ON UPDATE NO ACTION ON DELETE CASCADE
+                    )
+                    """.trimIndent(),
+                )
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS ondevice_summary_runs (
+                        id TEXT NOT NULL,
+                        batchId TEXT NOT NULL,
+                        sessionId TEXT NOT NULL,
+                        createdAt INTEGER NOT NULL,
+                        updatedAt INTEGER NOT NULL,
+                        orderIndex INTEGER NOT NULL,
+                        requestedEngine TEXT NOT NULL,
+                        attemptedEngine TEXT NOT NULL,
+                        state TEXT NOT NULL,
+                        failureStage TEXT,
+                        failureCode TEXT,
+                        violationCodes TEXT,
+                        title TEXT NOT NULL,
+                        summary TEXT NOT NULL,
+                        actionItems TEXT NOT NULL,
+                        evidenceIds TEXT NOT NULL,
+                        rawOutput TEXT,
+                        rawOutputLength INTEGER,
+                        rawOutputHash TEXT,
+                        rawOutputTruncated INTEGER NOT NULL,
+                        requestedModelId TEXT,
+                        modelId TEXT,
+                        modelVersion TEXT,
+                        runtimeType TEXT,
+                        generationProfile TEXT,
+                        policyVersion INTEGER,
+                        promptVersion INTEGER,
+                        validationStatus TEXT,
+                        durationMs INTEGER,
+                        inputChars INTEGER,
+                        outputChars INTEGER,
+                        startedAt INTEGER,
+                        completedAt INTEGER,
+                        fallbackForRunId TEXT,
+                        operationToken TEXT,
+                        dataPolicy TEXT NOT NULL,
+                        PRIMARY KEY(id),
+                        FOREIGN KEY(batchId) REFERENCES ondevice_summary_batches(id)
+                            ON UPDATE NO ACTION ON DELETE CASCADE
+                    )
+                    """.trimIndent(),
+                )
+                db.execSQL(
+                    "CREATE INDEX IF NOT EXISTS index_ondevice_summary_batches_sessionId " +
+                        "ON ondevice_summary_batches(sessionId)",
+                )
+                db.execSQL(
+                    "CREATE INDEX IF NOT EXISTS index_ondevice_summary_batches_createdAt " +
+                        "ON ondevice_summary_batches(createdAt)",
+                )
+                db.execSQL(
+                    "CREATE INDEX IF NOT EXISTS index_ondevice_summary_runs_batchId " +
+                        "ON ondevice_summary_runs(batchId)",
+                )
+                db.execSQL(
+                    "CREATE INDEX IF NOT EXISTS index_ondevice_summary_runs_sessionId " +
+                        "ON ondevice_summary_runs(sessionId)",
+                )
+                db.execSQL(
+                    "CREATE INDEX IF NOT EXISTS index_ondevice_summary_runs_createdAt " +
+                        "ON ondevice_summary_runs(createdAt)",
+                )
+                db.execSQL(
+                    "CREATE INDEX IF NOT EXISTS index_ondevice_summary_runs_state " +
+                        "ON ondevice_summary_runs(state)",
                 )
             }
         }

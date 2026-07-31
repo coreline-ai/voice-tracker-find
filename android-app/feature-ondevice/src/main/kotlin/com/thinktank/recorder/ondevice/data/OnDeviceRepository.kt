@@ -1,13 +1,15 @@
 package com.thinktank.recorder.ondevice.data
 
-import com.thinktank.recorder.ondevice.api.LocalSummary
 import com.thinktank.recorder.ondevice.api.OnDeviceFailureStage
 import com.thinktank.recorder.ondevice.api.OnDeviceSessionState
 import com.thinktank.recorder.ondevice.api.SttEngineType
-import com.thinktank.recorder.ondevice.api.SummaryEngineType
+import com.thinktank.recorder.ondevice.api.SttDiagnostics
+import com.thinktank.recorder.ondevice.api.SttResult
 import com.thinktank.recorder.ondevice.api.MainRecordingSource
+import com.thinktank.recorder.ondevice.api.LocalSummary
 import com.thinktank.recorder.ondevice.recording.LocalAudioFileManager
 import com.thinktank.recorder.ondevice.stt.Pcm16WavReader
+import com.thinktank.recorder.ondevice.stt.SttRecognitionQualityEvaluator
 import java.io.File
 import java.util.UUID
 import kotlinx.coroutines.flow.Flow
@@ -23,6 +25,7 @@ class OnDeviceRepository(
     private val audioFiles: LocalAudioFileManager? = null,
     private val clock: () -> Long = System::currentTimeMillis,
 ) {
+    private val recognitionQualityEvaluator = SttRecognitionQualityEvaluator()
     val sessions: Flow<List<OnDeviceSessionEntity>> = dao.observeAll()
 
     suspend fun recoverInterrupted(): Int {
@@ -80,13 +83,11 @@ class OnDeviceRepository(
 
     suspend fun begin(
         sttEngine: SttEngineType,
-        summaryEngine: SummaryEngineType,
     ): String {
         val id = UUID.randomUUID().toString()
         begin(
             id = id,
             sttEngine = sttEngine,
-            summaryEngine = summaryEngine,
             state = OnDeviceSessionState.LISTENING,
             operationToken = null,
         )
@@ -96,7 +97,6 @@ class OnDeviceRepository(
     suspend fun begin(
         id: String,
         sttEngine: SttEngineType,
-        summaryEngine: SummaryEngineType,
         state: OnDeviceSessionState,
         operationToken: String?,
     ) {
@@ -108,8 +108,8 @@ class OnDeviceRepository(
                 updatedAt = now,
                 state = state.name,
                 sttEngine = sttEngine.name,
-                summaryEngine = summaryEngine.name,
-                requestedSummaryEngine = summaryEngine.name,
+                summaryEngine = SUMMARY_ENGINE_DEFAULT,
+                requestedSummaryEngine = SUMMARY_ENGINE_DEFAULT,
                 operationToken = operationToken,
             ),
         )
@@ -119,7 +119,6 @@ class OnDeviceRepository(
         id: String,
         source: MainRecordingSource,
         sttEngine: SttEngineType,
-        summaryEngine: SummaryEngineType,
         operationToken: String,
     ) {
         val now = clock()
@@ -130,8 +129,8 @@ class OnDeviceRepository(
                 updatedAt = now,
                 state = OnDeviceSessionState.STARTING.name,
                 sttEngine = sttEngine.name,
-                summaryEngine = summaryEngine.name,
-                requestedSummaryEngine = summaryEngine.name,
+                summaryEngine = SUMMARY_ENGINE_DEFAULT,
+                requestedSummaryEngine = SUMMARY_ENGINE_DEFAULT,
                 sourceType = OnDeviceSessionEntity.SOURCE_TYPE_MAIN_RECORDER_CHUNK,
                 sourceChunkId = source.id,
                 sourceDisplayName = "${source.extension.uppercase()} · ${source.durationMs / 1_000}초",
@@ -182,7 +181,79 @@ class OnDeviceRepository(
     }
 
     suspend fun saveTranscript(id: String, token: String, transcript: String): Boolean =
-        dao.saveTranscriptForOperation(id, token, transcript.trim(), clock()) == 1
+        dao.saveTranscriptForOperation(
+            id = id,
+            token = token,
+            transcript = transcript.trim(),
+            inputDurationMs = null,
+            processedThroughMs = null,
+            segmentCount = null,
+            recognizedSegmentCount = null,
+            retryCount = null,
+            meaningfulChars = null,
+            charsPerSecond = null,
+            qualityStatus = null,
+            segmentDiagnostics = null,
+            coverageStatus = null,
+            recognitionQualityStatus = null,
+            recognitionDiagnostics = null,
+            now = clock(),
+        ) == 1
+
+    suspend fun saveTranscript(id: String, token: String, result: SttResult): Boolean {
+        val diagnostics = requireNotNull(result.diagnostics) {
+            "파일 STT 결과에 처리 범위 진단이 없습니다."
+        }
+        require(diagnostics.passed) { "품질 기준을 통과하지 못한 전사는 저장할 수 없습니다." }
+        val recognition = recognitionQualityEvaluator.evaluate(result.text, diagnostics)
+        return dao.saveTranscriptForOperation(
+            id = id,
+            token = token,
+            transcript = result.text.trim(),
+            inputDurationMs = diagnostics.inputDurationMs,
+            processedThroughMs = diagnostics.processedThroughMs,
+            segmentCount = diagnostics.segmentCount,
+            recognizedSegmentCount = diagnostics.recognizedSegmentCount,
+            retryCount = diagnostics.retryCount,
+            meaningfulChars = diagnostics.meaningfulChars,
+            charsPerSecond = diagnostics.charsPerSecond,
+            qualityStatus = diagnostics.qualityStatus.name,
+            segmentDiagnostics = diagnostics.encodedSegments(),
+            coverageStatus = recognition.coverage.name,
+            recognitionQualityStatus = recognition.recognitionQuality.name,
+            recognitionDiagnostics = recognition.encodedDiagnostics,
+            now = clock(),
+        ) == 1
+    }
+
+    suspend fun finishTranscriptQualityFailure(
+        id: String,
+        token: String,
+        diagnostics: SttDiagnostics,
+        error: String,
+        transcript: String = "",
+    ): Boolean {
+        require(!diagnostics.passed) { "통과한 전사를 품질 실패로 저장할 수 없습니다." }
+        val recognition = recognitionQualityEvaluator.evaluate(transcript, diagnostics)
+        return dao.finishTranscriptQualityFailureForOperation(
+            id = id,
+            token = token,
+            inputDurationMs = diagnostics.inputDurationMs,
+            processedThroughMs = diagnostics.processedThroughMs,
+            segmentCount = diagnostics.segmentCount,
+            recognizedSegmentCount = diagnostics.recognizedSegmentCount,
+            retryCount = diagnostics.retryCount,
+            meaningfulChars = diagnostics.meaningfulChars,
+            charsPerSecond = diagnostics.charsPerSecond,
+            qualityStatus = diagnostics.qualityStatus.name,
+            segmentDiagnostics = diagnostics.encodedSegments(),
+            coverageStatus = recognition.coverage.name,
+            recognitionQualityStatus = recognition.recognitionQuality.name,
+            recognitionDiagnostics = recognition.encodedDiagnostics,
+            error = error,
+            now = clock(),
+        ) == 1
+    }
 
     suspend fun attachAudio(id: String, audioPath: String) {
         val current = requireNotNull(dao.get(id))
@@ -200,10 +271,6 @@ class OnDeviceRepository(
 
     suspend fun markTranscribing(id: String) {
         updateState(id, OnDeviceSessionState.TRANSCRIBING)
-    }
-
-    suspend fun markSummarizing(id: String) {
-        updateState(id, OnDeviceSessionState.SUMMARIZING)
     }
 
     suspend fun finishOperation(
@@ -236,72 +303,20 @@ class OnDeviceRepository(
         error = error,
     ) == 1
 
-    suspend fun saveSummary(id: String, result: LocalSummary) {
-        val current = requireNotNull(dao.get(id))
-        dao.update(
-            current.copy(
-                updatedAt = clock(),
-                state = OnDeviceSessionState.COMPLETE.name,
-                title = result.title,
-                summary = result.bullets.joinToString("\n"),
-                actionItems = result.actionItems.joinToString("\n"),
-                summaryEngine = result.engine.name,
-                requestedSummaryEngine = current.requestedSummaryEngine ?: current.summaryEngine,
-                summaryFallbackReason = result.fallbackReason,
-                summaryPolicyVersion = result.policyVersion,
-                summaryPromptVersion = result.promptVersion,
-                summaryModelVersion = result.modelVersion,
-                summaryValidationStatus = result.validationStatus,
-                requestedSummaryModelId = result.requestedModelId,
-                actualSummaryModelId = result.actualModelId,
-                summaryRuntimeType = result.runtimeType,
-                summaryGenerationProfile = result.generationProfile,
-                summaryViolationCodes = result.violationCodes,
-                summaryDurationMs = result.durationMs,
-                summaryInputChars = result.inputChars,
-                summaryOutputChars = result.outputChars,
-                summarySourceHash = result.sourceHash,
-                summaryGeneratedAt = clock(),
-                error = null,
-            ),
-        )
-    }
-
-    suspend fun saveSummary(id: String, token: String, result: LocalSummary): Boolean =
-        saveSummary(
-            id = id,
-            token = token,
-            requestedEngine = runCatching {
-                SummaryEngineType.valueOf(requireNotNull(dao.get(id)).summaryEngine)
-            }.getOrDefault(result.engine),
-            result = result,
-        )
-
-    suspend fun saveSummary(
-        id: String,
-        token: String,
-        requestedEngine: SummaryEngineType,
-        result: LocalSummary,
-    ): Boolean {
+    suspend fun saveGemmaSummary(id: String, token: String, result: LocalSummary): Boolean {
         val now = clock()
-        return dao.saveSummaryForOperation(
+        return dao.saveGemmaSummaryForOperation(
             id = id,
             token = token,
             title = result.title,
             summary = result.bullets.joinToString("\n"),
             actionItems = result.actionItems.joinToString("\n"),
-            summaryEngine = result.engine.name,
-            requestedSummaryEngine = requestedEngine.name,
-            fallbackReason = result.fallbackReason,
-            policyVersion = result.policyVersion,
-            promptVersion = result.promptVersion,
             modelVersion = result.modelVersion,
             validationStatus = result.validationStatus,
             requestedModelId = result.requestedModelId,
             actualModelId = result.actualModelId,
             runtimeType = result.runtimeType,
             generationProfile = result.generationProfile,
-            violationCodes = result.violationCodes,
             durationMs = result.durationMs,
             inputChars = result.inputChars,
             outputChars = result.outputChars,
@@ -377,4 +392,13 @@ class OnDeviceRepository(
                 Pcm16WavReader.inspect(file).durationMs > 0
         }.getOrDefault(false)
     }
+
+    private companion object {
+        const val SUMMARY_ENGINE_DEFAULT = "GEMMA_LOCAL"
+    }
 }
+
+private fun SttDiagnostics.encodedSegments(): String =
+    segments.joinToString(separator = ";") { segment ->
+        "${segment.startMs}-${segment.endMs}:${segment.meaningfulChars}"
+    }

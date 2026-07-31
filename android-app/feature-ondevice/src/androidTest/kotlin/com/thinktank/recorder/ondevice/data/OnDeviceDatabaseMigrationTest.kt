@@ -135,9 +135,107 @@ class OnDeviceDatabaseMigrationTest {
         }
     }
 
+    @Test
+    fun migration6To7AddsSttDiagnosticsWithoutChangingExistingRows() {
+        helper.createDatabase(DATABASE_NAME_V7, 6).use { db ->
+            db.execSQL(
+                """
+                INSERT INTO ondevice_sessions (
+                    id, createdAt, updatedAt, state, sttEngine, summaryEngine,
+                    transcript, title, summary, actionItems, sourceType,
+                    summarySourceHash, requestedSummaryEngine, dataPolicy
+                ) VALUES (
+                    'legacy-v6', 1, 1, 'COMPLETE', 'SENSEVOICE_LOCAL_FILE',
+                    'EXTRACTIVE_KOTLIN', '보존할 전사', '제목', '보존할 요약', '',
+                    'MAIN_RECORDER_CHUNK', 'hash', 'EXTRACTIVE_KOTLIN', 'LOCAL_ONLY'
+                )
+                """.trimIndent(),
+            )
+        }
+
+        helper.runMigrationsAndValidate(
+            DATABASE_NAME_V7,
+            7,
+            true,
+            OnDeviceDatabase.MIGRATION_6_7,
+        ).use { db ->
+            db.query(
+                """
+                SELECT transcript, summary, sttInputDurationMs, sttProcessedThroughMs,
+                       sttSegmentCount, sttRecognizedSegmentCount, sttRetryCount,
+                       sttMeaningfulChars, sttCharsPerSecond, sttQualityStatus,
+                       sttSegmentDiagnostics
+                FROM ondevice_sessions WHERE id = 'legacy-v6'
+                """.trimIndent(),
+            ).use { cursor ->
+                assertTrue(cursor.moveToFirst())
+                assertTrue(cursor.getString(0) == "보존할 전사")
+                assertTrue(cursor.getString(1) == "보존할 요약")
+                for (index in 2..10) assertTrue(cursor.isNull(index))
+            }
+        }
+    }
+
+    @Test
+    fun migration7To8AddsSummaryRunsWithoutChangingExistingRows() {
+        helper.createDatabase(DATABASE_NAME_V8, 7).use { db ->
+            db.execSQL(
+                """
+                INSERT INTO ondevice_sessions (
+                    id, createdAt, updatedAt, state, sttEngine, summaryEngine,
+                    transcript, title, summary, actionItems, sourceType,
+                    summarySourceHash, requestedSummaryEngine, sttInputDurationMs,
+                    sttProcessedThroughMs, sttSegmentCount, sttRecognizedSegmentCount,
+                    sttRetryCount, sttMeaningfulChars, sttCharsPerSecond,
+                    sttQualityStatus, sttSegmentDiagnostics, dataPolicy
+                ) VALUES (
+                    'legacy-v7', 1, 1, 'COMPLETE', 'SENSEVOICE_LOCAL_FILE',
+                    'EXTRACTIVE_KOTLIN', '보존할 전사', '제목', '보존할 요약', '',
+                    'MAIN_RECORDER_CHUNK', 'hash', 'EXTRACTIVE_KOTLIN',
+                    312128, 312128, 13, 13, 0, 1411, 4.52,
+                    'COMPLETE', '0-1000:10', 'LOCAL_ONLY'
+                )
+                """.trimIndent(),
+            )
+        }
+
+        helper.runMigrationsAndValidate(
+            DATABASE_NAME_V8,
+            8,
+            true,
+            OnDeviceDatabase.MIGRATION_7_8,
+        ).use { db ->
+            db.query(
+                """
+                SELECT transcript, summary, sttInputDurationMs, sttProcessedThroughMs,
+                       selectedSummaryRunId, sttCoverageStatus,
+                       sttRecognitionQualityStatus, sttRecognitionDiagnostics
+                FROM ondevice_sessions WHERE id = 'legacy-v7'
+                """.trimIndent(),
+            ).use { cursor ->
+                assertTrue(cursor.moveToFirst())
+                assertTrue(cursor.getString(0) == "보존할 전사")
+                assertTrue(cursor.getString(1) == "보존할 요약")
+                assertTrue(cursor.getLong(2) == 312128L)
+                assertTrue(cursor.getLong(3) == 312128L)
+                for (index in 4..7) assertTrue(cursor.isNull(index))
+            }
+            db.query("SELECT COUNT(*) FROM ondevice_summary_batches").use { cursor ->
+                assertTrue(cursor.moveToFirst())
+                assertTrue(cursor.getInt(0) == 0)
+            }
+            db.query("SELECT COUNT(*) FROM ondevice_summary_runs").use { cursor ->
+                assertTrue(cursor.moveToFirst())
+                assertTrue(cursor.getInt(0) == 0)
+            }
+        }
+    }
+
     private companion object {
         const val DATABASE_NAME = "ondevice-migration-test"
         const val DATABASE_NAME_V5 = "ondevice-migration-v5-test"
         const val DATABASE_NAME_V6 = "ondevice-migration-v6-test"
+        const val DATABASE_NAME_V7 = "ondevice-migration-v7-test"
+        const val DATABASE_NAME_V8 = "ondevice-migration-v8-test"
     }
 }

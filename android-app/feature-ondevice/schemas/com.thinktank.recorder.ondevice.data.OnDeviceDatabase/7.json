@@ -1,0 +1,302 @@
+{
+  "formatVersion": 1,
+  "database": {
+    "version": 7,
+    "identityHash": "0f2b4455e1098e02ffac134c1dcf8f19",
+    "entities": [
+      {
+        "tableName": "ondevice_sessions",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` TEXT NOT NULL, `createdAt` INTEGER NOT NULL, `updatedAt` INTEGER NOT NULL, `state` TEXT NOT NULL, `sttEngine` TEXT NOT NULL, `summaryEngine` TEXT NOT NULL, `transcript` TEXT NOT NULL, `title` TEXT NOT NULL, `summary` TEXT NOT NULL, `actionItems` TEXT NOT NULL, `audioPath` TEXT, `sourceType` TEXT NOT NULL, `sourceChunkId` TEXT, `sourceDisplayName` TEXT, `sourceDurationMs` INTEGER, `summarySourceHash` TEXT NOT NULL, `summaryGeneratedAt` INTEGER, `requestedSummaryEngine` TEXT, `summaryFallbackReason` TEXT, `summaryPolicyVersion` INTEGER, `summaryPromptVersion` INTEGER, `summaryModelVersion` TEXT, `summaryValidationStatus` TEXT, `requestedSummaryModelId` TEXT, `actualSummaryModelId` TEXT, `summaryRuntimeType` TEXT, `summaryGenerationProfile` TEXT, `summaryViolationCodes` TEXT, `summaryDurationMs` INTEGER, `summaryInputChars` INTEGER, `summaryOutputChars` INTEGER, `sttInputDurationMs` INTEGER, `sttProcessedThroughMs` INTEGER, `sttSegmentCount` INTEGER, `sttRecognizedSegmentCount` INTEGER, `sttRetryCount` INTEGER, `sttMeaningfulChars` INTEGER, `sttCharsPerSecond` REAL, `sttQualityStatus` TEXT, `sttSegmentDiagnostics` TEXT, `error` TEXT, `operationToken` TEXT, `failureStage` TEXT, `dataPolicy` TEXT NOT NULL, PRIMARY KEY(`id`))",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "createdAt",
+            "columnName": "createdAt",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "updatedAt",
+            "columnName": "updatedAt",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "state",
+            "columnName": "state",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "sttEngine",
+            "columnName": "sttEngine",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "summaryEngine",
+            "columnName": "summaryEngine",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "transcript",
+            "columnName": "transcript",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "title",
+            "columnName": "title",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "summary",
+            "columnName": "summary",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "actionItems",
+            "columnName": "actionItems",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "audioPath",
+            "columnName": "audioPath",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "sourceType",
+            "columnName": "sourceType",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "sourceChunkId",
+            "columnName": "sourceChunkId",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "sourceDisplayName",
+            "columnName": "sourceDisplayName",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "sourceDurationMs",
+            "columnName": "sourceDurationMs",
+            "affinity": "INTEGER",
+            "notNull": false
+          },
+          {
+            "fieldPath": "summarySourceHash",
+            "columnName": "summarySourceHash",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "summaryGeneratedAt",
+            "columnName": "summaryGeneratedAt",
+            "affinity": "INTEGER",
+            "notNull": false
+          },
+          {
+            "fieldPath": "requestedSummaryEngine",
+            "columnName": "requestedSummaryEngine",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "summaryFallbackReason",
+            "columnName": "summaryFallbackReason",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "summaryPolicyVersion",
+            "columnName": "summaryPolicyVersion",
+            "affinity": "INTEGER",
+            "notNull": false
+          },
+          {
+            "fieldPath": "summaryPromptVersion",
+            "columnName": "summaryPromptVersion",
+            "affinity": "INTEGER",
+            "notNull": false
+          },
+          {
+            "fieldPath": "summaryModelVersion",
+            "columnName": "summaryModelVersion",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "summaryValidationStatus",
+            "columnName": "summaryValidationStatus",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "requestedSummaryModelId",
+            "columnName": "requestedSummaryModelId",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "actualSummaryModelId",
+            "columnName": "actualSummaryModelId",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "summaryRuntimeType",
+            "columnName": "summaryRuntimeType",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "summaryGenerationProfile",
+            "columnName": "summaryGenerationProfile",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "summaryViolationCodes",
+            "columnName": "summaryViolationCodes",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "summaryDurationMs",
+            "columnName": "summaryDurationMs",
+            "affinity": "INTEGER",
+            "notNull": false
+          },
+          {
+            "fieldPath": "summaryInputChars",
+            "columnName": "summaryInputChars",
+            "affinity": "INTEGER",
+            "notNull": false
+          },
+          {
+            "fieldPath": "summaryOutputChars",
+            "columnName": "summaryOutputChars",
+            "affinity": "INTEGER",
+            "notNull": false
+          },
+          {
+            "fieldPath": "sttInputDurationMs",
+            "columnName": "sttInputDurationMs",
+            "affinity": "INTEGER",
+            "notNull": false
+          },
+          {
+            "fieldPath": "sttProcessedThroughMs",
+            "columnName": "sttProcessedThroughMs",
+            "affinity": "INTEGER",
+            "notNull": false
+          },
+          {
+            "fieldPath": "sttSegmentCount",
+            "columnName": "sttSegmentCount",
+            "affinity": "INTEGER",
+            "notNull": false
+          },
+          {
+            "fieldPath": "sttRecognizedSegmentCount",
+            "columnName": "sttRecognizedSegmentCount",
+            "affinity": "INTEGER",
+            "notNull": false
+          },
+          {
+            "fieldPath": "sttRetryCount",
+            "columnName": "sttRetryCount",
+            "affinity": "INTEGER",
+            "notNull": false
+          },
+          {
+            "fieldPath": "sttMeaningfulChars",
+            "columnName": "sttMeaningfulChars",
+            "affinity": "INTEGER",
+            "notNull": false
+          },
+          {
+            "fieldPath": "sttCharsPerSecond",
+            "columnName": "sttCharsPerSecond",
+            "affinity": "REAL",
+            "notNull": false
+          },
+          {
+            "fieldPath": "sttQualityStatus",
+            "columnName": "sttQualityStatus",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "sttSegmentDiagnostics",
+            "columnName": "sttSegmentDiagnostics",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "error",
+            "columnName": "error",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "operationToken",
+            "columnName": "operationToken",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "failureStage",
+            "columnName": "failureStage",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "dataPolicy",
+            "columnName": "dataPolicy",
+            "affinity": "TEXT",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "id"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_ondevice_sessions_createdAt",
+            "unique": false,
+            "columnNames": [
+              "createdAt"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_ondevice_sessions_createdAt` ON `${TABLE_NAME}` (`createdAt`)"
+          }
+        ],
+        "foreignKeys": []
+      }
+    ],
+    "views": [],
+    "setupQueries": [
+      "CREATE TABLE IF NOT EXISTS room_master_table (id INTEGER PRIMARY KEY,identity_hash TEXT)",
+      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, '0f2b4455e1098e02ffac134c1dcf8f19')"
+    ]
+  }
+}

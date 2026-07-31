@@ -70,7 +70,6 @@ ksp {
 }
 
 dependencies {
-    implementation(files("libs/llama-android-b10107-arm64.aar"))
     implementation(project(":litert-bridge"))
 
     implementation(libs.androidx.core.ktx)
@@ -79,6 +78,7 @@ dependencies {
     implementation(libs.androidx.lifecycle.runtime.compose)
     implementation(libs.androidx.lifecycle.viewmodel.ktx)
     implementation(libs.androidx.lifecycle.viewmodel.compose)
+    implementation(libs.androidx.documentfile)
     implementation(libs.hilt.android)
     kapt(libs.hilt.compiler)
 
@@ -130,11 +130,9 @@ fun sha256(file: File): String {
 
 val verifyOnDeviceNativeArtifacts by tasks.registering {
     group = "verification"
-    description = "Verify the pinned llama.cpp arm64 artifact."
+    description = "Verify the pinned SenseVoice arm64 artifacts."
     doLast {
         val expected = mapOf(
-            file("libs/llama-android-b10107-arm64.aar") to
-                "ee0934ae4288108a5e6976820dd51ae5558c51891e79bdf85e8d9af6104c7268",
             file("src/main/jniLibs/arm64-v8a/libsherpa-onnx-jni.so") to
                 "a79ff75fbe1c3813cc239037b458a7828298a90a5b77f5314056508eefdf72bc",
             file("src/main/jniLibs/arm64-v8a/libonnxruntime.so") to

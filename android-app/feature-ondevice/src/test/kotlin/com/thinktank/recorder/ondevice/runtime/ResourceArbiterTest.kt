@@ -15,16 +15,16 @@ class ResourceArbiterTest {
         val firstEntered = CompletableDeferred<Unit>()
         val releaseFirst = CompletableDeferred<Unit>()
         val first = async {
-            ResourceArbiter.withLease(NativeWorkload.QWEN_SUMMARY) {
+            ResourceArbiter.withLease(NativeWorkload.SENSEVOICE_FILE_STT) {
                 firstEntered.complete(Unit)
                 releaseFirst.await()
             }
         }
         firstEntered.await()
-        assertEquals(NativeWorkload.QWEN_SUMMARY, ResourceArbiter.activeWorkload())
+        assertEquals(NativeWorkload.SENSEVOICE_FILE_STT, ResourceArbiter.activeWorkload())
 
         val second = async {
-            ResourceArbiter.withLease(NativeWorkload.QWEN_SUMMARY) {
+            ResourceArbiter.withLease(NativeWorkload.MODEL_MAINTENANCE) {
                 ResourceArbiter.activeWorkload()
             }
         }
@@ -33,7 +33,7 @@ class ResourceArbiterTest {
 
         releaseFirst.complete(Unit)
         first.await()
-        assertEquals(NativeWorkload.QWEN_SUMMARY, second.await())
+        assertEquals(NativeWorkload.MODEL_MAINTENANCE, second.await())
         assertNull(ResourceArbiter.activeWorkload())
     }
 }

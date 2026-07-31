@@ -14,6 +14,7 @@ data class InstalledModel(
 class ModelStore(context: Context) {
     private val root = File(context.filesDir, "ondevice/models").apply { mkdirs() }
     val downloadRoot: File = File(root, ".downloads").apply { mkdirs() }
+    private val artifactRoot: File = File(root, ".artifacts").apply { mkdirs() }
 
     fun installDir(id: ModelId): File = File(root, id.name.lowercase())
 
@@ -26,6 +27,48 @@ class ModelStore(context: Context) {
     fun etagFile(id: ModelId): File = File(downloadRoot, "${id.name.lowercase()}.etag")
 
     fun partialBytes(id: ModelId): Long = partialFile(id).takeIf(File::isFile)?.length() ?: 0L
+
+    fun artifactDir(id: ModelId): File = File(artifactRoot, id.name.lowercase())
+
+    fun artifactFile(descriptor: ModelDescriptor): File =
+        File(artifactDir(descriptor.id), descriptor.artifactFileName())
+
+    fun artifactBytes(descriptor: ModelDescriptor): Long =
+        artifactFile(descriptor).takeIf(File::isFile)?.length() ?: 0L
+
+    /**
+     * Promotes a SHA-256 verified partial file into the persistent internal artifact store.
+     * Callers must hold [ModelOperationCoordinator]'s lock for this model.
+     */
+    fun promoteVerifiedPartial(descriptor: ModelDescriptor): File {
+        val partial = partialFile(descriptor.id)
+        check(partial.isFile && partial.length() == descriptor.exactArtifactBytes) {
+            "검증된 모델 원본 파일이 없습니다"
+        }
+        val targetDir = artifactDir(descriptor.id).apply { mkdirs() }
+        val target = artifactFile(descriptor)
+        val incoming = File(targetDir, ".${target.name}.incoming")
+        val backup = File(targetDir, ".${target.name}.backup")
+        incoming.delete()
+        backup.delete()
+        check(partial.renameTo(incoming)) { "모델 원본을 보관소로 이동하지 못했습니다" }
+        try {
+            if (target.exists()) {
+                check(target.renameTo(backup)) { "기존 모델 원본을 보존하지 못했습니다" }
+            }
+            if (!incoming.renameTo(target)) {
+                if (backup.exists()) check(backup.renameTo(target)) {
+                    "기존 모델 원본 복원에 실패했습니다"
+                }
+                error("검증된 모델 원본을 활성화하지 못했습니다")
+            }
+            backup.delete()
+            return target
+        } catch (error: Throwable) {
+            if (!partial.exists() && incoming.exists()) incoming.renameTo(partial)
+            throw error
+        }
+    }
 
     fun snapshot(descriptor: ModelDescriptor): InstalledModel {
         val dir = installDir(descriptor.id)
@@ -78,13 +121,18 @@ class ModelStore(context: Context) {
         if (staging.exists()) staging.deleteRecursively()
     }
 
-    fun delete(id: ModelId) {
+    fun deleteInstalled(id: ModelId) {
         installDir(id).deleteRecursively()
-        partialFile(id).delete()
-        etagFile(id).delete()
         stagingDir(id).deleteRecursively()
         backupDir(id).deleteRecursively()
         ModelIntegrityVerifier.invalidate(id)
+    }
+
+    fun delete(id: ModelId) {
+        deleteInstalled(id)
+        partialFile(id).delete()
+        etagFile(id).delete()
+        artifactDir(id).deleteRecursively()
     }
 
     fun modelRoot(): File = root
@@ -92,4 +140,14 @@ class ModelStore(context: Context) {
     companion object {
         const val MARKER = "installed.json"
     }
+}
+
+internal fun ModelDescriptor.artifactFileName(): String =
+    "${id.name.lowercase()}-${expectedSha256}.${artifactFileExtension()}"
+
+internal fun ModelDescriptor.artifactFileExtension(): String = when {
+    artifactFormat == ModelArtifactFormat.TAR_BZ2 -> "tar.bz2"
+    requiredFiles.singleOrNull()?.substringAfterLast('.', "")?.isNotBlank() == true ->
+        requiredFiles.single().substringAfterLast('.')
+    else -> "bin"
 }

@@ -3,12 +3,16 @@ package com.thinktank.recorder.ondevice.data
 import android.content.Context
 import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
-import com.thinktank.recorder.ondevice.api.LocalSummary
 import com.thinktank.recorder.ondevice.api.MainRecordingSource
+import com.thinktank.recorder.ondevice.api.LocalSummary
 import com.thinktank.recorder.ondevice.api.OnDeviceFailureStage
 import com.thinktank.recorder.ondevice.api.OnDeviceSessionState
 import com.thinktank.recorder.ondevice.api.SttEngineType
-import com.thinktank.recorder.ondevice.api.SummaryEngineType
+import com.thinktank.recorder.ondevice.api.SttDiagnostics
+import com.thinktank.recorder.ondevice.api.SttQualityStatus
+import com.thinktank.recorder.ondevice.api.SttResult
+import com.thinktank.recorder.ondevice.api.SttSegmentDiagnostic
+import com.thinktank.recorder.ondevice.api.TranscriptSegment
 import com.thinktank.recorder.ondevice.recording.LocalAudioFileManager
 import java.io.File
 import java.io.RandomAccessFile
@@ -44,23 +48,12 @@ class OnDeviceRepositoryTest : Closeable {
     }
 
     @Test
-    fun sessionStaysLocalOnlyThroughTranscriptAndSummary() = runBlocking {
+    fun sessionStaysLocalOnlyThroughTranscriptCompletion() = runBlocking {
         val repository = OnDeviceRepository(database.sessionDao()) { now++ }
-        val id = repository.begin(
-            SttEngineType.ANDROID_ON_DEVICE,
-            SummaryEngineType.EXTRACTIVE_KOTLIN,
-        )
+        val id = repository.begin(SttEngineType.ANDROID_ON_DEVICE)
 
         repository.saveTranscript(id, "기기 안에서 처리합니다.")
-        repository.markSummarizing(id)
-        repository.saveSummary(
-            id,
-            LocalSummary(
-                title = "기기 안에서 처리",
-                bullets = listOf("기기 안에서 처리합니다."),
-                actionItems = emptyList(),
-            ),
-        )
+        assertTrue(repository.completeWithoutSummary(id))
 
         val session = database.sessionDao().get(id)!!
         assertEquals(OnDeviceSessionEntity.DATA_POLICY_LOCAL_ONLY, session.dataPolicy)
@@ -70,12 +63,59 @@ class OnDeviceRepositoryTest : Closeable {
     }
 
     @Test
+    fun gemmaSummaryCompletesTranscriptSessionWithAuditMetadata() = runBlocking {
+        val repository = OnDeviceRepository(database.sessionDao(), clock = { now++ })
+        val id = "gemma-summary"
+        repository.begin(
+            id = id,
+            sttEngine = SttEngineType.SENSEVOICE_LOCAL_FILE,
+            state = OnDeviceSessionState.TRANSCRIPT_READY,
+            operationToken = null,
+        )
+        repository.saveTranscript(id, "Gemma가 요약할 전사 원문")
+        assertTrue(
+            repository.startOperation(
+                id = id,
+                allowedStates = setOf(OnDeviceSessionState.TRANSCRIPT_READY),
+                targetState = OnDeviceSessionState.SUMMARIZING,
+                token = "gemma-token",
+            ),
+        )
+        assertTrue(
+            repository.saveGemmaSummary(
+                id = id,
+                token = "gemma-token",
+                result = LocalSummary(
+                    title = "Gemma 요약",
+                    bullets = listOf("핵심 내용"),
+                    actionItems = listOf("확인하기"),
+                    sourceHash = "hash",
+                    modelVersion = "3-1B-IT-int4-litertlm",
+                    validationStatus = "PASSED",
+                    requestedModelId = "GEMMA_SUMMARY_KO",
+                    actualModelId = "GEMMA_SUMMARY_KO",
+                    runtimeType = "LITERT_LM",
+                    generationProfile = "test",
+                    durationMs = 10,
+                    inputChars = 20,
+                    outputChars = 30,
+                ),
+            ),
+        )
+
+        val stored = requireNotNull(database.sessionDao().get(id))
+        assertEquals(OnDeviceSessionState.COMPLETE.name, stored.state)
+        assertEquals("GEMMA_LOCAL", stored.summaryEngine)
+        assertEquals("Gemma 요약", stored.title)
+        assertEquals("핵심 내용", stored.summary)
+        assertEquals("확인하기", stored.actionItems)
+        assertEquals("GEMMA_SUMMARY_KO", stored.actualSummaryModelId)
+    }
+
+    @Test
     fun interruptedLiveRecognitionBecomesCancelled() = runBlocking {
         val repository = OnDeviceRepository(database.sessionDao()) { now++ }
-        val id = repository.begin(
-            SttEngineType.ANDROID_ON_DEVICE,
-            SummaryEngineType.NONE,
-        )
+        val id = repository.begin(SttEngineType.ANDROID_ON_DEVICE)
 
         assertEquals(1, repository.recoverInterrupted())
         assertEquals(
@@ -96,7 +136,6 @@ class OnDeviceRepositoryTest : Closeable {
         repository.begin(
             id,
             SttEngineType.ANDROID_ON_DEVICE,
-            SummaryEngineType.NONE,
             OnDeviceSessionState.TRANSCRIBING,
             token,
         )
@@ -110,14 +149,13 @@ class OnDeviceRepositoryTest : Closeable {
     }
 
     @Test
-    fun interruptedSummaryPreservesTranscript() = runBlocking {
+    fun interruptedLegacySummaryStatePreservesTranscript() = runBlocking {
         val repository = OnDeviceRepository(database.sessionDao(), clock = { now++ })
         val id = "recovery-summary"
         repository.begin(
             id,
             SttEngineType.ANDROID_ON_DEVICE,
-            SummaryEngineType.EXTRACTIVE_KOTLIN,
-            OnDeviceSessionState.TRANSCRIPT_READY,
+            OnDeviceSessionState.AUDIO_READY,
             null,
         )
         repository.saveTranscript(id, "보존할 전사")
@@ -152,7 +190,6 @@ class OnDeviceRepositoryTest : Closeable {
                 storageState = "READY",
             ),
             sttEngine = SttEngineType.SENSEVOICE_LOCAL_FILE,
-            summaryEngine = SummaryEngineType.NONE,
             operationToken = "file-token",
         )
         assertTrue(
@@ -177,21 +214,101 @@ class OnDeviceRepositoryTest : Closeable {
     }
 
     @Test
+    fun passingFileTranscriptPersistsCoverageDiagnostics() = runBlocking {
+        val repository = OnDeviceRepository(database.sessionDao(), clock = { now++ })
+        repository.begin(
+            id = "quality-pass",
+            sttEngine = SttEngineType.SENSEVOICE_LOCAL_FILE,
+            state = OnDeviceSessionState.TRANSCRIBING,
+            operationToken = "quality-pass-token",
+        )
+        val diagnostics = SttDiagnostics(
+            inputDurationMs = 45_184L,
+            processedThroughMs = 45_184L,
+            segmentCount = 2,
+            recognizedSegmentCount = 2,
+            retryCount = 1,
+            meaningfulChars = 305,
+            charsPerSecond = 6.75f,
+            qualityStatus = SttQualityStatus.RETRIED_COMPLETE,
+            segments = listOf(
+                SttSegmentDiagnostic(0L, 28_000L, 190),
+                SttSegmentDiagnostic(27_000L, 45_184L, 130),
+            ),
+        )
+
+        assertTrue(
+            repository.saveTranscript(
+                "quality-pass",
+                "quality-pass-token",
+                SttResult(
+                    text = "끝까지 처리한 전사",
+                    segments = listOf(TranscriptSegment(0L, 45_184L, "끝까지 처리한 전사")),
+                    diagnostics = diagnostics,
+                ),
+            ),
+        )
+
+        val stored = requireNotNull(database.sessionDao().get("quality-pass"))
+        assertEquals(OnDeviceSessionState.TRANSCRIPT_READY.name, stored.state)
+        assertEquals(SttQualityStatus.RETRIED_COMPLETE.name, stored.sttQualityStatus)
+        assertEquals(45_184L, stored.sttProcessedThroughMs)
+        assertEquals(1, stored.sttRetryCount)
+        assertEquals("0-28000:190;27000-45184:130", stored.sttSegmentDiagnostics)
+    }
+
+    @Test
+    fun insufficientFileTranscriptStoresDiagnosticsWithoutResult() = runBlocking {
+        val repository = OnDeviceRepository(database.sessionDao(), clock = { now++ })
+        repository.begin(
+            id = "quality-fail",
+            sttEngine = SttEngineType.SENSEVOICE_LOCAL_FILE,
+            state = OnDeviceSessionState.TRANSCRIBING,
+            operationToken = "quality-fail-token",
+        )
+        val diagnostics = SttDiagnostics(
+            inputDurationMs = 45_184L,
+            processedThroughMs = 45_184L,
+            segmentCount = 2,
+            recognizedSegmentCount = 1,
+            retryCount = 1,
+            meaningfulChars = 1,
+            charsPerSecond = 0.02f,
+            qualityStatus = SttQualityStatus.INSUFFICIENT,
+        )
+
+        assertTrue(
+            repository.finishTranscriptQualityFailure(
+                id = "quality-fail",
+                token = "quality-fail-token",
+                diagnostics = diagnostics,
+                error = "전사 품질 부족",
+            ),
+        )
+
+        val stored = requireNotNull(database.sessionDao().get("quality-fail"))
+        assertEquals(OnDeviceSessionState.FAILED_RECOVERABLE.name, stored.state)
+        assertEquals(OnDeviceFailureStage.TRANSCRIBE.name, stored.failureStage)
+        assertEquals("", stored.transcript)
+        assertEquals("", stored.summary)
+        assertEquals(SttQualityStatus.INSUFFICIENT.name, stored.sttQualityStatus)
+    }
+
+    @Test
     fun staleTokenCannotOverwriteCurrentOperation() = runBlocking {
         val repository = OnDeviceRepository(database.sessionDao(), clock = { now++ })
         val id = "stale-token"
         repository.begin(
             id,
             SttEngineType.ANDROID_ON_DEVICE,
-            SummaryEngineType.EXTRACTIVE_KOTLIN,
-            OnDeviceSessionState.TRANSCRIPT_READY,
+            OnDeviceSessionState.AUDIO_READY,
             null,
         )
         assertTrue(
             repository.startOperation(
                 id,
-                setOf(OnDeviceSessionState.TRANSCRIPT_READY),
-                OnDeviceSessionState.SUMMARIZING,
+                setOf(OnDeviceSessionState.AUDIO_READY),
+                OnDeviceSessionState.TRANSCRIBING,
                 "new-token",
             ),
         )
@@ -203,104 +320,8 @@ class OnDeviceRepositoryTest : Closeable {
                 OnDeviceSessionState.COMPLETE,
             ),
         )
-        assertEquals(OnDeviceSessionState.SUMMARIZING.name, database.sessionDao().get(id)?.state)
+        assertEquals(OnDeviceSessionState.TRANSCRIBING.name, database.sessionDao().get(id)?.state)
         assertEquals("new-token", database.sessionDao().get(id)?.operationToken)
-    }
-
-    @Test
-    fun qwenFallbackPersistsRequestedActualAndQualityMetadata() = runBlocking {
-        val repository = OnDeviceRepository(database.sessionDao(), clock = { now++ })
-        val id = "summary-audit"
-        repository.begin(
-            id,
-            SttEngineType.SENSEVOICE_LOCAL_FILE,
-            SummaryEngineType.QWEN_LOCAL,
-            OnDeviceSessionState.TRANSCRIPT_READY,
-            null,
-        )
-        assertTrue(
-            repository.startOperation(
-                id,
-                setOf(OnDeviceSessionState.TRANSCRIPT_READY),
-                OnDeviceSessionState.SUMMARIZING,
-                "summary-audit-token",
-            ),
-        )
-
-        assertTrue(
-            repository.saveSummary(
-                id = id,
-                token = "summary-audit-token",
-                requestedEngine = SummaryEngineType.QWEN_LOCAL,
-                result = LocalSummary(
-                    title = "쇼핑쇼츠 강의",
-                    bullets = listOf("수강생 판매 경험을 원문에서 추출했습니다."),
-                    actionItems = emptyList(),
-                    engine = SummaryEngineType.EXTRACTIVE_KOTLIN,
-                    sourceHash = "source-hash",
-                    fallbackReason = "QWEN_QUALITY_REJECTED",
-                    policyVersion = 2,
-                    promptVersion = 2,
-                    modelVersion = "qwen-test",
-                    validationStatus = "FALLBACK_PASSED",
-                    requestedModelId = "QWEN_SUMMARY_KO",
-                    actualModelId = null,
-                    runtimeType = "KOTLIN",
-                    generationProfile = "qwen-greedy-json-v1",
-                    violationCodes = "WEAK_SOURCE_EVIDENCE",
-                    durationMs = 1_234,
-                    inputChars = 556,
-                    outputChars = 22,
-                ),
-            ),
-        )
-
-        val stored = requireNotNull(database.sessionDao().get(id))
-        assertEquals(SummaryEngineType.QWEN_LOCAL.name, stored.requestedSummaryEngine)
-        assertEquals(SummaryEngineType.EXTRACTIVE_KOTLIN.name, stored.summaryEngine)
-        assertEquals("QWEN_QUALITY_REJECTED", stored.summaryFallbackReason)
-        assertEquals(2, stored.summaryPolicyVersion)
-        assertEquals(2, stored.summaryPromptVersion)
-        assertEquals("qwen-test", stored.summaryModelVersion)
-        assertEquals("FALLBACK_PASSED", stored.summaryValidationStatus)
-        assertEquals("QWEN_SUMMARY_KO", stored.requestedSummaryModelId)
-        assertEquals(null, stored.actualSummaryModelId)
-        assertEquals("KOTLIN", stored.summaryRuntimeType)
-        assertEquals("qwen-greedy-json-v1", stored.summaryGenerationProfile)
-        assertEquals("WEAK_SOURCE_EVIDENCE", stored.summaryViolationCodes)
-        assertEquals(1_234L, stored.summaryDurationMs)
-        assertEquals(556, stored.summaryInputChars)
-        assertEquals(22, stored.summaryOutputChars)
-    }
-
-    @Test
-    fun cancelledSummaryReturnsToTranscriptReadyWithoutLosingTranscript() = runBlocking {
-        val repository = OnDeviceRepository(database.sessionDao(), clock = { now++ })
-        val id = repository.begin(
-            SttEngineType.ANDROID_ON_DEVICE,
-            SummaryEngineType.EXTRACTIVE_KOTLIN,
-        )
-        repository.saveTranscript(id, "취소 후에도 보존할 전사")
-        assertTrue(
-            repository.startOperation(
-                id,
-                setOf(OnDeviceSessionState.TRANSCRIPT_READY),
-                OnDeviceSessionState.SUMMARIZING,
-                "summary-cancel",
-            ),
-        )
-
-        assertTrue(
-            repository.finishOperation(
-                id,
-                "summary-cancel",
-                OnDeviceSessionState.TRANSCRIPT_READY,
-            ),
-        )
-        val session = database.sessionDao().get(id)!!
-        assertEquals(OnDeviceSessionState.TRANSCRIPT_READY.name, session.state)
-        assertEquals("취소 후에도 보존할 전사", session.transcript)
-        assertEquals(null, session.operationToken)
     }
 
     @Test
@@ -314,7 +335,6 @@ class OnDeviceRepositoryTest : Closeable {
         repository.begin(
             id,
             SttEngineType.ANDROID_ON_DEVICE,
-            SummaryEngineType.NONE,
             OnDeviceSessionState.AUDIO_READY,
             null,
         )
@@ -353,7 +373,6 @@ class OnDeviceRepositoryTest : Closeable {
         repository.begin(
             id,
             SttEngineType.ANDROID_ON_DEVICE,
-            SummaryEngineType.NONE,
             OnDeviceSessionState.STARTING,
             "active-token",
         )
@@ -377,7 +396,6 @@ class OnDeviceRepositoryTest : Closeable {
         repository.begin(
             id,
             SttEngineType.ANDROID_ON_DEVICE,
-            SummaryEngineType.NONE,
             OnDeviceSessionState.CANCELLED,
             null,
         )

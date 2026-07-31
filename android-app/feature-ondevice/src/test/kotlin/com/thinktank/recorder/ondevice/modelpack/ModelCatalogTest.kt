@@ -18,36 +18,18 @@ class ModelCatalogTest {
     }
 
     @Test
-    fun pinnedSummaryAndSenseVoiceArtifactsAreAvailable() {
-        val qwen = ModelCatalog.get(ModelId.QWEN_SUMMARY_KO)
-        val exaone = ModelCatalog.get(ModelId.EXAONE_SUMMARY_KO)
+    fun onlyGemmaDefaultSummaryAndSenseVoiceSttAreAvailable() {
         val gemma = ModelCatalog.get(ModelId.GEMMA_SUMMARY_KO)
         val senseVoice = ModelCatalog.get(ModelId.SENSEVOICE_STT_KO)
 
         assertEquals(
-            listOf(
-                ModelId.QWEN_SUMMARY_KO,
-                ModelId.EXAONE_SUMMARY_KO,
-                ModelId.GEMMA_SUMMARY_KO,
-                ModelId.SENSEVOICE_STT_KO,
-            ),
+            listOf(ModelId.GEMMA_SUMMARY_KO, ModelId.SENSEVOICE_STT_KO),
             ModelCatalog.models.map { it.id },
         )
-        assertEquals(563_036_064L, qwen.exactArtifactBytes)
-        assertEquals(
-            "57d1997790d1744fba5b40a7317df71ea5e2acee28c47e78f0cce39c0703f8cf",
-            qwen.expectedSha256,
-        )
-        assertEquals(ModelRuntimeType.LLAMA_CPP, exaone.runtimeType)
-        assertEquals(812_437_792L, exaone.exactArtifactBytes)
-        assertEquals(
-            "7b5e753540183ae4d56e6febd9b48cdd944de53386e6faa8f51c8f98cb2b47df",
-            exaone.expectedSha256,
-        )
         assertEquals(ModelRuntimeType.LITERT_LM, gemma.runtimeType)
-        assertEquals(584_417_280L, gemma.exactArtifactBytes)
         assertFalse(gemma.remoteDownloadEnabled)
         assertEquals(setOf("model.litertlm"), gemma.requiredFiles)
+        assertEquals(ModelRuntimeType.SHERPA_ONNX, senseVoice.runtimeType)
         assertEquals(ModelArtifactFormat.TAR_BZ2, senseVoice.artifactFormat)
         assertEquals(163_002_883L, senseVoice.exactArtifactBytes)
         assertEquals(

@@ -66,7 +66,6 @@ class ModelInstaller(
             }
             backup.deleteRecursively()
             ModelIntegrityVerifier.invalidate(descriptor.id)
-            artifact.delete()
         } catch (error: Throwable) {
             staging.deleteRecursively()
             throw error

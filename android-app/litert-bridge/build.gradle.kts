@@ -21,11 +21,7 @@ android {
 
 dependencies {
     implementation(libs.litertlm.android) {
-        // The bridge's Java API does not expose Kotlin types. Keep the application's pinned
-        // Kotlin 1.9 runtime instead of letting LiteRT-LM's Kotlin 2.2 metadata enter KSP.
         exclude(group = "org.jetbrains.kotlin")
     }
-    // Keep the application's compiler-compatible reflection runtime. The public LiteRT API used
-    // by this bridge relies only on stable JVM signatures.
     implementation(libs.kotlin.reflect)
 }

@@ -6,6 +6,7 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+source "$ROOT_DIR/scripts/resolve_java_home.sh"
 ADB_DEFAULT="${ANDROID_SDK_ROOT:-${ANDROID_HOME:-$HOME/Library/Android/sdk}}/platform-tools/adb"
 ADB_BIN="${ADB_BIN:-$ADB_DEFAULT}"
 # This repository has two devices visible to ADB. PD20 is explicitly excluded from all
@@ -97,20 +98,6 @@ write_device_facts() {
   } > "$EVIDENCE_DIR/device.txt"
 }
 
-sample_qwen_pss() {
-  local package_name="com.thinktank.recorder.next.deviceTest:local_ai_qwen"
-  while true; do
-    local pids
-    pids="$("${ADB[@]}" shell "pidof $package_name" 2>/dev/null | tr -d '\r' || true)"
-    for pid in $pids; do
-      local pss
-      pss="$("${ADB[@]}" shell "dumpsys meminfo $pid | awk '/TOTAL PSS:/ {print \$3; exit}'" 2>/dev/null | tr -d '\r' || true)"
-      printf '%s pid=%s totalPssKb=%s\n' "$(date '+%H:%M:%S')" "$pid" "${pss:-unknown}" >> "$EVIDENCE_DIR/qwen-pss.txt"
-    done
-    sleep 1
-  done
-}
-
 capture_safe_logcat() {
   # AndroidRuntime errors are diagnostic-only and avoid application INFO output that may contain
   # user-entered transcript text.
@@ -125,11 +112,14 @@ if [[ "$CASE_NAME" == "preflight" ]]; then
   exit 0
 fi
 
-sample_qwen_pss &
-SAMPLER_PID=$!
+# Samsung's screen saver can keep the Compose host Activity behind DreamActivity, which makes
+# semantics-based tests report an empty hierarchy. Wake only the approved test device; no preview
+# app data or persistent display setting is changed.
+"${ADB[@]}" shell input keyevent KEYCODE_WAKEUP
+"${ADB[@]}" shell wm dismiss-keyguard
+"${ADB[@]}" shell input keyevent KEYCODE_HOME
+
 cleanup() {
-  kill "$SAMPLER_PID" 2>/dev/null || true
-  wait "$SAMPLER_PID" 2>/dev/null || true
   capture_safe_logcat
   printf 'preview_package_after=%s\n' "$("${ADB[@]}" shell 'pm path com.thinktank.recorder.next.qa' | tr -d '\r')" >> "$EVIDENCE_DIR/device.txt"
   printf 'test_package_after=%s\n' "$("${ADB[@]}" shell 'pm path com.thinktank.recorder.next.deviceTest' | tr -d '\r')" >> "$EVIDENCE_DIR/device.txt"
@@ -138,12 +128,9 @@ trap cleanup EXIT
 
 cd "$ROOT_DIR"
 export ANDROID_SERIAL="$SERIAL"
-DEFAULT_JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home"
-if [[ -z "${JAVA_HOME:-}" || ! -x "$JAVA_HOME/bin/java" ]]; then
-  export JAVA_HOME="$DEFAULT_JAVA_HOME"
-fi
+thinktank_require_java21
 
-# Model smoke tests use JUnit assumptions and are reported as skipped when the approved local
+# STT model tests use JUnit assumptions and are reported as skipped when the approved local
 # model/fixture is not present. The runner never downloads or imports a model on its own.
 ./gradlew \
   :feature-ondevice:connectedDebugAndroidTest \

@@ -28,35 +28,35 @@ class ModelInstallerTest {
     fun setUp() {
         context = ApplicationProvider.getApplicationContext()
         store = ModelStore(context)
-        store.delete(ModelId.QWEN_SUMMARY_KO)
+        store.delete(ModelId.GEMMA_SUMMARY_KO)
         store.delete(ModelId.SENSEVOICE_STT_KO)
     }
 
     @After
     fun tearDown() {
-        store.delete(ModelId.QWEN_SUMMARY_KO)
+        store.delete(ModelId.GEMMA_SUMMARY_KO)
         store.delete(ModelId.SENSEVOICE_STT_KO)
     }
 
     @Test
-    fun qwenArtifactInstallsAsSingleVerifiedGguf() {
-        val descriptor = testQwenDescriptor()
-        val artifact = File(context.cacheDir, "qwen-test.gguf").apply { writeText("qwen-model") }
+    fun singleFileArtifactInstallsAsVerifiedModel() {
+        val descriptor = testSingleFileDescriptor()
+        val artifact = File(context.cacheDir, "single-model.bin").apply { writeText("local-model") }
 
         ModelInstaller(store) { 123L }.install(descriptor, artifact)
 
         val installed = store.snapshot(descriptor)
         assertTrue(installed.ready)
-        assertEquals("qwen-model", File(store.installDir(descriptor.id), "model.gguf").readText())
-        assertFalse(artifact.exists())
+        assertEquals("local-model", File(store.installDir(descriptor.id), "model.bin").readText())
+        assertTrue(artifact.exists())
     }
 
     @Test
     fun installedFileTamperingIsRejectedBeforeInference() {
-        val descriptor = testQwenDescriptor()
-        val artifact = File(context.cacheDir, "qwen-integrity.gguf").apply { writeText("qwen-model") }
+        val descriptor = testSingleFileDescriptor()
+        val artifact = File(context.cacheDir, "single-integrity.bin").apply { writeText("local-model") }
         ModelInstaller(store) { 456L }.install(descriptor, artifact)
-        File(store.installDir(descriptor.id), "model.gguf").appendText("tampered")
+        File(store.installDir(descriptor.id), "model.bin").appendText("tampered")
 
         assertFalse(store.snapshot(descriptor).ready)
         assertThrows(IllegalStateException::class.java) {
@@ -65,9 +65,9 @@ class ModelInstallerTest {
     }
 
     @Test
-    fun interruptedActivationRestoresQwenBackup() {
-        val descriptor = testQwenDescriptor()
-        val artifact = File(context.cacheDir, "qwen-recovery.gguf").apply { writeText("qwen-model") }
+    fun interruptedActivationRestoresModelBackup() {
+        val descriptor = testSingleFileDescriptor()
+        val artifact = File(context.cacheDir, "single-recovery.bin").apply { writeText("local-model") }
         ModelInstaller(store).install(descriptor, artifact)
 
         val target = store.installDir(descriptor.id)
@@ -79,7 +79,7 @@ class ModelInstallerTest {
 
         assertTrue(target.isDirectory)
         assertFalse(backup.exists())
-        assertEquals("qwen-model", File(target, "model.gguf").readText())
+        assertEquals("local-model", File(target, "model.bin").readText())
         assertTrue(store.snapshot(descriptor).ready)
     }
 
@@ -107,7 +107,7 @@ class ModelInstallerTest {
         assertEquals("onnx", File(directory, "model.int8.onnx").readText())
         assertEquals("tokens", File(directory, "tokens.txt").readText())
         assertFalse(File(directory, "README.md").exists())
-        assertFalse(artifact.exists())
+        assertTrue(artifact.exists())
     }
 
     @Test
@@ -180,9 +180,15 @@ class ModelInstallerTest {
         }
     }
 
-    private fun testQwenDescriptor(): ModelDescriptor =
-        ModelCatalog.get(ModelId.QWEN_SUMMARY_KO).copy(
+    private fun testSingleFileDescriptor(): ModelDescriptor =
+        ModelCatalog.get(ModelId.GEMMA_SUMMARY_KO).copy(
             version = "test",
             expectedSha256 = "a".repeat(64),
+            exactArtifactBytes = 11,
+            approximateDownloadBytes = 11,
+            approximateInstallBytes = 1024,
+            requiredFiles = setOf("model.bin"),
+            artifactFormat = ModelArtifactFormat.SINGLE_FILE,
+            archiveRoot = "",
         )
 }

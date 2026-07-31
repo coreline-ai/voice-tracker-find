@@ -41,6 +41,7 @@ class ModelDownloadWorker(
     params: WorkerParameters,
 ) : CoroutineWorker(appContext, params) {
     private val store = ModelStore(appContext)
+    private val vault = ModelVault(appContext)
     private val notificationManager = appContext.getSystemService(NotificationManager::class.java)
 
     override suspend fun doWork(): Result = withContext(Dispatchers.IO) {
@@ -67,43 +68,67 @@ class ModelDownloadWorker(
         createNotificationChannel()
         setForeground(foregroundInfo(descriptor, 0, descriptor.approximateDownloadBytes))
         val partial = store.partialFile(id)
+        val retainedArtifact = store.artifactFile(descriptor)
         partial.parentFile?.mkdirs()
 
         return try {
-            ensureStorage(descriptor, partial.length())
             val sourceUri = inputData.getString(KEY_SOURCE_URI)
-            // A completed, pinned artifact may remain after an app update interrupted only
-            // extraction. Verify it locally and continue without opening a socket or requiring
-            // Wi-Fi. The later SHA-256 check is the authoritative trust boundary.
-            val reusableLocalArtifact = sourceUri.isNullOrBlank() &&
-                hasCompleteArtifactFile(partial, descriptor.exactArtifactBytes) &&
-                sha256(partial) == descriptor.expectedSha256
-            if (reusableLocalArtifact) {
-                setProgress(progressData(descriptor, partial.length(), partial.length(), STATUS_VERIFYING))
-                updateNotification(descriptor, partial.length(), partial.length(), "다운로드 파일 확인 완료")
-            } else if (sourceUri.isNullOrBlank()) {
-                check(descriptor.remoteDownloadEnabled) {
-                    "이 모델은 공식 파일 가져오기로만 설치할 수 있습니다"
-                }
-                val wifi = WifiOnlyDownloadPolicy.validatedWifi(applicationContext)
-                    ?: return Result.retry()
-                download(descriptor, partial, wifi)
+            val localOnly = inputData.getBoolean(KEY_LOCAL_ONLY, false)
+            val verifiedRetained = verifiedArtifactOrNull(retainedArtifact, descriptor)
+            val verifiedPartial = if (verifiedRetained == null) {
+                verifiedArtifactOrNull(partial, descriptor)
             } else {
-                importFromUri(descriptor, Uri.parse(sourceUri), partial)
+                null
             }
-            setProgress(progressData(descriptor, partial.length(), partial.length(), STATUS_VERIFYING))
-            updateNotification(descriptor, partial.length(), partial.length(), "파일 검증 중")
-            if (sha256(partial) != descriptor.expectedSha256) {
-                partial.delete()
-                store.etagFile(id).delete()
-                throw ArtifactValidationException("모델 SHA-256 검증에 실패했습니다")
+            val alreadyAcquired = when {
+                verifiedRetained != null || verifiedPartial != null -> descriptor.exactArtifactBytes
+                sourceUri.isNullOrBlank() && !localOnly ->
+                    partial.length().coerceAtMost(descriptor.exactArtifactBytes)
+                else -> 0L
             }
-            setProgress(progressData(descriptor, partial.length(), partial.length(), STATUS_INSTALLING))
-            updateNotification(descriptor, partial.length(), partial.length(), "모델 설치 중")
+            ensureStorage(descriptor, alreadyAcquired)
+            val installArtifact = when {
+                verifiedRetained != null -> verifiedRetained
+                verifiedPartial != null -> store.promoteVerifiedPartial(descriptor)
+                !sourceUri.isNullOrBlank() -> {
+                    importFromUri(descriptor, Uri.parse(sourceUri), partial)
+                    verifyAndPromotePartial(descriptor, partial)
+                }
+                localOnly -> throw LocalArtifactUnavailableException(
+                    "보관된 모델 원본을 검증하지 못했습니다. 자동 다운로드는 시작하지 않았습니다",
+                )
+                else -> {
+                    check(descriptor.remoteDownloadEnabled) {
+                        "이 모델은 공식 파일 가져오기로만 설치할 수 있습니다"
+                    }
+                    val wifi = WifiOnlyDownloadPolicy.validatedWifi(applicationContext)
+                        ?: return Result.retry()
+                    download(descriptor, partial, wifi)
+                    verifyAndPromotePartial(descriptor, partial)
+                }
+            }
+            setProgress(
+                progressData(
+                    descriptor,
+                    descriptor.exactArtifactBytes,
+                    descriptor.exactArtifactBytes,
+                    STATUS_INSTALLING,
+                ),
+            )
+            updateNotification(
+                descriptor,
+                descriptor.exactArtifactBytes,
+                descriptor.exactArtifactBytes,
+                "모델 설치 중",
+            )
             val installContext = currentCoroutineContext()
-            ModelInstaller(store).install(descriptor, partial) {
+            ModelInstaller(store).install(descriptor, installArtifact) {
                 installContext.ensureActive()
             }
+            runCatching { vault.preserve(descriptor, installArtifact) }
+                .onFailure { error ->
+                    Log.w(LOG_TAG, "Model vault preservation failed: ${descriptor.id}", error)
+                }
             store.etagFile(id).delete()
             notificationManager.notify(
                 notificationId(id),
@@ -130,10 +155,59 @@ class ModelDownloadWorker(
         }
     }
 
+    private suspend fun verifiedArtifactOrNull(
+        artifact: File,
+        descriptor: ModelDescriptor,
+    ): File? {
+        if (!hasCompleteArtifactFile(artifact, descriptor.exactArtifactBytes)) return null
+        setProgress(
+            progressData(
+                descriptor,
+                artifact.length(),
+                descriptor.exactArtifactBytes,
+                STATUS_VERIFYING,
+            ),
+        )
+        updateNotification(
+            descriptor,
+            artifact.length(),
+            descriptor.exactArtifactBytes,
+            "보관된 모델 파일 확인 중",
+        )
+        return artifact.takeIf { sha256(it) == descriptor.expectedSha256 }
+    }
+
+    private suspend fun verifyAndPromotePartial(
+        descriptor: ModelDescriptor,
+        partial: File,
+    ): File {
+        setProgress(
+            progressData(
+                descriptor,
+                partial.length(),
+                descriptor.exactArtifactBytes,
+                STATUS_VERIFYING,
+            ),
+        )
+        updateNotification(
+            descriptor,
+            partial.length(),
+            descriptor.exactArtifactBytes,
+            "파일 검증 중",
+        )
+        if (
+            !hasCompleteArtifactFile(partial, descriptor.exactArtifactBytes) ||
+            sha256(partial) != descriptor.expectedSha256
+        ) {
+            throw ArtifactValidationException("모델 SHA-256 검증에 실패했습니다")
+        }
+        return store.promoteVerifiedPartial(descriptor)
+    }
+
     override suspend fun getForegroundInfo(): ForegroundInfo {
         val id = inputData.getString(KEY_MODEL_ID)
             ?.let { runCatching { ModelId.valueOf(it) }.getOrNull() }
-            ?: ModelId.QWEN_SUMMARY_KO
+            ?: ModelId.SENSEVOICE_STT_KO
         val descriptor = ModelCatalog.get(id)
         createNotificationChannel()
         return foregroundInfo(descriptor, 0, descriptor.approximateDownloadBytes)
@@ -463,7 +537,7 @@ class ModelDownloadWorker(
                     "로컬 AI 모델",
                     NotificationManager.IMPORTANCE_LOW,
                 ).apply {
-                    description = "온디바이스 STT와 요약 모델 설치 상태"
+                    description = "온디바이스 STT와 Gemma 모델 설치 상태"
                     setShowBadge(false)
                 },
             )
@@ -483,6 +557,7 @@ class ModelDownloadWorker(
         const val TAG_ALL_MODELS = "thinktank-ondevice-models"
         const val KEY_MODEL_ID = "model_id"
         const val KEY_SOURCE_URI = "source_uri"
+        const val KEY_LOCAL_ONLY = "local_only"
         const val KEY_STATUS = "status"
         const val KEY_DOWNLOADED_BYTES = "downloaded_bytes"
         const val KEY_TOTAL_BYTES = "total_bytes"
@@ -526,4 +601,6 @@ class ModelDownloadWorker(
     private class WifiRequiredException : IOException(
         "Wi-Fi 연결이 끊겨 모델 다운로드를 일시정지했습니다",
     )
+
+    private class LocalArtifactUnavailableException(message: String) : IOException(message)
 }

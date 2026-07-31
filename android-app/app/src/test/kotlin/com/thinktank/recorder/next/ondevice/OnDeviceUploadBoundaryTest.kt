@@ -13,7 +13,6 @@ import com.thinktank.recorder.next.data.settings.SettingsReader
 import com.thinktank.recorder.next.data.settings.UserSettings
 import com.thinktank.recorder.ondevice.api.OnDeviceSessionState
 import com.thinktank.recorder.ondevice.api.SttEngineType
-import com.thinktank.recorder.ondevice.api.SummaryEngineType
 import com.thinktank.recorder.ondevice.data.OnDeviceDatabase
 import com.thinktank.recorder.ondevice.data.OnDeviceRepository
 import java.io.Closeable
@@ -104,7 +103,6 @@ class OnDeviceUploadBoundaryTest : Closeable {
             localAi.begin(
                 id = "local-$index",
                 sttEngine = SttEngineType.ANDROID_ON_DEVICE,
-                summaryEngine = SummaryEngineType.NONE,
                 state = OnDeviceSessionState.CANCELLED,
                 operationToken = null,
             )

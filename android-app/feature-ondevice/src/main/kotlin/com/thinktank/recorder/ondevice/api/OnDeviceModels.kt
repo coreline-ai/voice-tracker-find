@@ -8,13 +8,7 @@ enum class SttEngineType {
 }
 
 enum class SummaryEngineType {
-    NONE,
-    EXTRACTIVE_KOTLIN,
-    QWEN_LOCAL,
-    EXAONE_LOCAL,
     GEMMA_LOCAL,
-    /** Qwen generated the title/summary, then local source sentences filled missing detail rows. */
-    QWEN_LOCAL_GROUNDED,
 }
 
 /**
@@ -66,8 +60,7 @@ enum class OnDeviceSessionState {
 enum class OnDeviceOperationKind {
     LIVE_STT,
     FILE_STT,
-    KOTLIN_SUMMARY,
-    QWEN_SUMMARY,
+    GEMMA_SUMMARY,
 }
 
 enum class OnDeviceFailureStage {
@@ -85,27 +78,64 @@ data class TranscriptSegment(
     val confidence: Float? = null,
 )
 
+enum class SttQualityStatus {
+    COMPLETE,
+    RETRIED_COMPLETE,
+    INSUFFICIENT,
+}
+
+enum class SttCoverageStatus {
+    COMPLETE,
+    INCOMPLETE,
+    UNKNOWN,
+}
+
+enum class SttRecognitionQualityStatus {
+    ADEQUATE,
+    NOISY,
+    INSUFFICIENT,
+    UNMEASURED,
+}
+
+data class SttSegmentDiagnostic(
+    val startMs: Long,
+    val endMs: Long,
+    val meaningfulChars: Int,
+)
+
+data class SttDiagnostics(
+    val inputDurationMs: Long,
+    val processedThroughMs: Long,
+    val segmentCount: Int,
+    val recognizedSegmentCount: Int,
+    val retryCount: Int,
+    val meaningfulChars: Int,
+    val charsPerSecond: Float,
+    val qualityStatus: SttQualityStatus,
+    val segments: List<SttSegmentDiagnostic> = emptyList(),
+) {
+    val passed: Boolean
+        get() = qualityStatus != SttQualityStatus.INSUFFICIENT
+}
+
 data class SttResult(
     val text: String,
     val segments: List<TranscriptSegment>,
+    val diagnostics: SttDiagnostics? = null,
 )
 
 data class LocalSummary(
     val title: String,
     val bullets: List<String>,
     val actionItems: List<String>,
-    val engine: SummaryEngineType = SummaryEngineType.EXTRACTIVE_KOTLIN,
+    val engine: SummaryEngineType = SummaryEngineType.GEMMA_LOCAL,
     val sourceHash: String = "",
-    val fallbackReason: String? = null,
-    val policyVersion: Int? = null,
-    val promptVersion: Int? = null,
     val modelVersion: String? = null,
     val validationStatus: String? = null,
     val requestedModelId: String? = null,
     val actualModelId: String? = null,
     val runtimeType: String? = null,
     val generationProfile: String? = null,
-    val violationCodes: String? = null,
     val durationMs: Long? = null,
     val inputChars: Int? = null,
     val outputChars: Int? = null,
@@ -114,6 +144,7 @@ data class LocalSummary(
 sealed interface SpeechEvent {
     data object Ready : SpeechEvent
     data object Listening : SpeechEvent
+    data object Retrying : SpeechEvent
     data class Partial(val text: String) : SpeechEvent
 }
 

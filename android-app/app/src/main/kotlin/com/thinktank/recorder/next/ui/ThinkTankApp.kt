@@ -164,7 +164,6 @@ fun ThinkTankApp(
                         onSelectMainRecording = onDeviceViewModel::selectMainRecording,
                         onTranscribeSelectedRecording = onDeviceViewModel::transcribeSelectedRecording,
                         onSelectSttProfile = onDeviceViewModel::selectSttProfile,
-                        onSelectSummary = onDeviceViewModel::selectSummary,
                         onStartListening = onDeviceViewModel::startListening,
                         onStopListening = onDeviceViewModel::stopListening,
                         onCancelListening = onDeviceViewModel::cancelListening,
@@ -175,7 +174,10 @@ fun ThinkTankApp(
                         onDownloadModel = onDeviceViewModel::downloadModel,
                         onImportModel = onDeviceViewModel::importModel,
                         onPauseModel = onDeviceViewModel::pauseModel,
+                        onRestoreModel = onDeviceViewModel::restoreModel,
                         onDeleteModel = onDeviceViewModel::deleteModel,
+                        onConnectModelVault = onDeviceViewModel::connectModelVault,
+                        onDisconnectModelVault = onDeviceViewModel::disconnectModelVault,
                         heroImageRes = R.drawable.hero_recording_chamber,
                     )
                 }

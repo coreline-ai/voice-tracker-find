@@ -17,7 +17,7 @@ class OnDeviceOperationCoordinatorTest {
         val first = coordinator.reserve("old", "session-1", OnDeviceOperationKind.LIVE_STT)
         assertEquals("old", first?.token)
         assertNull(
-            coordinator.reserve("blocked", "session-2", OnDeviceOperationKind.QWEN_SUMMARY),
+            coordinator.reserve("blocked", "session-2", OnDeviceOperationKind.FILE_STT),
         )
 
         assertTrue(coordinator.finish("old"))
@@ -26,7 +26,7 @@ class OnDeviceOperationCoordinatorTest {
             coordinator.reserve(
                 "new",
                 "session-2",
-                OnDeviceOperationKind.QWEN_SUMMARY,
+                OnDeviceOperationKind.FILE_STT,
             )?.token,
         )
         assertFalse(coordinator.finish("old"))
@@ -36,7 +36,7 @@ class OnDeviceOperationCoordinatorTest {
     @Test
     fun cancelTargetsOnlyAttachedActiveJob() {
         val job: CompletableJob = Job()
-        coordinator.reserve("token", "session", OnDeviceOperationKind.QWEN_SUMMARY)
+        coordinator.reserve("token", "session", OnDeviceOperationKind.FILE_STT)
         assertTrue(coordinator.attach("token", job))
 
         assertEquals("token", coordinator.cancelActive()?.token)

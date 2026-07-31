@@ -7,7 +7,10 @@ import com.k2fsa.sherpa.onnx.OfflineSenseVoiceModelConfig
 import com.k2fsa.sherpa.onnx.OfflineModelConfig
 import com.k2fsa.sherpa.onnx.getFeatureConfig
 import com.thinktank.recorder.ondevice.api.SpeechEvent
+import com.thinktank.recorder.ondevice.api.SttDiagnostics
+import com.thinktank.recorder.ondevice.api.SttQualityStatus
 import com.thinktank.recorder.ondevice.api.SttResult
+import com.thinktank.recorder.ondevice.api.SttSegmentDiagnostic
 import com.thinktank.recorder.ondevice.api.TranscriptSegment
 import com.thinktank.recorder.ondevice.modelpack.ModelCatalog
 import com.thinktank.recorder.ondevice.modelpack.ModelId
@@ -37,8 +40,8 @@ enum class SenseVoiceFileSttAvailability {
  * SenseVoice runs only on an already-normalized 16 kHz mono signed-PCM file.
  *
  * The recognizer and every stream are closed in `finally`; this matters because the native runtime
- * is intentionally serialized with Qwen through [ResourceArbiter]. The model has no network client
- * and accepts files only from the private temporary directory created by the ViewModel.
+ * is intentionally serialized with model maintenance through [ResourceArbiter]. The model has no
+ * network client and accepts files only from the private temporary directory created by the ViewModel.
  */
 class SenseVoiceFileSpeechEngine(
     context: Context,
@@ -46,6 +49,7 @@ class SenseVoiceFileSpeechEngine(
     private val segmenter: Pcm16VoiceSegmenter = Pcm16VoiceSegmenter(),
 ) {
     private val cancelled = AtomicBoolean(false)
+    private val qualityEvaluator = FileSttQualityEvaluator()
 
     fun availability(): SenseVoiceFileSttAvailability = when {
         !NativeRuntimeCapabilities.current().supported -> SenseVoiceFileSttAvailability.NATIVE_UNSUPPORTED
@@ -95,7 +99,36 @@ class SenseVoiceFileSpeechEngine(
                     ),
                 )
                 onProgress(SpeechEvent.Listening)
-                decodeSegments(checkNotNull(recognizer), pcmFile, onProgress)
+                val first = decodeSegments(
+                    recognizer = checkNotNull(recognizer),
+                    pcmFile = pcmFile,
+                    fixedChunkPass = false,
+                    onProgress = onProgress,
+                )
+                val firstDiagnostics = qualityEvaluator.evaluate(first, retryCount = 0)
+                if (firstDiagnostics.passed) {
+                    first.toResult(firstDiagnostics)
+                } else {
+                    ensureNotCancelled()
+                    onProgress(SpeechEvent.Retrying)
+                    val retry = decodeSegments(
+                        recognizer = checkNotNull(recognizer),
+                        pcmFile = pcmFile,
+                        fixedChunkPass = true,
+                        onProgress = onProgress,
+                    )
+                    val retryDiagnostics = qualityEvaluator.evaluate(retry, retryCount = 1)
+                    if (retryDiagnostics.passed || retry.meaningfulChars >= first.meaningfulChars) {
+                        retry.toResult(retryDiagnostics)
+                    } else {
+                        first.toResult(
+                            firstDiagnostics.copy(
+                                retryCount = 1,
+                                qualityStatus = SttQualityStatus.INSUFFICIENT,
+                            ),
+                        )
+                    }
+                }
             } finally {
                 // `release()` is idempotent in the bundled bridge and runs even after cancellation.
                 recognizer?.release()
@@ -112,13 +145,18 @@ class SenseVoiceFileSpeechEngine(
     private suspend fun decodeSegments(
         recognizer: OfflineRecognizer,
         pcmFile: File,
+        fixedChunkPass: Boolean,
         onProgress: (SpeechEvent) -> Unit,
-    ): SttResult {
+    ): FileSttPass {
         val segments = mutableListOf<TranscriptSegment>()
+        val segmentDiagnostics = mutableListOf<SttSegmentDiagnostic>()
         val transcriptParts = mutableListOf<String>()
-        var sawAudioSegment = false
-        segmenter.forEachSpeechSegment(pcmFile, ::ensureNotCancelled) { audio ->
-            sawAudioSegment = true
+        var sourceSegmentCount = 0
+        var recognizedSegmentCount = 0
+        var processedThroughMs = 0L
+        val decode: suspend (Pcm16VoiceSegmenter.AudioSegment) -> Unit = { audio ->
+            sourceSegmentCount += 1
+            processedThroughMs = maxOf(processedThroughMs, audio.endMs)
             ensureNotCancelled()
             val stream = recognizer.createStream()
             try {
@@ -126,24 +164,49 @@ class SenseVoiceFileSpeechEngine(
                 recognizer.decode(stream)
                 ensureNotCancelled()
                 val text = recognizer.getResult(stream).text.cleanTranscript()
-                if (text.isBlank()) return@forEachSpeechSegment
-                val deduplicated = deduplicateBoundary(transcriptParts.lastOrNull(), text)
-                if (deduplicated.isBlank()) return@forEachSpeechSegment
-                transcriptParts += deduplicated
-                segments += TranscriptSegment(
+                val rawMeaningfulChars = text.meaningfulCharacterCount()
+                val deduplicated = if (text.isBlank()) {
+                    ""
+                } else {
+                    deduplicateTranscriptBoundary(transcriptParts.lastOrNull(), text)
+                }
+                segmentDiagnostics += SttSegmentDiagnostic(
                     startMs = audio.startMs,
                     endMs = audio.endMs,
-                    text = deduplicated,
+                    meaningfulChars = rawMeaningfulChars,
                 )
-                onProgress(SpeechEvent.Partial(transcriptParts.joinToString(separator = "\n")))
+                if (rawMeaningfulChars > 0) {
+                    recognizedSegmentCount += 1
+                }
+                if (deduplicated.isNotBlank()) {
+                    transcriptParts += deduplicated
+                    segments += TranscriptSegment(
+                        startMs = audio.startMs,
+                        endMs = audio.endMs,
+                        text = deduplicated,
+                    )
+                    onProgress(SpeechEvent.Partial(transcriptParts.joinToString(separator = "\n")))
+                }
             } finally {
                 stream.release()
             }
         }
-        check(sawAudioSegment) { "녹음 파일에서 분석 가능한 음성을 찾지 못했습니다." }
+        if (fixedChunkPass) {
+            segmenter.forEachFixedSegment(pcmFile, ::ensureNotCancelled, decode)
+        } else {
+            segmenter.forEachSpeechSegment(pcmFile, ::ensureNotCancelled, decode)
+        }
         val text = transcriptParts.joinToString(separator = "\n").trim()
-        check(text.isNotBlank()) { "녹음 파일에서 인식된 한국어 음성이 없습니다." }
-        return SttResult(text = text, segments = segments)
+        return FileSttPass(
+            text = text,
+            segments = segments,
+            inputDurationMs = pcmFile.length() / PCM_BYTES_PER_FRAME * 1_000L / SAMPLE_RATE,
+            processedThroughMs = processedThroughMs,
+            sourceSegmentCount = sourceSegmentCount,
+            recognizedSegmentCount = recognizedSegmentCount,
+            fixedChunkPass = fixedChunkPass,
+            segmentDiagnostics = segmentDiagnostics,
+        )
     }
 
     private suspend fun ensureNotCancelled() {
@@ -156,27 +219,97 @@ class SenseVoiceFileSpeechEngine(
             .replace(Regex("\\s+"), " ")
             .trim()
 
-    /** Avoid duplicate tail text when VAD creates a cut at a short pause. */
-    private fun deduplicateBoundary(previous: String?, current: String): String {
-        if (previous.isNullOrBlank()) return current
-        if (previous == current || previous.endsWith(current)) return ""
-        val previousWords = previous.split(Regex("\\s+"))
-        val currentWords = current.split(Regex("\\s+"))
-        val overlap = (minOf(previousWords.size, currentWords.size) downTo 1).firstOrNull { size ->
-            previousWords.takeLast(size) == currentWords.take(size)
-        } ?: 0
-        return currentWords.drop(overlap).joinToString(" ").trim()
-    }
-
     private companion object {
         const val SAMPLE_RATE = 16_000
         const val FEATURE_DIM = 80
-        const val PCM_BYTES_PER_FRAME = 2
+        const val PCM_BYTES_PER_FRAME = 2L
         const val MIN_THREADS = 1
         const val MAX_THREADS = 4
         const val MODEL_FILE = "model.int8.onnx"
         const val TOKENS_FILE = "tokens.txt"
     }
+}
+
+internal data class FileSttPass(
+    val text: String,
+    val segments: List<TranscriptSegment>,
+    val inputDurationMs: Long,
+    val processedThroughMs: Long,
+    val sourceSegmentCount: Int,
+    val recognizedSegmentCount: Int,
+    val fixedChunkPass: Boolean,
+    val segmentDiagnostics: List<SttSegmentDiagnostic> = emptyList(),
+) {
+    val meaningfulChars: Int
+        get() = text.meaningfulCharacterCount()
+
+    fun toResult(diagnostics: SttDiagnostics): SttResult =
+        SttResult(
+            text = text,
+            segments = segments,
+            diagnostics = diagnostics,
+        )
+}
+
+internal class FileSttQualityEvaluator {
+    fun evaluate(pass: FileSttPass, retryCount: Int): SttDiagnostics {
+        val meaningfulChars = pass.meaningfulChars
+        val durationSeconds = (pass.inputDurationMs / 1_000f).coerceAtLeast(1f)
+        val charsPerSecond = meaningfulChars / durationSeconds
+        val reachedInputEnd =
+            pass.processedThroughMs + COVERAGE_TOLERANCE_MS >= pass.inputDurationMs
+        val recognizedAllVadSegments =
+            pass.fixedChunkPass ||
+                (
+                    pass.sourceSegmentCount > 0 &&
+                        pass.recognizedSegmentCount == pass.sourceSegmentCount
+                    )
+        val denseEnough =
+            pass.inputDurationMs < DENSITY_CHECK_MIN_DURATION_MS ||
+                charsPerSecond >= MIN_MEANINGFUL_CHARS_PER_SECOND
+        val passed =
+            meaningfulChars >= MIN_MEANINGFUL_CHARS &&
+                reachedInputEnd &&
+                recognizedAllVadSegments &&
+                denseEnough
+        return SttDiagnostics(
+            inputDurationMs = pass.inputDurationMs,
+            processedThroughMs = pass.processedThroughMs,
+            segmentCount = pass.sourceSegmentCount,
+            recognizedSegmentCount = pass.recognizedSegmentCount,
+            retryCount = retryCount,
+            meaningfulChars = meaningfulChars,
+            charsPerSecond = charsPerSecond,
+            qualityStatus = when {
+                !passed -> SttQualityStatus.INSUFFICIENT
+                retryCount > 0 -> SttQualityStatus.RETRIED_COMPLETE
+                else -> SttQualityStatus.COMPLETE
+            },
+            segments = pass.segmentDiagnostics,
+        )
+    }
+
+    private companion object {
+        const val COVERAGE_TOLERANCE_MS = 40L
+        const val DENSITY_CHECK_MIN_DURATION_MS = 10_000L
+        const val MIN_MEANINGFUL_CHARS = 2
+        const val MIN_MEANINGFUL_CHARS_PER_SECOND = 0.5f
+    }
+}
+
+private fun String.meaningfulCharacterCount(): Int =
+    count(Char::isLetterOrDigit)
+
+/** Avoid duplicate tail text while preserving words that begin after an overlapped segment cut. */
+internal fun deduplicateTranscriptBoundary(previous: String?, current: String): String {
+    if (previous.isNullOrBlank()) return current
+    if (previous == current || previous.endsWith(current)) return ""
+    val previousWords = previous.split(Regex("\\s+"))
+    val currentWords = current.split(Regex("\\s+"))
+    val overlap = (minOf(previousWords.size, currentWords.size) downTo 1).firstOrNull { size ->
+        previousWords.takeLast(size) == currentWords.take(size)
+    } ?: 0
+    return currentWords.drop(overlap).joinToString(" ").trim()
 }
 
 /** A bounded-memory energy VAD for raw 16 kHz mono PCM. */
@@ -186,6 +319,8 @@ class Pcm16VoiceSegmenter(
     private val endSilenceMs: Long = 700L,
     private val preRollMs: Long = 300L,
     private val minSpeechMs: Long = 180L,
+    private val forcedOverlapMs: Long = 1_000L,
+    private val trailingPaddingMs: Long = 800L,
 ) {
     data class AudioSegment(
         val samples: FloatArray,
@@ -199,33 +334,62 @@ class Pcm16VoiceSegmenter(
         block: suspend (AudioSegment) -> Unit,
     ) {
         require(pcmFile.isFile && pcmFile.length() % 2L == 0L) { "PCM 파일 형식이 올바르지 않습니다." }
+        require(forcedOverlapMs in 0 until maxSegmentMs) {
+            "강제 분할 중첩은 최대 구간 길이보다 짧아야 합니다."
+        }
         val preRollFrames = (preRollMs / FRAME_MS).toInt().coerceAtLeast(1)
         val endSilenceFrames = (endSilenceMs / FRAME_MS).toInt().coerceAtLeast(1)
         val minSpeechFrames = (minSpeechMs / FRAME_MS).toInt().coerceAtLeast(1)
         val maxFrames = (maxSegmentMs / FRAME_MS).toInt().coerceAtLeast(1)
+        val forcedOverlapFrames = (forcedOverlapMs / FRAME_MS).toInt()
+            .coerceIn(0, (maxFrames - 1).coerceAtLeast(0))
+        val inputDurationMs = pcmFile.length() / 2L * 1_000L / SAMPLE_RATE
         val preRoll = ArrayDeque<FloatArray>(preRollFrames)
         var active: FloatCollector? = null
+        var activeVoiced = ArrayDeque<Boolean>()
         var segmentStartFrame = 0L
         var speechFrames = 0
         var silentFrames = 0
         var frameIndex = 0L
         var emitted = false
 
-        suspend fun emitActive(endFrameExclusive: Long) {
+        suspend fun emitActive(endFrameExclusive: Long, keepForcedOverlap: Boolean = false) {
             val samples = active?.toArray() ?: return
+            val voicedFlags = activeVoiced.toList()
             val valid = speechFrames >= minSpeechFrames && samples.isNotEmpty()
-            active = null
-            speechFrames = 0
-            silentFrames = 0
-            if (!valid) return
+            if (!valid) {
+                active = null
+                activeVoiced.clear()
+                speechFrames = 0
+                silentFrames = 0
+                return
+            }
             block(
                 AudioSegment(
-                    samples = samples,
+                    samples = samples.withTrailingSilence(),
                     startMs = segmentStartFrame * FRAME_MS,
-                    endMs = endFrameExclusive * FRAME_MS,
+                    endMs = minOf(endFrameExclusive * FRAME_MS, inputDurationMs),
                 ),
             )
             emitted = true
+            if (keepForcedOverlap && forcedOverlapFrames > 0) {
+                val overlapFrames = minOf(forcedOverlapFrames, voicedFlags.size)
+                val overlapSamples = minOf(samples.size, overlapFrames * FRAME_SAMPLES)
+                active = FloatCollector((maxFrames + preRollFrames) * FRAME_SAMPLES).apply {
+                    append(samples.copyOfRange(samples.size - overlapSamples, samples.size))
+                }
+                activeVoiced = ArrayDeque<Boolean>().apply {
+                    voicedFlags.takeLast(overlapFrames).forEach { addLast(it) }
+                }
+                segmentStartFrame = endFrameExclusive - overlapFrames
+                speechFrames = activeVoiced.count { it }
+                silentFrames = activeVoiced.toList().asReversed().takeWhile { !it }.size
+            } else {
+                active = null
+                activeVoiced.clear()
+                speechFrames = 0
+                silentFrames = 0
+            }
         }
 
         BufferedInputStream(FileInputStream(pcmFile)).use { source ->
@@ -240,8 +404,12 @@ class Pcm16VoiceSegmenter(
                     if (voiced) {
                         active = FloatCollector((maxFrames + preRollFrames) * FRAME_SAMPLES)
                         segmentStartFrame = (frameIndex - preRoll.size).coerceAtLeast(0L)
-                        preRoll.forEach { active?.append(it) }
+                        preRoll.forEach {
+                            active?.append(it)
+                            activeVoiced.addLast(false)
+                        }
                         active?.append(frame)
+                        activeVoiced.addLast(true)
                         speechFrames = 1
                         silentFrames = 0
                     } else {
@@ -250,6 +418,7 @@ class Pcm16VoiceSegmenter(
                     }
                 } else {
                     active?.append(frame)
+                    activeVoiced.addLast(voiced)
                     if (voiced) {
                         speechFrames += 1
                         silentFrames = 0
@@ -257,10 +426,13 @@ class Pcm16VoiceSegmenter(
                         silentFrames += 1
                     }
                     val activeFrames = active!!.size / FRAME_SAMPLES
-                    if (silentFrames >= endSilenceFrames || activeFrames >= maxFrames) {
+                    if (silentFrames >= endSilenceFrames) {
                         emitActive(frameIndex + 1)
                         preRoll.clear()
                         preRoll.addLast(frame)
+                    } else if (activeFrames >= maxFrames) {
+                        emitActive(frameIndex + 1, keepForcedOverlap = true)
+                        preRoll.clear()
                     }
                 }
                 frameIndex += 1
@@ -269,34 +441,51 @@ class Pcm16VoiceSegmenter(
         if (active != null) emitActive(frameIndex)
         if (!emitted && pcmFile.length() > 0L) {
             // Very quiet recordings should still reach SenseVoice instead of being silently discarded.
-            forEachFixedChunk(pcmFile, cancellationCheck, block)
+            forEachFixedSegment(pcmFile, cancellationCheck, block)
         }
     }
 
-    private suspend fun forEachFixedChunk(
+    suspend fun forEachFixedSegment(
         pcmFile: File,
         cancellationCheck: suspend () -> Unit,
         block: suspend (AudioSegment) -> Unit,
     ) {
         val maxSamples = (maxSegmentMs * SAMPLE_RATE / 1_000L).toInt()
-        BufferedInputStream(FileInputStream(pcmFile)).use { source ->
-            var consumedSamples = 0L
-            while (true) {
+        val overlapSamples = (forcedOverlapMs * SAMPLE_RATE / 1_000L).toInt()
+            .coerceIn(0, (maxSamples - 1).coerceAtLeast(0))
+        val totalSamples = pcmFile.length() / 2L
+        java.io.RandomAccessFile(pcmFile, "r").use { source ->
+            var startSample = 0L
+            while (startSample < totalSamples) {
                 cancellationCheck()
-                val bytes = ByteArray(maxSamples * 2)
-                val read = source.readAtMost(bytes)
+                val samplesToRead = minOf(maxSamples.toLong(), totalSamples - startSample).toInt()
+                val bytes = ByteArray(samplesToRead * 2)
+                source.seek(startSample * 2L)
+                var read = 0
+                while (read < bytes.size) {
+                    val count = source.read(bytes, read, bytes.size - read)
+                    if (count < 0) break
+                    read += count
+                }
                 if (read == 0) return
                 val samples = bytes.toFloatSamples(read)
+                val endSample = startSample + samples.size
                 block(
                     AudioSegment(
-                        samples = samples,
-                        startMs = consumedSamples * 1_000L / SAMPLE_RATE,
-                        endMs = (consumedSamples + samples.size) * 1_000L / SAMPLE_RATE,
+                        samples = samples.withTrailingSilence(),
+                        startMs = startSample * 1_000L / SAMPLE_RATE,
+                        endMs = endSample * 1_000L / SAMPLE_RATE,
                     ),
                 )
-                consumedSamples += samples.size
+                if (endSample >= totalSamples) return
+                startSample = endSample - overlapSamples
             }
         }
+    }
+
+    private fun FloatArray.withTrailingSilence(): FloatArray {
+        val paddingSamples = (trailingPaddingMs * SAMPLE_RATE / 1_000L).toInt()
+        return if (paddingSamples <= 0) this else copyOf(size + paddingSamples)
     }
 
     private fun BufferedInputStream.readAtMost(target: ByteArray): Int {
@@ -349,7 +538,7 @@ class Pcm16VoiceSegmenter(
     }
 
     private companion object {
-        const val SAMPLE_RATE = 16_000L
+        const val SAMPLE_RATE = 16_000
         const val FRAME_MS = 20L
         const val FRAME_SAMPLES = 320
     }

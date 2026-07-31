@@ -6,14 +6,14 @@ import kotlinx.coroutines.sync.withLock
 
 enum class NativeWorkload {
     SENSEVOICE_FILE_STT,
-    QWEN_SUMMARY,
+    GEMMA_SUMMARY,
     MODEL_MAINTENANCE,
 }
 
 /**
  * A process-wide gate for native model residency.
  *
- * Native STT and Qwen inference are isolated to one active lease. The active value is
+ * Native STT, Gemma inference, and model maintenance are isolated to one active lease. The active value is
  * observable for diagnostics, while [withLease] provides the exclusion guarantee.
  */
 object ResourceArbiter {

@@ -16,7 +16,7 @@ class ModelOperationCoordinatorTest {
         val firstEntered = CompletableDeferred<Unit>()
         val releaseFirst = CompletableDeferred<Unit>()
         val first = async {
-            ModelOperationCoordinator.withLock(ModelId.QWEN_SUMMARY_KO) {
+            ModelOperationCoordinator.withLock(ModelId.SENSEVOICE_STT_KO) {
                 order += "first-enter"
                 firstEntered.complete(Unit)
                 releaseFirst.await()
@@ -25,7 +25,7 @@ class ModelOperationCoordinatorTest {
         }
         firstEntered.await()
         val second = async {
-            ModelOperationCoordinator.withLock(ModelId.QWEN_SUMMARY_KO) {
+            ModelOperationCoordinator.withLock(ModelId.SENSEVOICE_STT_KO) {
                 order += "second-enter"
             }
         }
@@ -43,7 +43,7 @@ class ModelOperationCoordinatorTest {
         val maximum = AtomicInteger(0)
         val jobs = List(100) {
             async {
-                ModelOperationCoordinator.withLock(ModelId.QWEN_SUMMARY_KO) {
+                ModelOperationCoordinator.withLock(ModelId.SENSEVOICE_STT_KO) {
                     val entered = active.incrementAndGet()
                     maximum.updateAndGet { current -> maxOf(current, entered) }
                     delay(1)

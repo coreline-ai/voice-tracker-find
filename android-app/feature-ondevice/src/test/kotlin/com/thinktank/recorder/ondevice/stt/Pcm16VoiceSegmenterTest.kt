@@ -56,6 +56,35 @@ class Pcm16VoiceSegmenterTest {
         assertEquals(240L, segments.single().endMs)
     }
 
+    @Test
+    fun forcedBoundaryKeepsContextOverlapAndAddsTrailingDecoderSilence() = runBlocking {
+        writeFrames(
+            silenceFrames = 0,
+            voicedFrames = 80,
+            trailingSilenceFrames = 0,
+            amplitude = 12_000,
+        )
+        val segments = mutableListOf<Pcm16VoiceSegmenter.AudioSegment>()
+
+        Pcm16VoiceSegmenter(
+            maxSegmentMs = 1_000L,
+            forcedOverlapMs = 200L,
+            trailingPaddingMs = 100L,
+        ).forEachSpeechSegment(pcm) { segments += it }
+
+        assertEquals(2, segments.size)
+        assertEquals(0L, segments[0].startMs)
+        assertEquals(1_000L, segments[0].endMs)
+        assertEquals(800L, segments[1].startMs)
+        assertEquals(1_600L, segments[1].endMs)
+        assertEquals(200L, segments[0].endMs - segments[1].startMs)
+        val paddingSamples = 16_000 / 10
+        assertTrue(
+            "decoder padding must be silence",
+            segments.last().samples.takeLast(paddingSamples).all { it == 0f },
+        )
+    }
+
     private fun writeFrames(
         silenceFrames: Int,
         voicedFrames: Int,

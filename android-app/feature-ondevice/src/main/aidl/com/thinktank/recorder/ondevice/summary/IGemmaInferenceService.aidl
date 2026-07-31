@@ -1,14 +1,13 @@
 package com.thinktank.recorder.ondevice.summary;
 
-import com.thinktank.recorder.ondevice.summary.IQwenInferenceCallback;
+import com.thinktank.recorder.ondevice.summary.IGemmaInferenceCallback;
 
-interface IQwenInferenceService {
+interface IGemmaInferenceService {
     void summarize(
         String requestId,
-        String modelId,
         String modelPath,
         String transcript,
-        IQwenInferenceCallback callback
+        IGemmaInferenceCallback callback
     );
     void cancel(String requestId);
 }
