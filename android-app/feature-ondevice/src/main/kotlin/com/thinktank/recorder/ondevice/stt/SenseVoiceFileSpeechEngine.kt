@@ -60,6 +60,9 @@ class SenseVoiceFileSpeechEngine(
 
     suspend fun transcribe(
         pcmFile: File,
+        resumeState: SttResumeState = SttResumeState(),
+        allowFullRetry: Boolean = true,
+        onSegmentCompleted: suspend (SttSegmentCheckpoint) -> Unit = {},
         onProgress: (SpeechEvent) -> Unit = {},
     ): SttResult = withContext(Dispatchers.Default) {
         check(availability() == SenseVoiceFileSttAvailability.READY) {
@@ -104,29 +107,71 @@ class SenseVoiceFileSpeechEngine(
                     pcmFile = pcmFile,
                     fixedChunkPass = false,
                     onProgress = onProgress,
+                    resumeState = resumeState,
+                    onSegmentCompleted = onSegmentCompleted,
                 )
                 val firstDiagnostics = qualityEvaluator.evaluate(first, retryCount = 0)
                 if (firstDiagnostics.passed) {
                     first.toResult(firstDiagnostics)
                 } else {
                     ensureNotCancelled()
-                    onProgress(SpeechEvent.Retrying)
-                    val retry = decodeSegments(
-                        recognizer = checkNotNull(recognizer),
-                        pcmFile = pcmFile,
-                        fixedChunkPass = true,
-                        onProgress = onProgress,
+                    val retryRanges = SttRetryPlanner.plan(
+                        diagnostics = first.segmentDiagnostics,
+                        inputDurationMs = first.inputDurationMs,
                     )
-                    val retryDiagnostics = qualityEvaluator.evaluate(retry, retryCount = 1)
-                    if (retryDiagnostics.passed || retry.meaningfulChars >= first.meaningfulChars) {
-                        retry.toResult(retryDiagnostics)
+                    val targeted = if (retryRanges.isEmpty()) {
+                        null
                     } else {
-                        first.toResult(
-                            firstDiagnostics.copy(
-                                retryCount = 1,
-                                qualityStatus = SttQualityStatus.INSUFFICIENT,
-                            ),
+                        onProgress(SpeechEvent.Retrying)
+                        val retried = decodeSegments(
+                            recognizer = checkNotNull(recognizer),
+                            pcmFile = pcmFile,
+                            fixedChunkPass = true,
+                            fixedRanges = retryRanges,
+                            onProgress = onProgress,
+                            resumeState = SttResumeState(),
+                            onSegmentCompleted = onSegmentCompleted,
                         )
+                        mergeTargetedRetry(first, retried)
+                    }
+                    val targetedDiagnostics = targeted?.let {
+                        qualityEvaluator.evaluate(it, retryCount = 1)
+                    }
+                    when {
+                        targeted != null && targetedDiagnostics?.passed == true ->
+                            targeted.toResult(targetedDiagnostics)
+                        !allowFullRetry ->
+                            (targeted ?: first).toResult(
+                                (targetedDiagnostics ?: firstDiagnostics).copy(
+                                    retryCount = if (targeted == null) 0 else 1,
+                                    qualityStatus = SttQualityStatus.INSUFFICIENT,
+                                ),
+                            )
+                        else -> {
+                            onProgress(SpeechEvent.Retrying)
+                            val retry = decodeSegments(
+                                recognizer = checkNotNull(recognizer),
+                                pcmFile = pcmFile,
+                                fixedChunkPass = true,
+                                onProgress = onProgress,
+                                resumeState = SttResumeState(),
+                                onSegmentCompleted = onSegmentCompleted,
+                            )
+                            val retryDiagnostics = qualityEvaluator.evaluate(retry, retryCount = 1)
+                            if (
+                                retryDiagnostics.passed ||
+                                retry.meaningfulChars >= (targeted ?: first).meaningfulChars
+                            ) {
+                                retry.toResult(retryDiagnostics)
+                            } else {
+                                (targeted ?: first).toResult(
+                                    (targetedDiagnostics ?: firstDiagnostics).copy(
+                                        retryCount = 1,
+                                        qualityStatus = SttQualityStatus.INSUFFICIENT,
+                                    ),
+                                )
+                            }
+                        }
                     }
                 }
             } finally {
@@ -146,18 +191,25 @@ class SenseVoiceFileSpeechEngine(
         recognizer: OfflineRecognizer,
         pcmFile: File,
         fixedChunkPass: Boolean,
+        fixedRanges: List<SttRetryRange> = emptyList(),
         onProgress: (SpeechEvent) -> Unit,
+        resumeState: SttResumeState,
+        onSegmentCompleted: suspend (SttSegmentCheckpoint) -> Unit,
     ): FileSttPass {
-        val segments = mutableListOf<TranscriptSegment>()
-        val segmentDiagnostics = mutableListOf<SttSegmentDiagnostic>()
-        val transcriptParts = mutableListOf<String>()
+        val segments = resumeState.segments.toMutableList()
+        val segmentDiagnostics = resumeState.diagnostics.toMutableList()
+        val transcriptParts = resumeState.segments.map(TranscriptSegment::text).toMutableList()
         var sourceSegmentCount = 0
-        var recognizedSegmentCount = 0
-        var processedThroughMs = 0L
-        val decode: suspend (Pcm16VoiceSegmenter.AudioSegment) -> Unit = { audio ->
+        var recognizedSegmentCount = resumeState.diagnostics.count { it.meaningfulChars > 0 }
+        var processedThroughMs = resumeState.processedThroughMs
+        val decode: suspend (Pcm16VoiceSegmenter.AudioSegment) -> Unit = decode@ { audio ->
+            val ordinal = sourceSegmentCount
             sourceSegmentCount += 1
             processedThroughMs = maxOf(processedThroughMs, audio.endMs)
             ensureNotCancelled()
+            if (!fixedChunkPass && audio.endMs <= resumeState.processedThroughMs) {
+                return@decode
+            }
             val stream = recognizer.createStream()
             try {
                 stream.acceptWaveform(audio.samples, SAMPLE_RATE)
@@ -187,14 +239,39 @@ class SenseVoiceFileSpeechEngine(
                     )
                     onProgress(SpeechEvent.Partial(transcriptParts.joinToString(separator = "\n")))
                 }
+                onSegmentCompleted(
+                    SttSegmentCheckpoint(
+                        passType = when {
+                            fixedRanges.isNotEmpty() -> "RANGE_RETRY"
+                            fixedChunkPass -> "FIXED_RETRY"
+                            else -> "PRIMARY"
+                        },
+                        ordinal = ordinal,
+                        startMs = audio.startMs,
+                        endMs = audio.endMs,
+                        text = deduplicated,
+                    ),
+                )
             } finally {
                 stream.release()
             }
         }
-        if (fixedChunkPass) {
+        if (fixedChunkPass && fixedRanges.isNotEmpty()) {
+            segmenter.forEachFixedRange(
+                pcmFile = pcmFile,
+                ranges = fixedRanges,
+                cancellationCheck = ::ensureNotCancelled,
+                block = decode,
+            )
+        } else if (fixedChunkPass) {
             segmenter.forEachFixedSegment(pcmFile, ::ensureNotCancelled, decode)
         } else {
             segmenter.forEachSpeechSegment(pcmFile, ::ensureNotCancelled, decode)
+        }
+        if (!fixedChunkPass) {
+            // The VAD iterator scans the complete PCM even when the last speech ends before EOF.
+            // Coverage measures bytes scanned, not the timestamp of the final voiced segment.
+            processedThroughMs = pcmFile.length() / PCM_BYTES_PER_FRAME * 1_000L / SAMPLE_RATE
         }
         val text = transcriptParts.joinToString(separator = "\n").trim()
         return FileSttPass(
@@ -227,6 +304,51 @@ class SenseVoiceFileSpeechEngine(
         const val MAX_THREADS = 4
         const val MODEL_FILE = "model.int8.onnx"
         const val TOKENS_FILE = "tokens.txt"
+    }
+}
+
+data class SttResumeState(
+    val processedThroughMs: Long = 0L,
+    val segments: List<TranscriptSegment> = emptyList(),
+    val diagnostics: List<SttSegmentDiagnostic> = emptyList(),
+)
+
+data class SttSegmentCheckpoint(
+    val passType: String,
+    val ordinal: Int,
+    val startMs: Long,
+    val endMs: Long,
+    val text: String,
+)
+
+data class SttRetryRange(
+    val startMs: Long,
+    val endMs: Long,
+)
+
+internal object SttRetryPlanner {
+    fun plan(
+        diagnostics: List<SttSegmentDiagnostic>,
+        inputDurationMs: Long,
+    ): List<SttRetryRange> {
+        val failed = diagnostics
+            .filter { it.meaningfulChars == 0 && it.endMs > it.startMs }
+            .sortedBy(SttSegmentDiagnostic::startMs)
+        if (failed.isEmpty()) return emptyList()
+        val merged = mutableListOf<SttRetryRange>()
+        failed.forEach { segment ->
+            val candidate = SttRetryRange(
+                startMs = segment.startMs.coerceAtLeast(0L),
+                endMs = segment.endMs.coerceAtMost(inputDurationMs),
+            )
+            val previous = merged.lastOrNull()
+            if (previous != null && candidate.startMs <= previous.endMs) {
+                merged[merged.lastIndex] = previous.copy(endMs = maxOf(previous.endMs, candidate.endMs))
+            } else if (candidate.endMs > candidate.startMs) {
+                merged += candidate
+            }
+        }
+        return merged
     }
 }
 
@@ -295,6 +417,39 @@ internal class FileSttQualityEvaluator {
         const val MIN_MEANINGFUL_CHARS = 2
         const val MIN_MEANINGFUL_CHARS_PER_SECOND = 0.5f
     }
+}
+
+internal fun mergeTargetedRetry(
+    primary: FileSttPass,
+    retry: FileSttPass,
+): FileSttPass {
+    val canonicalSegments = mutableListOf<TranscriptSegment>()
+    (primary.segments + retry.segments)
+        .sortedWith(compareBy<TranscriptSegment> { it.startMs }.thenBy { it.endMs })
+        .forEach { segment ->
+            val text = deduplicateTranscriptBoundary(canonicalSegments.lastOrNull()?.text, segment.text)
+            if (text.isNotBlank()) canonicalSegments += segment.copy(text = text)
+        }
+    val diagnostics = primary.segmentDiagnostics.map { original ->
+        if (original.meaningfulChars > 0) {
+            original
+        } else {
+            val meaningful = retry.segmentDiagnostics
+                .filter { it.startMs < original.endMs && it.endMs > original.startMs }
+                .sumOf(SttSegmentDiagnostic::meaningfulChars)
+            original.copy(meaningfulChars = meaningful)
+        }
+    }
+    return FileSttPass(
+        text = canonicalSegments.joinToString("\n", transform = TranscriptSegment::text),
+        segments = canonicalSegments,
+        inputDurationMs = primary.inputDurationMs,
+        processedThroughMs = primary.inputDurationMs,
+        sourceSegmentCount = diagnostics.size,
+        recognizedSegmentCount = diagnostics.count { it.meaningfulChars > 0 },
+        fixedChunkPass = false,
+        segmentDiagnostics = diagnostics,
+    )
 }
 
 private fun String.meaningfulCharacterCount(): Int =
@@ -450,35 +605,56 @@ class Pcm16VoiceSegmenter(
         cancellationCheck: suspend () -> Unit,
         block: suspend (AudioSegment) -> Unit,
     ) {
+        val inputDurationMs = pcmFile.length() / 2L * 1_000L / SAMPLE_RATE
+        forEachFixedRange(
+            pcmFile = pcmFile,
+            ranges = listOf(SttRetryRange(0L, inputDurationMs)),
+            cancellationCheck = cancellationCheck,
+            block = block,
+        )
+    }
+
+    suspend fun forEachFixedRange(
+        pcmFile: File,
+        ranges: List<SttRetryRange>,
+        cancellationCheck: suspend () -> Unit,
+        block: suspend (AudioSegment) -> Unit,
+    ) {
         val maxSamples = (maxSegmentMs * SAMPLE_RATE / 1_000L).toInt()
         val overlapSamples = (forcedOverlapMs * SAMPLE_RATE / 1_000L).toInt()
             .coerceIn(0, (maxSamples - 1).coerceAtLeast(0))
         val totalSamples = pcmFile.length() / 2L
         java.io.RandomAccessFile(pcmFile, "r").use { source ->
-            var startSample = 0L
-            while (startSample < totalSamples) {
-                cancellationCheck()
-                val samplesToRead = minOf(maxSamples.toLong(), totalSamples - startSample).toInt()
-                val bytes = ByteArray(samplesToRead * 2)
-                source.seek(startSample * 2L)
-                var read = 0
-                while (read < bytes.size) {
-                    val count = source.read(bytes, read, bytes.size - read)
-                    if (count < 0) break
-                    read += count
+            ranges.sortedBy(SttRetryRange::startMs).forEach { range ->
+                var startSample = (range.startMs * SAMPLE_RATE / 1_000L)
+                    .coerceIn(0L, totalSamples)
+                val rangeEndSample = (range.endMs * SAMPLE_RATE / 1_000L)
+                    .coerceIn(startSample, totalSamples)
+                while (startSample < rangeEndSample) {
+                    cancellationCheck()
+                    val samplesToRead =
+                        minOf(maxSamples.toLong(), rangeEndSample - startSample).toInt()
+                    val bytes = ByteArray(samplesToRead * 2)
+                    source.seek(startSample * 2L)
+                    var read = 0
+                    while (read < bytes.size) {
+                        val count = source.read(bytes, read, bytes.size - read)
+                        if (count < 0) break
+                        read += count
+                    }
+                    if (read == 0) break
+                    val samples = bytes.toFloatSamples(read)
+                    val endSample = startSample + samples.size
+                    block(
+                        AudioSegment(
+                            samples = samples.withTrailingSilence(),
+                            startMs = startSample * 1_000L / SAMPLE_RATE,
+                            endMs = endSample * 1_000L / SAMPLE_RATE,
+                        ),
+                    )
+                    if (endSample >= rangeEndSample) break
+                    startSample = endSample - overlapSamples
                 }
-                if (read == 0) return
-                val samples = bytes.toFloatSamples(read)
-                val endSample = startSample + samples.size
-                block(
-                    AudioSegment(
-                        samples = samples.withTrailingSilence(),
-                        startMs = startSample * 1_000L / SAMPLE_RATE,
-                        endMs = endSample * 1_000L / SAMPLE_RATE,
-                    ),
-                )
-                if (endSample >= totalSamples) return
-                startSample = endSample - overlapSamples
             }
         }
     }

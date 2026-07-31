@@ -15,9 +15,10 @@ import com.thinktank.recorder.ondevice.api.SpeechEvent
 import com.thinktank.recorder.ondevice.api.SttCaptureProfile
 import com.thinktank.recorder.ondevice.api.SttEngineType
 import com.thinktank.recorder.ondevice.api.SummaryEngineType
-import com.thinktank.recorder.ondevice.audio.AndroidPcmNormalizer
 import com.thinktank.recorder.ondevice.data.DeleteSessionResult
+import com.thinktank.recorder.ondevice.data.LongAudioProcessingRepository
 import com.thinktank.recorder.ondevice.data.OnDeviceDatabase
+import com.thinktank.recorder.ondevice.data.OnDeviceProcessingJobEntity
 import com.thinktank.recorder.ondevice.data.OnDeviceRepository
 import com.thinktank.recorder.ondevice.data.OnDeviceSessionEntity
 import com.thinktank.recorder.ondevice.modelpack.ModelCatalog
@@ -28,6 +29,13 @@ import com.thinktank.recorder.ondevice.modelpack.ModelDownloadWorker
 import com.thinktank.recorder.ondevice.modelpack.ModelId
 import com.thinktank.recorder.ondevice.modelpack.ModelStore
 import com.thinktank.recorder.ondevice.modelpack.ModelVaultState
+import com.thinktank.recorder.ondevice.processing.LongAudioJobState
+import com.thinktank.recorder.ondevice.processing.LongAudioProcessingService
+import com.thinktank.recorder.ondevice.processing.canResume
+import com.thinktank.recorder.ondevice.processing.displayLabel
+import com.thinktank.recorder.ondevice.processing.jobStage
+import com.thinktank.recorder.ondevice.processing.jobState
+import com.thinktank.recorder.ondevice.processing.progress
 import com.thinktank.recorder.ondevice.recording.LocalAudioFileManager
 import com.thinktank.recorder.ondevice.runtime.ActiveOperation
 import com.thinktank.recorder.ondevice.runtime.MicrophoneArbiter
@@ -110,6 +118,7 @@ data class OnDeviceUiState(
     val message: String? = null,
     val models: List<ModelUiState> = emptyList(),
     val modelVault: ModelVaultState = ModelVaultState(),
+    val longProcessingJob: OnDeviceProcessingJobEntity? = null,
 ) {
     val micBusy: Boolean
         get() = listening || fileTranscribing
@@ -127,11 +136,11 @@ class OnDeviceViewModel @Inject constructor(
         dao = database.sessionDao(),
         audioFiles = audioFiles,
     )
+    private val longProcessingRepository = LongAudioProcessingRepository(database)
     private val modelStore = ModelStore(application)
     private val speechEngine = AndroidOnDeviceSpeechEngine(application)
     private val fileSpeechEngine = SenseVoiceFileSpeechEngine(application, modelStore)
     private val gemmaSummaryEngine = GemmaSummaryEngine(application, modelStore)
-    private val pcmNormalizer = AndroidPcmNormalizer()
     private val modelManager = ModelDownloadManager(application)
     private val coordinator = OnDeviceOperationCoordinator()
     private val nativeCapability = NativeRuntimeCapabilities.current()
@@ -165,6 +174,9 @@ class OnDeviceViewModel @Inject constructor(
 
     private val recoveryJob: Job = viewModelScope.launch(Dispatchers.IO) {
         repository.recoverInterrupted()
+        if (!LongAudioProcessingService.hasActiveExecution()) {
+            longProcessingRepository.recoverInterrupted()
+        }
         modelManager.recoverInterruptedInstalls()
         // A build/app replacement can stop extraction after the archive is fully downloaded.
         // Resume the verified local install automatically; no Wi-Fi or re-download is involved.
@@ -196,8 +208,9 @@ class OnDeviceViewModel @Inject constructor(
     private val sessionAndSources = combine(
         repository.sessions,
         mainRecordingSources.sources,
-    ) { sessions, sources ->
-        SessionsAndSources(sessions, sources)
+        longProcessingRepository.activeJob,
+    ) { sessions, sources, longJob ->
+        SessionsAndSources(sessions, sources, longJob)
     }
     private val fileSelection = selectedMainRecordingId
         .let { selected ->
@@ -219,6 +232,13 @@ class OnDeviceViewModel @Inject constructor(
         modelManager.workInfos,
         modelRefreshState,
     ) { sessionSources, selection, active, workInfos, vault ->
+        val longJob = sessionSources.longJob
+        val longRunning = longJob?.jobState in setOf(
+            LongAudioJobState.QUEUED,
+            LongAudioJobState.RUNNING,
+            LongAudioJobState.PAUSING,
+            LongAudioJobState.CANCELLING,
+        )
         OnDeviceUiState(
             sessions = sessionSources.sessions,
             mainRecordingSources = sessionSources.sources,
@@ -229,18 +249,26 @@ class OnDeviceViewModel @Inject constructor(
             nativeAiAvailable = nativeCapability.supported,
             nativeAiUnavailableReason = nativeCapability.reason,
             listening = active.capture.listening,
-            fileTranscribing = active.capture.fileTranscribing,
-            processing = active.operation.processing,
-            processingLabel = active.operation.label,
-            processingProgress = active.operation.progress,
+            fileTranscribing = active.capture.fileTranscribing ||
+                (
+                    longRunning &&
+                        longJob?.jobStage in setOf(
+                            com.thinktank.recorder.ondevice.processing.LongAudioStage.NORMALIZING,
+                            com.thinktank.recorder.ondevice.processing.LongAudioStage.TRANSCRIBING,
+                        )
+            ),
+            processing = active.operation.processing || longRunning,
+            processingLabel = longJob?.displayLabel ?: active.operation.label,
+            processingProgress = longJob?.progress ?: active.operation.progress,
             liveTranscript = active.capture.completed,
             partialTranscript = active.capture.partial,
-            activeSessionId = active.capture.sessionId,
-            message = active.operation.message,
+            activeSessionId = longJob?.sessionId ?: active.capture.sessionId,
+            message = longJob?.error ?: active.operation.message,
             models = ModelCatalog.userManagedModels.map { descriptor ->
                 descriptor.toUiState(workInfos)
             },
             modelVault = vault,
+            longProcessingJob = longJob,
         )
     }.stateIn(
         viewModelScope,
@@ -268,18 +296,18 @@ class OnDeviceViewModel @Inject constructor(
     )
 
     fun selectSttProfile(profile: SttCaptureProfile) {
-        if (coordinator.active.value != null) return
+        if (coordinator.active.value != null || uiState.value.processing) return
         selectedSttProfile.value = profile
         preferences.edit().putString(KEY_STT_PROFILE, profile.name).apply()
     }
 
     fun selectMainRecording(sourceId: String) {
-        if (coordinator.active.value != null) return
+        if (coordinator.active.value != null || uiState.value.processing) return
         selectedMainRecordingId.value = sourceId
     }
 
     fun transcribeSelectedRecording() {
-        if (coordinator.active.value != null) return
+        if (coordinator.active.value != null || uiState.value.processing) return
         when (fileSpeechEngine.availability()) {
             SenseVoiceFileSttAvailability.READY -> Unit
             SenseVoiceFileSttAvailability.NATIVE_UNSUPPORTED -> {
@@ -315,6 +343,21 @@ class OnDeviceViewModel @Inject constructor(
     }
 
     fun cancelListening() {
+        uiState.value.longProcessingJob?.takeIf {
+            it.jobState in setOf(
+                LongAudioJobState.QUEUED,
+                LongAudioJobState.RUNNING,
+                LongAudioJobState.PAUSING,
+                LongAudioJobState.CANCELLING,
+                LongAudioJobState.PAUSED,
+                LongAudioJobState.INTERRUPTED,
+                LongAudioJobState.FAILED_RECOVERABLE,
+            )
+        }?.let { job ->
+            LongAudioProcessingService.cancel(getApplication(), job.id)
+            message.value = "장시간 처리를 안전하게 취소하고 있습니다."
+            return
+        }
         val active = coordinator.active.value ?: return
         when (active.kind) {
             OnDeviceOperationKind.LIVE_STT -> speechEngine.cancel()
@@ -327,7 +370,23 @@ class OnDeviceViewModel @Inject constructor(
     }
 
     fun onHostStopped() {
-        cancelListening()
+        if (coordinator.active.value?.kind == OnDeviceOperationKind.LIVE_STT) {
+            cancelListening()
+        }
+    }
+
+    fun pauseLongProcessing() {
+        val job = uiState.value.longProcessingJob ?: return
+        if (job.jobState !in setOf(LongAudioJobState.QUEUED, LongAudioJobState.RUNNING)) return
+        LongAudioProcessingService.pause(getApplication(), job.id)
+        message.value = "현재 구간을 저장한 뒤 장시간 처리를 일시 중지합니다."
+    }
+
+    fun resumeLongProcessing() {
+        val job = uiState.value.longProcessingJob ?: return
+        if (!job.canResume) return
+        LongAudioProcessingService.start(getApplication(), job.id)
+        message.value = "마지막 완료 지점부터 장시간 처리를 다시 시작합니다."
     }
 
     fun deleteSession(sessionId: String) {
@@ -575,8 +634,11 @@ class OnDeviceViewModel @Inject constructor(
 
     private fun startFileTranscription(source: MainRecordingSource) {
         val operation = reserve(UUID.randomUUID().toString(), OnDeviceOperationKind.FILE_STT) ?: return
-        val snapshot = audioFiles.temporaryFile("${operation.sessionId}.source")
-        val pcm = audioFiles.temporaryFile("${operation.sessionId}.pcm")
+        val jobId = UUID.randomUUID().toString()
+        val sourceExtension = source.extension.takeIf { it.matches(Regex("[A-Za-z0-9]{1,8}")) }
+            ?: "bin"
+        val snapshot = audioFiles.processingFile(jobId, "source.$sourceExtension")
+        val pcm = audioFiles.processingFile(jobId, "normalized.pcm")
         fileTranscribing.value = true
         processing.value = true
         processingLabel.value = "원본 녹음 확인 중"
@@ -585,133 +647,67 @@ class OnDeviceViewModel @Inject constructor(
         partialTranscript.value = ""
         message.value = "1번 탭 원본을 안전하게 확인하고 있습니다."
         launchOperation(operation) {
-            var completedTranscript: String? = null
-            var sessionStarted = false
-            var failureStage = OnDeviceFailureStage.NORMALIZE
+            var createdJob: OnDeviceProcessingJobEntity? = null
             try {
                 recoveryJob.join()
                 val prepared = withContext(Dispatchers.IO) {
                     mainRecordingSources.prepareSnapshot(source.id, snapshot)
                 }
-                withContext(Dispatchers.IO) {
-                    repository.beginFromMainRecording(
-                        id = operation.sessionId,
+                createdJob = withContext(Dispatchers.IO) {
+                    longProcessingRepository.createJob(
                         source = prepared.source,
-                        sttEngine = SttEngineType.SENSEVOICE_LOCAL_FILE,
-                        operationToken = operation.token,
-                    )
-                    sessionStarted = true
-                    check(
-                        repository.advanceOperation(
-                            operation.sessionId,
-                            operation.token,
-                            setOf(OnDeviceSessionState.STARTING),
-                            OnDeviceSessionState.TRANSCRIBING,
-                        ),
+                        sourceSnapshot = prepared.snapshotFile,
+                        pcmFile = pcm,
+                        jobId = jobId,
+                        sessionId = operation.sessionId,
                     )
                 }
-                processingLabel.value = "PCM 변환 중"
-                message.value = "원본은 유지하고 분석용 PCM만 만들고 있습니다."
-                pcmNormalizer.normalize(prepared.snapshotFile, pcm) { progress ->
-                    processingProgress.value = progress.coerceIn(0f, 1f)
-                }
-                coroutineContext.ensureActive()
-                failureStage = OnDeviceFailureStage.TRANSCRIBE
-                processingLabel.value = "SenseVoice 로컬 STT 전사 중"
-                processingProgress.value = null
-                message.value = "SenseVoice가 녹음 파일을 이 기기에서 텍스트로 변환하고 있습니다."
-                val result = fileSpeechEngine.transcribe(pcm) { event ->
-                    when (event) {
-                        SpeechEvent.Ready -> message.value = "PCM 파일 전사를 준비했습니다."
-                        SpeechEvent.Listening -> message.value = "녹음 파일을 분석하고 있습니다."
-                        SpeechEvent.Retrying -> {
-                            processingLabel.value = "전체 범위 안전 재처리 중"
-                            message.value = "누락 가능 구간을 전체 녹음 범위에서 한 번 더 확인하고 있습니다."
-                        }
-                        is SpeechEvent.Partial -> partialTranscript.value = event.text
-                    }
-                }
-                partialTranscript.value = ""
-                val diagnostics = requireNotNull(result.diagnostics) {
-                    "파일 전사 처리 범위를 확인할 수 없습니다."
-                }
-                if (!diagnostics.passed) {
-                    liveTranscript.value = ""
-                    val failed = withContext(Dispatchers.IO) {
-                        repository.finishTranscriptQualityFailure(
-                            id = operation.sessionId,
-                            token = operation.token,
-                            diagnostics = diagnostics,
-                            error = "녹음 끝까지 신뢰할 수 있게 전사하지 못했습니다. 원본은 유지되며 다시 시도할 수 있습니다.",
-                            transcript = result.text,
-                        )
-                    }
-                    check(failed) { "만료된 파일 전사 품질 결과는 저장하지 않았습니다." }
-                    message.value =
-                        "전사 누락 가능성이 있어 결과를 완료하지 않았습니다. 원본 녹음은 그대로 유지됩니다."
-                } else {
-                    liveTranscript.value = result.text
-                    val saved = withContext(Dispatchers.IO) {
-                        repository.saveTranscript(operation.sessionId, operation.token, result)
-                    }
-                    check(saved) { "만료된 파일 전사 결과는 저장하지 않았습니다." }
-                    completedTranscript = result.text
-                }
+                message.value = "장시간 처리를 시작했습니다. 앱을 나가도 알림에서 진행 상태를 확인할 수 있습니다."
+                LongAudioProcessingService.start(getApplication(), createdJob.id)
             } catch (cancelled: CancellationException) {
-                if (sessionStarted) {
-                    withContext(NonCancellable + Dispatchers.IO) {
-                        repository.advanceOperation(
-                            operation.sessionId,
-                            operation.token,
-                            setOf(OnDeviceSessionState.STARTING, OnDeviceSessionState.TRANSCRIBING),
-                            OnDeviceSessionState.CANCELLING,
-                        )
-                        repository.finishOperation(
-                            operation.sessionId,
-                            operation.token,
-                            OnDeviceSessionState.CANCELLED,
-                        )
-                    }
-                }
                 throw cancelled
             } catch (error: Throwable) {
-                if (sessionStarted) {
+                if (createdJob == null) {
                     withContext(NonCancellable + Dispatchers.IO) {
-                        repository.finishOperation(
-                            operation.sessionId,
-                            operation.token,
-                            OnDeviceSessionState.FAILED_RECOVERABLE,
-                            failureStage,
-                            error.message ?: "녹음 파일 전사에 실패했습니다.",
-                        )
+                        runCatching { audioFiles.deleteProcessingFiles(jobId) }
                     }
                 }
-                message.value = error.message ?: "녹음 파일 전사에 실패했습니다."
+                message.value = error.message ?: "장시간 녹음 처리를 시작하지 못했습니다."
             } finally {
-                withContext(NonCancellable + Dispatchers.IO) {
-                    runCatching { audioFiles.deleteTemporary(snapshot) }
-                    runCatching { audioFiles.deleteTemporary(pcm) }
-                }
                 finishUiOperation(operation)
-                completedTranscript?.let {
-                    withContext(NonCancellable + Dispatchers.Main.immediate) {
-                        continueAfterTranscript(operation.sessionId, it)
-                    }
-                }
             }
         }
     }
 
     fun summarize(sessionId: String) {
-        if (coordinator.active.value != null) return
+        if (coordinator.active.value != null || uiState.value.processing) return
         viewModelScope.launch(Dispatchers.IO) {
+            recoveryJob.join()
             val session = repository.get(sessionId)
             val transcript = session?.transcript.orEmpty()
-            withContext(Dispatchers.Main.immediate) {
-                if (transcript.isBlank()) {
+            if (transcript.isBlank()) {
+                withContext(Dispatchers.Main.immediate) {
                     message.value = "Gemma로 요약할 전사 원문이 없습니다."
-                } else {
-                    startGemmaSummary(sessionId, transcript)
+                }
+                return@launch
+            }
+            val descriptor = ModelCatalog.get(ModelId.GEMMA_SUMMARY_KO)
+            if (!modelStore.snapshot(descriptor).ready) {
+                withContext(Dispatchers.Main.immediate) {
+                    message.value = "Gemma 3 1B 모델을 먼저 설치하세요."
+                }
+                return@launch
+            }
+            runCatching {
+                longProcessingRepository.createSummaryOnlyJob(sessionId)
+            }.onSuccess { job ->
+                withContext(Dispatchers.Main.immediate) {
+                    message.value = "기존 STT를 유지하고 계층형 Gemma 재요약을 시작했습니다."
+                    LongAudioProcessingService.start(getApplication(), job.id)
+                }
+            }.onFailure { error ->
+                withContext(Dispatchers.Main.immediate) {
+                    message.value = error.message ?: "계층형 재요약을 시작하지 못했습니다."
                 }
             }
         }
@@ -927,6 +923,7 @@ class OnDeviceViewModel @Inject constructor(
     private data class SessionsAndSources(
         val sessions: List<OnDeviceSessionEntity>,
         val sources: List<MainRecordingSource>,
+        val longJob: OnDeviceProcessingJobEntity?,
     )
 
     private companion object {

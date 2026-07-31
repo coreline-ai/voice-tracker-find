@@ -1,0 +1,1360 @@
+{
+  "formatVersion": 1,
+  "database": {
+    "version": 9,
+    "identityHash": "3d9e759f44381355e9562e85978fa0ce",
+    "entities": [
+      {
+        "tableName": "ondevice_sessions",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` TEXT NOT NULL, `createdAt` INTEGER NOT NULL, `updatedAt` INTEGER NOT NULL, `state` TEXT NOT NULL, `sttEngine` TEXT NOT NULL, `summaryEngine` TEXT NOT NULL, `transcript` TEXT NOT NULL, `title` TEXT NOT NULL, `summary` TEXT NOT NULL, `actionItems` TEXT NOT NULL, `audioPath` TEXT, `sourceType` TEXT NOT NULL, `sourceChunkId` TEXT, `sourceDisplayName` TEXT, `sourceDurationMs` INTEGER, `summarySourceHash` TEXT NOT NULL, `summaryGeneratedAt` INTEGER, `requestedSummaryEngine` TEXT, `summaryFallbackReason` TEXT, `summaryPolicyVersion` INTEGER, `summaryPromptVersion` INTEGER, `summaryModelVersion` TEXT, `summaryValidationStatus` TEXT, `requestedSummaryModelId` TEXT, `actualSummaryModelId` TEXT, `summaryRuntimeType` TEXT, `summaryGenerationProfile` TEXT, `summaryViolationCodes` TEXT, `summaryDurationMs` INTEGER, `summaryInputChars` INTEGER, `summaryOutputChars` INTEGER, `sttInputDurationMs` INTEGER, `sttProcessedThroughMs` INTEGER, `sttSegmentCount` INTEGER, `sttRecognizedSegmentCount` INTEGER, `sttRetryCount` INTEGER, `sttMeaningfulChars` INTEGER, `sttCharsPerSecond` REAL, `sttQualityStatus` TEXT, `sttSegmentDiagnostics` TEXT, `sttCoverageStatus` TEXT, `sttRecognitionQualityStatus` TEXT, `sttRecognitionDiagnostics` TEXT, `selectedSummaryRunId` TEXT, `activeProcessingJobId` TEXT, `summaryRootNodeId` TEXT, `processingVersion` INTEGER, `error` TEXT, `operationToken` TEXT, `failureStage` TEXT, `dataPolicy` TEXT NOT NULL, PRIMARY KEY(`id`))",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "createdAt",
+            "columnName": "createdAt",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "updatedAt",
+            "columnName": "updatedAt",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "state",
+            "columnName": "state",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "sttEngine",
+            "columnName": "sttEngine",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "summaryEngine",
+            "columnName": "summaryEngine",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "transcript",
+            "columnName": "transcript",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "title",
+            "columnName": "title",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "summary",
+            "columnName": "summary",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "actionItems",
+            "columnName": "actionItems",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "audioPath",
+            "columnName": "audioPath",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "sourceType",
+            "columnName": "sourceType",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "sourceChunkId",
+            "columnName": "sourceChunkId",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "sourceDisplayName",
+            "columnName": "sourceDisplayName",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "sourceDurationMs",
+            "columnName": "sourceDurationMs",
+            "affinity": "INTEGER",
+            "notNull": false
+          },
+          {
+            "fieldPath": "summarySourceHash",
+            "columnName": "summarySourceHash",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "summaryGeneratedAt",
+            "columnName": "summaryGeneratedAt",
+            "affinity": "INTEGER",
+            "notNull": false
+          },
+          {
+            "fieldPath": "requestedSummaryEngine",
+            "columnName": "requestedSummaryEngine",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "summaryFallbackReason",
+            "columnName": "summaryFallbackReason",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "summaryPolicyVersion",
+            "columnName": "summaryPolicyVersion",
+            "affinity": "INTEGER",
+            "notNull": false
+          },
+          {
+            "fieldPath": "summaryPromptVersion",
+            "columnName": "summaryPromptVersion",
+            "affinity": "INTEGER",
+            "notNull": false
+          },
+          {
+            "fieldPath": "summaryModelVersion",
+            "columnName": "summaryModelVersion",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "summaryValidationStatus",
+            "columnName": "summaryValidationStatus",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "requestedSummaryModelId",
+            "columnName": "requestedSummaryModelId",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "actualSummaryModelId",
+            "columnName": "actualSummaryModelId",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "summaryRuntimeType",
+            "columnName": "summaryRuntimeType",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "summaryGenerationProfile",
+            "columnName": "summaryGenerationProfile",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "summaryViolationCodes",
+            "columnName": "summaryViolationCodes",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "summaryDurationMs",
+            "columnName": "summaryDurationMs",
+            "affinity": "INTEGER",
+            "notNull": false
+          },
+          {
+            "fieldPath": "summaryInputChars",
+            "columnName": "summaryInputChars",
+            "affinity": "INTEGER",
+            "notNull": false
+          },
+          {
+            "fieldPath": "summaryOutputChars",
+            "columnName": "summaryOutputChars",
+            "affinity": "INTEGER",
+            "notNull": false
+          },
+          {
+            "fieldPath": "sttInputDurationMs",
+            "columnName": "sttInputDurationMs",
+            "affinity": "INTEGER",
+            "notNull": false
+          },
+          {
+            "fieldPath": "sttProcessedThroughMs",
+            "columnName": "sttProcessedThroughMs",
+            "affinity": "INTEGER",
+            "notNull": false
+          },
+          {
+            "fieldPath": "sttSegmentCount",
+            "columnName": "sttSegmentCount",
+            "affinity": "INTEGER",
+            "notNull": false
+          },
+          {
+            "fieldPath": "sttRecognizedSegmentCount",
+            "columnName": "sttRecognizedSegmentCount",
+            "affinity": "INTEGER",
+            "notNull": false
+          },
+          {
+            "fieldPath": "sttRetryCount",
+            "columnName": "sttRetryCount",
+            "affinity": "INTEGER",
+            "notNull": false
+          },
+          {
+            "fieldPath": "sttMeaningfulChars",
+            "columnName": "sttMeaningfulChars",
+            "affinity": "INTEGER",
+            "notNull": false
+          },
+          {
+            "fieldPath": "sttCharsPerSecond",
+            "columnName": "sttCharsPerSecond",
+            "affinity": "REAL",
+            "notNull": false
+          },
+          {
+            "fieldPath": "sttQualityStatus",
+            "columnName": "sttQualityStatus",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "sttSegmentDiagnostics",
+            "columnName": "sttSegmentDiagnostics",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "sttCoverageStatus",
+            "columnName": "sttCoverageStatus",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "sttRecognitionQualityStatus",
+            "columnName": "sttRecognitionQualityStatus",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "sttRecognitionDiagnostics",
+            "columnName": "sttRecognitionDiagnostics",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "selectedSummaryRunId",
+            "columnName": "selectedSummaryRunId",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "activeProcessingJobId",
+            "columnName": "activeProcessingJobId",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "summaryRootNodeId",
+            "columnName": "summaryRootNodeId",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "processingVersion",
+            "columnName": "processingVersion",
+            "affinity": "INTEGER",
+            "notNull": false
+          },
+          {
+            "fieldPath": "error",
+            "columnName": "error",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "operationToken",
+            "columnName": "operationToken",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "failureStage",
+            "columnName": "failureStage",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "dataPolicy",
+            "columnName": "dataPolicy",
+            "affinity": "TEXT",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "id"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_ondevice_sessions_createdAt",
+            "unique": false,
+            "columnNames": [
+              "createdAt"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_ondevice_sessions_createdAt` ON `${TABLE_NAME}` (`createdAt`)"
+          }
+        ],
+        "foreignKeys": []
+      },
+      {
+        "tableName": "ondevice_summary_batches",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` TEXT NOT NULL, `sessionId` TEXT NOT NULL, `createdAt` INTEGER NOT NULL, `updatedAt` INTEGER NOT NULL, `state` TEXT NOT NULL, `sourceHash` TEXT NOT NULL, `inputHash` TEXT NOT NULL, `inputBuilderVersion` INTEGER NOT NULL, `inputPayload` TEXT NOT NULL, `requestedEngines` TEXT NOT NULL, `selectedRunId` TEXT, `error` TEXT, `operationToken` TEXT, `dataPolicy` TEXT NOT NULL, PRIMARY KEY(`id`), FOREIGN KEY(`sessionId`) REFERENCES `ondevice_sessions`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE )",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "sessionId",
+            "columnName": "sessionId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "createdAt",
+            "columnName": "createdAt",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "updatedAt",
+            "columnName": "updatedAt",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "state",
+            "columnName": "state",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "sourceHash",
+            "columnName": "sourceHash",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "inputHash",
+            "columnName": "inputHash",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "inputBuilderVersion",
+            "columnName": "inputBuilderVersion",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "inputPayload",
+            "columnName": "inputPayload",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "requestedEngines",
+            "columnName": "requestedEngines",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "selectedRunId",
+            "columnName": "selectedRunId",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "error",
+            "columnName": "error",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "operationToken",
+            "columnName": "operationToken",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "dataPolicy",
+            "columnName": "dataPolicy",
+            "affinity": "TEXT",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "id"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_ondevice_summary_batches_sessionId",
+            "unique": false,
+            "columnNames": [
+              "sessionId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_ondevice_summary_batches_sessionId` ON `${TABLE_NAME}` (`sessionId`)"
+          },
+          {
+            "name": "index_ondevice_summary_batches_createdAt",
+            "unique": false,
+            "columnNames": [
+              "createdAt"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_ondevice_summary_batches_createdAt` ON `${TABLE_NAME}` (`createdAt`)"
+          }
+        ],
+        "foreignKeys": [
+          {
+            "table": "ondevice_sessions",
+            "onDelete": "CASCADE",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "sessionId"
+            ],
+            "referencedColumns": [
+              "id"
+            ]
+          }
+        ]
+      },
+      {
+        "tableName": "ondevice_summary_runs",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` TEXT NOT NULL, `batchId` TEXT NOT NULL, `sessionId` TEXT NOT NULL, `createdAt` INTEGER NOT NULL, `updatedAt` INTEGER NOT NULL, `orderIndex` INTEGER NOT NULL, `requestedEngine` TEXT NOT NULL, `attemptedEngine` TEXT NOT NULL, `state` TEXT NOT NULL, `failureStage` TEXT, `failureCode` TEXT, `violationCodes` TEXT, `title` TEXT NOT NULL, `summary` TEXT NOT NULL, `actionItems` TEXT NOT NULL, `evidenceIds` TEXT NOT NULL, `rawOutput` TEXT, `rawOutputLength` INTEGER, `rawOutputHash` TEXT, `rawOutputTruncated` INTEGER NOT NULL, `requestedModelId` TEXT, `modelId` TEXT, `modelVersion` TEXT, `runtimeType` TEXT, `generationProfile` TEXT, `policyVersion` INTEGER, `promptVersion` INTEGER, `validationStatus` TEXT, `durationMs` INTEGER, `inputChars` INTEGER, `outputChars` INTEGER, `startedAt` INTEGER, `completedAt` INTEGER, `fallbackForRunId` TEXT, `operationToken` TEXT, `dataPolicy` TEXT NOT NULL, PRIMARY KEY(`id`), FOREIGN KEY(`batchId`) REFERENCES `ondevice_summary_batches`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE )",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "batchId",
+            "columnName": "batchId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "sessionId",
+            "columnName": "sessionId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "createdAt",
+            "columnName": "createdAt",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "updatedAt",
+            "columnName": "updatedAt",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "orderIndex",
+            "columnName": "orderIndex",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "requestedEngine",
+            "columnName": "requestedEngine",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "attemptedEngine",
+            "columnName": "attemptedEngine",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "state",
+            "columnName": "state",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "failureStage",
+            "columnName": "failureStage",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "failureCode",
+            "columnName": "failureCode",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "violationCodes",
+            "columnName": "violationCodes",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "title",
+            "columnName": "title",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "summary",
+            "columnName": "summary",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "actionItems",
+            "columnName": "actionItems",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "evidenceIds",
+            "columnName": "evidenceIds",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "rawOutput",
+            "columnName": "rawOutput",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "rawOutputLength",
+            "columnName": "rawOutputLength",
+            "affinity": "INTEGER",
+            "notNull": false
+          },
+          {
+            "fieldPath": "rawOutputHash",
+            "columnName": "rawOutputHash",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "rawOutputTruncated",
+            "columnName": "rawOutputTruncated",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "requestedModelId",
+            "columnName": "requestedModelId",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "modelId",
+            "columnName": "modelId",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "modelVersion",
+            "columnName": "modelVersion",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "runtimeType",
+            "columnName": "runtimeType",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "generationProfile",
+            "columnName": "generationProfile",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "policyVersion",
+            "columnName": "policyVersion",
+            "affinity": "INTEGER",
+            "notNull": false
+          },
+          {
+            "fieldPath": "promptVersion",
+            "columnName": "promptVersion",
+            "affinity": "INTEGER",
+            "notNull": false
+          },
+          {
+            "fieldPath": "validationStatus",
+            "columnName": "validationStatus",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "durationMs",
+            "columnName": "durationMs",
+            "affinity": "INTEGER",
+            "notNull": false
+          },
+          {
+            "fieldPath": "inputChars",
+            "columnName": "inputChars",
+            "affinity": "INTEGER",
+            "notNull": false
+          },
+          {
+            "fieldPath": "outputChars",
+            "columnName": "outputChars",
+            "affinity": "INTEGER",
+            "notNull": false
+          },
+          {
+            "fieldPath": "startedAt",
+            "columnName": "startedAt",
+            "affinity": "INTEGER",
+            "notNull": false
+          },
+          {
+            "fieldPath": "completedAt",
+            "columnName": "completedAt",
+            "affinity": "INTEGER",
+            "notNull": false
+          },
+          {
+            "fieldPath": "fallbackForRunId",
+            "columnName": "fallbackForRunId",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "operationToken",
+            "columnName": "operationToken",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "dataPolicy",
+            "columnName": "dataPolicy",
+            "affinity": "TEXT",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "id"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_ondevice_summary_runs_batchId",
+            "unique": false,
+            "columnNames": [
+              "batchId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_ondevice_summary_runs_batchId` ON `${TABLE_NAME}` (`batchId`)"
+          },
+          {
+            "name": "index_ondevice_summary_runs_sessionId",
+            "unique": false,
+            "columnNames": [
+              "sessionId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_ondevice_summary_runs_sessionId` ON `${TABLE_NAME}` (`sessionId`)"
+          },
+          {
+            "name": "index_ondevice_summary_runs_createdAt",
+            "unique": false,
+            "columnNames": [
+              "createdAt"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_ondevice_summary_runs_createdAt` ON `${TABLE_NAME}` (`createdAt`)"
+          },
+          {
+            "name": "index_ondevice_summary_runs_state",
+            "unique": false,
+            "columnNames": [
+              "state"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_ondevice_summary_runs_state` ON `${TABLE_NAME}` (`state`)"
+          }
+        ],
+        "foreignKeys": [
+          {
+            "table": "ondevice_summary_batches",
+            "onDelete": "CASCADE",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "batchId"
+            ],
+            "referencedColumns": [
+              "id"
+            ]
+          }
+        ]
+      },
+      {
+        "tableName": "ondevice_processing_jobs",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` TEXT NOT NULL, `sessionId` TEXT NOT NULL, `createdAt` INTEGER NOT NULL, `updatedAt` INTEGER NOT NULL, `state` TEXT NOT NULL, `stage` TEXT NOT NULL, `sourceFingerprint` TEXT NOT NULL, `sourceDurationMs` INTEGER NOT NULL, `sourceSizeBytes` INTEGER NOT NULL, `sourceSnapshotPath` TEXT NOT NULL, `pcmPath` TEXT NOT NULL, `serviceToken` TEXT, `completedSttSegments` INTEGER NOT NULL, `totalSttSegments` INTEGER NOT NULL, `completedSummaryNodes` INTEGER NOT NULL, `totalSummaryNodes` INTEGER NOT NULL, `currentSummaryLevel` INTEGER NOT NULL, `rootNodeId` TEXT, `pauseRequested` INTEGER NOT NULL, `cancelRequested` INTEGER NOT NULL, `retryCount` INTEGER NOT NULL, `failureCode` TEXT, `error` TEXT, `checkpointVersion` INTEGER NOT NULL, `dataPolicy` TEXT NOT NULL, PRIMARY KEY(`id`), FOREIGN KEY(`sessionId`) REFERENCES `ondevice_sessions`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE )",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "sessionId",
+            "columnName": "sessionId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "createdAt",
+            "columnName": "createdAt",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "updatedAt",
+            "columnName": "updatedAt",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "state",
+            "columnName": "state",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "stage",
+            "columnName": "stage",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "sourceFingerprint",
+            "columnName": "sourceFingerprint",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "sourceDurationMs",
+            "columnName": "sourceDurationMs",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "sourceSizeBytes",
+            "columnName": "sourceSizeBytes",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "sourceSnapshotPath",
+            "columnName": "sourceSnapshotPath",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "pcmPath",
+            "columnName": "pcmPath",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "serviceToken",
+            "columnName": "serviceToken",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "completedSttSegments",
+            "columnName": "completedSttSegments",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "totalSttSegments",
+            "columnName": "totalSttSegments",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "completedSummaryNodes",
+            "columnName": "completedSummaryNodes",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "totalSummaryNodes",
+            "columnName": "totalSummaryNodes",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "currentSummaryLevel",
+            "columnName": "currentSummaryLevel",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "rootNodeId",
+            "columnName": "rootNodeId",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "pauseRequested",
+            "columnName": "pauseRequested",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "cancelRequested",
+            "columnName": "cancelRequested",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "retryCount",
+            "columnName": "retryCount",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "failureCode",
+            "columnName": "failureCode",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "error",
+            "columnName": "error",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "checkpointVersion",
+            "columnName": "checkpointVersion",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "dataPolicy",
+            "columnName": "dataPolicy",
+            "affinity": "TEXT",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "id"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_ondevice_processing_jobs_sessionId",
+            "unique": false,
+            "columnNames": [
+              "sessionId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_ondevice_processing_jobs_sessionId` ON `${TABLE_NAME}` (`sessionId`)"
+          },
+          {
+            "name": "index_ondevice_processing_jobs_state",
+            "unique": false,
+            "columnNames": [
+              "state"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_ondevice_processing_jobs_state` ON `${TABLE_NAME}` (`state`)"
+          },
+          {
+            "name": "index_ondevice_processing_jobs_updatedAt",
+            "unique": false,
+            "columnNames": [
+              "updatedAt"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_ondevice_processing_jobs_updatedAt` ON `${TABLE_NAME}` (`updatedAt`)"
+          }
+        ],
+        "foreignKeys": [
+          {
+            "table": "ondevice_sessions",
+            "onDelete": "CASCADE",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "sessionId"
+            ],
+            "referencedColumns": [
+              "id"
+            ]
+          }
+        ]
+      },
+      {
+        "tableName": "ondevice_transcript_segments",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` TEXT NOT NULL, `jobId` TEXT NOT NULL, `sessionId` TEXT NOT NULL, `passType` TEXT NOT NULL, `ordinal` INTEGER NOT NULL, `startMs` INTEGER NOT NULL, `endMs` INTEGER NOT NULL, `text` TEXT NOT NULL, `textHash` TEXT NOT NULL, `sourceRangeHash` TEXT NOT NULL, `meaningfulChars` INTEGER NOT NULL, `state` TEXT NOT NULL, `createdAt` INTEGER NOT NULL, `updatedAt` INTEGER NOT NULL, PRIMARY KEY(`id`), FOREIGN KEY(`jobId`) REFERENCES `ondevice_processing_jobs`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE )",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "jobId",
+            "columnName": "jobId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "sessionId",
+            "columnName": "sessionId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "passType",
+            "columnName": "passType",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "ordinal",
+            "columnName": "ordinal",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "startMs",
+            "columnName": "startMs",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "endMs",
+            "columnName": "endMs",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "text",
+            "columnName": "text",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "textHash",
+            "columnName": "textHash",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "sourceRangeHash",
+            "columnName": "sourceRangeHash",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "meaningfulChars",
+            "columnName": "meaningfulChars",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "state",
+            "columnName": "state",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "createdAt",
+            "columnName": "createdAt",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "updatedAt",
+            "columnName": "updatedAt",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "id"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_ondevice_transcript_segments_jobId",
+            "unique": false,
+            "columnNames": [
+              "jobId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_ondevice_transcript_segments_jobId` ON `${TABLE_NAME}` (`jobId`)"
+          },
+          {
+            "name": "index_ondevice_transcript_segments_sessionId",
+            "unique": false,
+            "columnNames": [
+              "sessionId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_ondevice_transcript_segments_sessionId` ON `${TABLE_NAME}` (`sessionId`)"
+          },
+          {
+            "name": "index_ondevice_transcript_segments_jobId_passType_ordinal",
+            "unique": true,
+            "columnNames": [
+              "jobId",
+              "passType",
+              "ordinal"
+            ],
+            "orders": [],
+            "createSql": "CREATE UNIQUE INDEX IF NOT EXISTS `index_ondevice_transcript_segments_jobId_passType_ordinal` ON `${TABLE_NAME}` (`jobId`, `passType`, `ordinal`)"
+          },
+          {
+            "name": "index_ondevice_transcript_segments_jobId_startMs_endMs",
+            "unique": false,
+            "columnNames": [
+              "jobId",
+              "startMs",
+              "endMs"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_ondevice_transcript_segments_jobId_startMs_endMs` ON `${TABLE_NAME}` (`jobId`, `startMs`, `endMs`)"
+          }
+        ],
+        "foreignKeys": [
+          {
+            "table": "ondevice_processing_jobs",
+            "onDelete": "CASCADE",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "jobId"
+            ],
+            "referencedColumns": [
+              "id"
+            ]
+          }
+        ]
+      },
+      {
+        "tableName": "ondevice_summary_nodes",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` TEXT NOT NULL, `jobId` TEXT NOT NULL, `sessionId` TEXT NOT NULL, `level` INTEGER NOT NULL, `ordinal` INTEGER NOT NULL, `nodeType` TEXT NOT NULL, `state` TEXT NOT NULL, `sourceStartMs` INTEGER NOT NULL, `sourceEndMs` INTEGER NOT NULL, `leafStartOrdinal` INTEGER NOT NULL, `leafEndOrdinal` INTEGER NOT NULL, `childNodeIds` TEXT NOT NULL, `inputPayload` TEXT NOT NULL, `inputHash` TEXT NOT NULL, `sourceHash` TEXT NOT NULL, `title` TEXT NOT NULL, `summary` TEXT NOT NULL, `evidenceChildIds` TEXT NOT NULL, `outputHash` TEXT NOT NULL, `attemptCount` INTEGER NOT NULL, `failureCode` TEXT, `violationCodes` TEXT, `modelVersion` TEXT, `runtimeType` TEXT, `generationProfile` TEXT, `durationMs` INTEGER, `startedAt` INTEGER, `completedAt` INTEGER, `createdAt` INTEGER NOT NULL, `updatedAt` INTEGER NOT NULL, `dataPolicy` TEXT NOT NULL, PRIMARY KEY(`id`), FOREIGN KEY(`jobId`) REFERENCES `ondevice_processing_jobs`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE )",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "jobId",
+            "columnName": "jobId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "sessionId",
+            "columnName": "sessionId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "level",
+            "columnName": "level",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "ordinal",
+            "columnName": "ordinal",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "nodeType",
+            "columnName": "nodeType",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "state",
+            "columnName": "state",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "sourceStartMs",
+            "columnName": "sourceStartMs",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "sourceEndMs",
+            "columnName": "sourceEndMs",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "leafStartOrdinal",
+            "columnName": "leafStartOrdinal",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "leafEndOrdinal",
+            "columnName": "leafEndOrdinal",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "childNodeIds",
+            "columnName": "childNodeIds",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "inputPayload",
+            "columnName": "inputPayload",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "inputHash",
+            "columnName": "inputHash",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "sourceHash",
+            "columnName": "sourceHash",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "title",
+            "columnName": "title",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "summary",
+            "columnName": "summary",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "evidenceChildIds",
+            "columnName": "evidenceChildIds",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "outputHash",
+            "columnName": "outputHash",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "attemptCount",
+            "columnName": "attemptCount",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "failureCode",
+            "columnName": "failureCode",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "violationCodes",
+            "columnName": "violationCodes",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "modelVersion",
+            "columnName": "modelVersion",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "runtimeType",
+            "columnName": "runtimeType",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "generationProfile",
+            "columnName": "generationProfile",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "durationMs",
+            "columnName": "durationMs",
+            "affinity": "INTEGER",
+            "notNull": false
+          },
+          {
+            "fieldPath": "startedAt",
+            "columnName": "startedAt",
+            "affinity": "INTEGER",
+            "notNull": false
+          },
+          {
+            "fieldPath": "completedAt",
+            "columnName": "completedAt",
+            "affinity": "INTEGER",
+            "notNull": false
+          },
+          {
+            "fieldPath": "createdAt",
+            "columnName": "createdAt",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "updatedAt",
+            "columnName": "updatedAt",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "dataPolicy",
+            "columnName": "dataPolicy",
+            "affinity": "TEXT",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "id"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_ondevice_summary_nodes_jobId",
+            "unique": false,
+            "columnNames": [
+              "jobId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_ondevice_summary_nodes_jobId` ON `${TABLE_NAME}` (`jobId`)"
+          },
+          {
+            "name": "index_ondevice_summary_nodes_sessionId",
+            "unique": false,
+            "columnNames": [
+              "sessionId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_ondevice_summary_nodes_sessionId` ON `${TABLE_NAME}` (`sessionId`)"
+          },
+          {
+            "name": "index_ondevice_summary_nodes_jobId_level_ordinal_inputHash",
+            "unique": true,
+            "columnNames": [
+              "jobId",
+              "level",
+              "ordinal",
+              "inputHash"
+            ],
+            "orders": [],
+            "createSql": "CREATE UNIQUE INDEX IF NOT EXISTS `index_ondevice_summary_nodes_jobId_level_ordinal_inputHash` ON `${TABLE_NAME}` (`jobId`, `level`, `ordinal`, `inputHash`)"
+          },
+          {
+            "name": "index_ondevice_summary_nodes_jobId_state",
+            "unique": false,
+            "columnNames": [
+              "jobId",
+              "state"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_ondevice_summary_nodes_jobId_state` ON `${TABLE_NAME}` (`jobId`, `state`)"
+          }
+        ],
+        "foreignKeys": [
+          {
+            "table": "ondevice_processing_jobs",
+            "onDelete": "CASCADE",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "jobId"
+            ],
+            "referencedColumns": [
+              "id"
+            ]
+          }
+        ]
+      }
+    ],
+    "views": [],
+    "setupQueries": [
+      "CREATE TABLE IF NOT EXISTS room_master_table (id INTEGER PRIMARY KEY,identity_hash TEXT)",
+      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, '3d9e759f44381355e9562e85978fa0ce')"
+    ]
+  }
+}

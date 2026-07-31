@@ -85,6 +85,27 @@ class Pcm16VoiceSegmenterTest {
         )
     }
 
+    @Test
+    fun fixedRangeReadsOnlyRequestedFailureWindow() = runBlocking {
+        writeFrames(
+            silenceFrames = 0,
+            voicedFrames = 200,
+            trailingSilenceFrames = 0,
+            amplitude = 12_000,
+        )
+        val segments = mutableListOf<Pcm16VoiceSegmenter.AudioSegment>()
+
+        Pcm16VoiceSegmenter(maxSegmentMs = 1_000L).forEachFixedRange(
+            pcmFile = pcm,
+            ranges = listOf(SttRetryRange(1_000L, 2_000L)),
+            cancellationCheck = {},
+        ) { segments += it }
+
+        assertEquals(1, segments.size)
+        assertEquals(1_000L, segments.single().startMs)
+        assertEquals(2_000L, segments.single().endMs)
+    }
+
     private fun writeFrames(
         silenceFrames: Int,
         voicedFrames: Int,

@@ -1,6 +1,7 @@
 package com.thinktank.recorder.ondevice.stt
 
 import com.thinktank.recorder.ondevice.api.SttQualityStatus
+import com.thinktank.recorder.ondevice.api.SttSegmentDiagnostic
 import com.thinktank.recorder.ondevice.api.TranscriptSegment
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -77,5 +78,62 @@ class FileSttQualityEvaluatorTest {
         )
 
         assertEquals("다음 단계는 고객 인터뷰입니다", deduplicated)
+    }
+
+    @Test
+    fun targetedRetryPlannerSelectsOnlyEmptyRecognitionRanges() {
+        val ranges = SttRetryPlanner.plan(
+            diagnostics = listOf(
+                SttSegmentDiagnostic(0L, 28_000L, 18),
+                SttSegmentDiagnostic(27_000L, 55_000L, 0),
+                SttSegmentDiagnostic(55_000L, 70_000L, 0),
+                SttSegmentDiagnostic(70_000L, 90_000L, 12),
+            ),
+            inputDurationMs = 90_000L,
+        )
+
+        assertEquals(listOf(SttRetryRange(27_000L, 70_000L)), ranges)
+    }
+
+    @Test
+    fun targetedRetryMergeKeepsPrimaryTextAndFillsFailedRange() {
+        val primary = FileSttPass(
+            text = "앞 구간입니다\n뒤 구간입니다",
+            segments = listOf(
+                TranscriptSegment(0L, 28_000L, "앞 구간입니다"),
+                TranscriptSegment(55_000L, 80_000L, "뒤 구간입니다"),
+            ),
+            inputDurationMs = 80_000L,
+            processedThroughMs = 80_000L,
+            sourceSegmentCount = 3,
+            recognizedSegmentCount = 2,
+            fixedChunkPass = false,
+            segmentDiagnostics = listOf(
+                SttSegmentDiagnostic(0L, 28_000L, 6),
+                SttSegmentDiagnostic(27_000L, 55_000L, 0),
+                SttSegmentDiagnostic(55_000L, 80_000L, 6),
+            ),
+        )
+        val retry = FileSttPass(
+            text = "가운데 복구 구간입니다",
+            segments = listOf(
+                TranscriptSegment(27_000L, 55_000L, "가운데 복구 구간입니다"),
+            ),
+            inputDurationMs = 80_000L,
+            processedThroughMs = 55_000L,
+            sourceSegmentCount = 1,
+            recognizedSegmentCount = 1,
+            fixedChunkPass = true,
+            segmentDiagnostics = listOf(SttSegmentDiagnostic(27_000L, 55_000L, 10)),
+        )
+
+        val merged = mergeTargetedRetry(primary, retry)
+
+        assertEquals(3, merged.recognizedSegmentCount)
+        assertEquals(80_000L, merged.processedThroughMs)
+        assertEquals(
+            "앞 구간입니다\n가운데 복구 구간입니다\n뒤 구간입니다",
+            merged.text,
+        )
     }
 }

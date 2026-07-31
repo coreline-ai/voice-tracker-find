@@ -35,6 +35,7 @@ interface OnDeviceSessionDao {
             'CANCELLING',
             'DELETING'
         )
+          AND activeProcessingJobId IS NULL
         """,
     )
     suspend fun interrupted(): List<OnDeviceSessionEntity>
@@ -309,6 +310,105 @@ interface OnDeviceSessionDao {
         outputChars: Int?,
         sourceHash: String,
         generatedAt: Long,
+        now: Long,
+    ): Int
+
+    @Query(
+        """
+        UPDATE ondevice_sessions
+        SET state = 'COMPLETE',
+            title = :title,
+            summary = :summary,
+            actionItems = :actionItems,
+            summaryEngine = 'GEMMA_LOCAL',
+            requestedSummaryEngine = 'GEMMA_LOCAL',
+            summaryModelVersion = :modelVersion,
+            summaryValidationStatus = :validationStatus,
+            requestedSummaryModelId = :requestedModelId,
+            actualSummaryModelId = :actualModelId,
+            summaryRuntimeType = :runtimeType,
+            summaryGenerationProfile = :generationProfile,
+            summaryDurationMs = :durationMs,
+            summaryInputChars = :inputChars,
+            summaryOutputChars = :outputChars,
+            summarySourceHash = :sourceHash,
+            summaryGeneratedAt = :generatedAt,
+            summaryRootNodeId = :rootNodeId,
+            processingVersion = :processingVersion,
+            activeProcessingJobId = NULL,
+            updatedAt = :now,
+            operationToken = NULL,
+            failureStage = NULL,
+            error = NULL
+        WHERE id = :id
+          AND operationToken = :token
+          AND state = 'SUMMARIZING'
+          AND activeProcessingJobId = :jobId
+        """,
+    )
+    suspend fun saveHierarchicalSummaryForOperation(
+        id: String,
+        jobId: String,
+        token: String,
+        rootNodeId: String,
+        processingVersion: Int,
+        title: String,
+        summary: String,
+        actionItems: String,
+        modelVersion: String?,
+        validationStatus: String?,
+        requestedModelId: String?,
+        actualModelId: String?,
+        runtimeType: String?,
+        generationProfile: String?,
+        durationMs: Long?,
+        inputChars: Int?,
+        outputChars: Int?,
+        sourceHash: String,
+        generatedAt: Long,
+        now: Long,
+    ): Int
+
+    @Query(
+        """
+        UPDATE ondevice_sessions
+        SET state = :state,
+            operationToken = NULL,
+            failureStage = :failureStage,
+            error = :error,
+            activeProcessingJobId = CASE WHEN :clearJob = 1 THEN NULL ELSE activeProcessingJobId END,
+            updatedAt = :now
+        WHERE id = :id
+        """,
+    )
+    suspend fun finishLongProcessingSession(
+        id: String,
+        state: String,
+        failureStage: String?,
+        error: String?,
+        clearJob: Boolean,
+        now: Long,
+    ): Int
+
+    @Query(
+        """
+        UPDATE ondevice_sessions
+        SET activeProcessingJobId = :jobId,
+            processingVersion = :processingVersion,
+            updatedAt = :now,
+            failureStage = NULL,
+            error = NULL
+        WHERE id = :id
+          AND transcript != ''
+          AND activeProcessingJobId IS NULL
+          AND operationToken IS NULL
+          AND state IN ('TRANSCRIPT_READY', 'FAILED_RECOVERABLE', 'COMPLETE')
+        """,
+    )
+    suspend fun attachSummaryOnlyJob(
+        id: String,
+        jobId: String,
+        processingVersion: Int,
         now: Long,
     ): Int
 

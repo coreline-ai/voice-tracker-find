@@ -231,11 +231,63 @@ class OnDeviceDatabaseMigrationTest {
         }
     }
 
+    @Test
+    fun migration8To9AddsLongProcessingCheckpointsWithoutChangingExistingRows() {
+        helper.createDatabase(DATABASE_NAME_V9, 8).use { db ->
+            db.execSQL(
+                """
+                INSERT INTO ondevice_sessions (
+                    id, createdAt, updatedAt, state, sttEngine, summaryEngine,
+                    transcript, title, summary, actionItems, sourceType,
+                    summarySourceHash, dataPolicy
+                ) VALUES (
+                    'legacy-v8', 1, 2, 'COMPLETE', 'SENSEVOICE_LOCAL_FILE',
+                    'GEMMA_LOCAL', '보존할 장시간 전사', '기존 제목', '기존 요약', '',
+                    'MAIN_RECORDER_CHUNK', 'source-hash', 'LOCAL_ONLY'
+                )
+                """.trimIndent(),
+            )
+        }
+
+        helper.runMigrationsAndValidate(
+            DATABASE_NAME_V9,
+            9,
+            true,
+            OnDeviceDatabase.MIGRATION_8_9,
+        ).use { db ->
+            db.query(
+                """
+                SELECT transcript, title, summary, summarySourceHash,
+                       activeProcessingJobId, summaryRootNodeId, processingVersion
+                FROM ondevice_sessions WHERE id = 'legacy-v8'
+                """.trimIndent(),
+            ).use { cursor ->
+                assertTrue(cursor.moveToFirst())
+                assertTrue(cursor.getString(0) == "보존할 장시간 전사")
+                assertTrue(cursor.getString(1) == "기존 제목")
+                assertTrue(cursor.getString(2) == "기존 요약")
+                assertTrue(cursor.getString(3) == "source-hash")
+                for (index in 4..6) assertTrue(cursor.isNull(index))
+            }
+            listOf(
+                "ondevice_processing_jobs",
+                "ondevice_transcript_segments",
+                "ondevice_summary_nodes",
+            ).forEach { table ->
+                db.query("SELECT COUNT(*) FROM $table").use { cursor ->
+                    assertTrue(cursor.moveToFirst())
+                    assertTrue(cursor.getInt(0) == 0)
+                }
+            }
+        }
+    }
+
     private companion object {
         const val DATABASE_NAME = "ondevice-migration-test"
         const val DATABASE_NAME_V5 = "ondevice-migration-v5-test"
         const val DATABASE_NAME_V6 = "ondevice-migration-v6-test"
         const val DATABASE_NAME_V7 = "ondevice-migration-v7-test"
         const val DATABASE_NAME_V8 = "ondevice-migration-v8-test"
+        const val DATABASE_NAME_V9 = "ondevice-migration-v9-test"
     }
 }

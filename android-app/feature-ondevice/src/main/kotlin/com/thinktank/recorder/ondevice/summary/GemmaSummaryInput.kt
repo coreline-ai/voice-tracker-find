@@ -21,6 +21,12 @@ internal object GemmaSummaryInputBuilder {
         require(source.isNotBlank()) { "요약할 전사 원문이 없습니다." }
         val segments = segment(source)
         require(segments.isNotEmpty()) { "요약할 원문 구간이 없습니다." }
+        if (source.length <= MAX_PROMPT_SOURCE_CHARS) {
+            return GemmaSummaryInput(
+                source = source,
+                selectedEvidence = listOf(source),
+            )
+        }
         val tokenFrequency = segments
             .flatMap(::meaningfulTokens)
             .groupingBy(String::lowercase)

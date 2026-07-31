@@ -218,8 +218,8 @@ class AndroidPcmNormalizer {
         const val TARGET_SAMPLE_RATE = 16_000
         const val PCM_BYTES_PER_SAMPLE = 2L
         const val CODEC_TIMEOUT_US = 10_000L
-        const val MAX_SOURCE_DURATION_MS = 60L * 60L * 1_000L
-        const val MAX_NORMALIZED_SAMPLES = TARGET_SAMPLE_RATE * 60L * 60L
+        const val MAX_SOURCE_DURATION_MS = 2L * 60L * 60L * 1_000L
+        const val MAX_NORMALIZED_SAMPLES = TARGET_SAMPLE_RATE * 2L * 60L * 60L
     }
 }
 

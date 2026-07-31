@@ -13,9 +13,12 @@ import com.thinktank.recorder.ondevice.api.MainRecordingSource
 import com.thinktank.recorder.ondevice.api.OnDeviceSessionState
 import com.thinktank.recorder.ondevice.api.SttEngineType
 import com.thinktank.recorder.ondevice.data.OnDeviceSessionEntity
+import com.thinktank.recorder.ondevice.data.OnDeviceProcessingJobEntity
 import com.thinktank.recorder.ondevice.modelpack.ModelCatalog
 import com.thinktank.recorder.ondevice.modelpack.ModelDeleteScope
 import com.thinktank.recorder.ondevice.modelpack.ModelId
+import com.thinktank.recorder.ondevice.processing.LongAudioJobState
+import com.thinktank.recorder.ondevice.processing.LongAudioStage
 import org.junit.Rule
 import org.junit.Test
 
@@ -99,7 +102,45 @@ class OnDeviceScreenTest {
         composeRule.onNodeWithText("전체 전사 보기").performClick()
         composeRule.onNodeWithTag("full-transcript-sheet").assertIsDisplayed()
         composeRule.onNodeWithText("전체 전사").assertIsDisplayed()
-        composeRule.onNodeWithText(transcript).assertIsDisplayed()
+        composeRule.onNodeWithTag("full-transcript-content").assertIsDisplayed()
+    }
+
+    @Test
+    fun longProcessingShowsBoundedProgressAndPauseControl() {
+        render(
+            OnDeviceUiState(
+                processing = true,
+                processingLabel = "SenseVoice STT 12/128",
+                processingProgress = 0.42f,
+                longProcessingJob = processingJob(
+                    state = LongAudioJobState.RUNNING,
+                    stage = LongAudioStage.TRANSCRIBING,
+                ),
+            ),
+        )
+
+        composeRule.onNodeWithTag("ondevice-scroll").performScrollToIndex(3)
+        composeRule.onNodeWithText("SenseVoice STT 12/128").assertIsDisplayed()
+        composeRule.onNodeWithText("42%").assertIsDisplayed()
+        composeRule.onNodeWithTag("long-processing-pause").assertIsDisplayed()
+    }
+
+    @Test
+    fun pausedLongProcessingShowsResumeControlAndReason() {
+        render(
+            OnDeviceUiState(
+                processingLabel = "장시간 처리가 일시 중지됨",
+                longProcessingJob = processingJob(
+                    state = LongAudioJobState.PAUSED,
+                    stage = LongAudioStage.TRANSCRIBING,
+                ),
+            ),
+        )
+
+        composeRule.onNodeWithTag("ondevice-scroll").performScrollToIndex(3)
+        composeRule.onNodeWithText("장시간 처리가 일시 중지됨").assertIsDisplayed()
+        composeRule.onNodeWithTag("long-processing-resume").assertIsDisplayed()
+        composeRule.onNodeWithTag("long-processing-cancel").assertIsDisplayed()
     }
 
     @Test
@@ -186,4 +227,23 @@ class OnDeviceScreenTest {
             }
         }
     }
+
+    private fun processingJob(
+        state: LongAudioJobState,
+        stage: LongAudioStage,
+    ): OnDeviceProcessingJobEntity = OnDeviceProcessingJobEntity(
+        id = "long-job",
+        sessionId = "long-session",
+        createdAt = 1L,
+        updatedAt = 1L,
+        state = state.name,
+        stage = stage.name,
+        sourceFingerprint = "a".repeat(64),
+        sourceDurationMs = 2L * 60L * 60L * 1_000L,
+        sourceSizeBytes = 1L,
+        sourceSnapshotPath = "/tmp/source.m4a",
+        pcmPath = "/tmp/source.pcm",
+        completedSttSegments = 12,
+        totalSttSegments = 128,
+    )
 }

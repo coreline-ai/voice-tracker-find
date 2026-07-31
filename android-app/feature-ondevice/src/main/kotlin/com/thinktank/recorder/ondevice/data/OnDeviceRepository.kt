@@ -326,6 +326,21 @@ class OnDeviceRepository(
         ) == 1
     }
 
+    suspend fun finishLongProcessingSession(
+        id: String,
+        state: OnDeviceSessionState,
+        failureStage: OnDeviceFailureStage?,
+        error: String?,
+        clearJob: Boolean,
+    ): Boolean = dao.finishLongProcessingSession(
+        id = id,
+        state = state.name,
+        failureStage = failureStage?.name,
+        error = error,
+        clearJob = clearJob,
+        now = clock(),
+    ) == 1
+
     suspend fun completeWithoutSummary(id: String): Boolean =
         dao.completeWithoutSummary(id, clock()) == 1
 

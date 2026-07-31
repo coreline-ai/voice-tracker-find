@@ -167,6 +167,8 @@ fun ThinkTankApp(
                         onStartListening = onDeviceViewModel::startListening,
                         onStopListening = onDeviceViewModel::stopListening,
                         onCancelListening = onDeviceViewModel::cancelListening,
+                        onPauseLongProcessing = onDeviceViewModel::pauseLongProcessing,
+                        onResumeLongProcessing = onDeviceViewModel::resumeLongProcessing,
                         onHostStopped = onDeviceViewModel::onHostStopped,
                         onClearMessage = onDeviceViewModel::clearMessage,
                         onSummarize = onDeviceViewModel::summarize,

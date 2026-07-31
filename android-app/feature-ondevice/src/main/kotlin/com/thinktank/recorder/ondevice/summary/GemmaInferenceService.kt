@@ -29,12 +29,15 @@ class GemmaInferenceService : Service() {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     private val activeRequest = AtomicReference<RunningRequest?>(null)
     private val activeBridge = AtomicReference<GemmaLiteRtBridge?>(null)
+    private val activeBatch = AtomicReference<String?>(null)
     private val store by lazy { ModelStore(this) }
     private val mainHandler = Handler(Looper.getMainLooper())
 
     private val binder = object : IGemmaInferenceService.Stub() {
-        override fun summarize(
+        override fun summarizeNode(
+            batchId: String,
             requestId: String,
+            inputHash: String,
             modelPath: String,
             transcript: String,
             callback: IGemmaInferenceCallback,
@@ -43,12 +46,23 @@ class GemmaInferenceService : Service() {
                 callback.safeError(requestId, "다른 Gemma 요약이 실행 중입니다.")
                 return
             }
+            val currentBatch = activeBatch.get()
+            if (currentBatch != null && currentBatch != batchId) {
+                callback.safeError(requestId, "다른 Gemma 배치가 실행 중입니다.")
+                return
+            }
+            if (currentBatch == null && !activeBatch.compareAndSet(null, batchId)) {
+                callback.safeError(requestId, "Gemma 배치를 시작하지 못했습니다.")
+                return
+            }
             val job = scope.launch(start = CoroutineStart.LAZY) {
-                var bridge: GemmaLiteRtBridge? = null
                 try {
                     require(transcript.isNotBlank()) { "요약할 전사 원문이 없습니다." }
                     require(transcript.length <= MAX_INPUT_CHARS) {
                         "Gemma 입력 한도를 넘었습니다. 현재 전사 ${transcript.length}자"
+                    }
+                    require(inputHash == sourceHash(transcript)) {
+                        "Gemma 입력 무결성 검증에 실패했습니다."
                     }
                     val descriptor = ModelCatalog.get(ModelId.GEMMA_SUMMARY_KO)
                     val canonicalModel =
@@ -61,14 +75,15 @@ class GemmaInferenceService : Service() {
 
                     val startedAt = SystemClock.elapsedRealtime()
                     val input = GemmaSummaryInputBuilder.build(transcript)
-                    val inferenceBridge = GemmaLiteRtBridge(
-                        canonicalModel.absolutePath,
-                        File(cacheDir, "litertlm").absolutePath,
-                        SYSTEM_PROMPT,
-                    ).also {
-                        bridge = it
-                        activeBridge.set(it)
-                    }
+                    val inferenceBridge = activeBridge.get() ?: GemmaLiteRtBridge(
+                            canonicalModel.absolutePath,
+                            File(cacheDir, "litertlm").absolutePath,
+                            SYSTEM_PROMPT,
+                        ).also { created ->
+                            check(activeBridge.compareAndSet(null, created)) {
+                                "Gemma bridge가 이미 초기화되었습니다."
+                            }
+                        }
                     var rawOutput = inferenceBridge.generate(buildPrompt(input))
                     val first = runCatching {
                         GemmaSummaryParser.parse(
@@ -97,24 +112,22 @@ class GemmaInferenceService : Service() {
                         inputChars = input.promptSource.length,
                         outputChars = rawOutput.length,
                     )
-                    activeBridge.compareAndSet(inferenceBridge, null)
-                    inferenceBridge.close()
-                    bridge = null
+                    // Clear the slot before the callback so a serial batch can submit its next
+                    // bounded node immediately without racing this request's finally block.
+                    activeRequest.set(null)
                     callback.safeSuccess(requestId, GemmaSummaryCodec.encode(summary))
                 } catch (cancelled: CancellationException) {
+                    activeRequest.set(null)
                     callback.safeError(requestId, "Gemma 요약이 취소되었습니다.")
                 } catch (error: Throwable) {
+                    activeRequest.set(null)
                     callback.safeError(
                         requestId,
                         error.message?.takeIf(String::isNotBlank)
                             ?: "Gemma 3 1B 요약에 실패했습니다.",
                     )
                 } finally {
-                    activeBridge.compareAndSet(bridge, null)
-                    runCatching { bridge?.close() }
                     activeRequest.set(null)
-                    stopSelf()
-                    mainHandler.post { Process.killProcess(Process.myPid()) }
                 }
             }
             val request = RunningRequest(requestId, job)
@@ -132,6 +145,14 @@ class GemmaInferenceService : Service() {
             runCatching { activeBridge.get()?.cancel() }
             request.job.cancel()
         }
+
+        override fun finishBatch(batchId: String) {
+            if (!activeBatch.compareAndSet(batchId, null)) return
+            activeRequest.getAndSet(null)?.job?.cancel()
+            runCatching { activeBridge.getAndSet(null)?.close() }
+            stopSelf()
+            mainHandler.post { Process.killProcess(Process.myPid()) }
+        }
     }
 
     override fun onBind(intent: Intent?): IBinder = binder
@@ -139,6 +160,7 @@ class GemmaInferenceService : Service() {
     override fun onDestroy() {
         runCatching { activeBridge.getAndSet(null)?.cancel() }
         activeRequest.getAndSet(null)?.job?.cancel()
+        activeBatch.set(null)
         scope.cancel()
         super.onDestroy()
     }

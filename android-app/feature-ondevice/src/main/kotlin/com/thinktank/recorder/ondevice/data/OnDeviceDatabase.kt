@@ -12,12 +12,16 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         OnDeviceSessionEntity::class,
         OnDeviceSummaryBatchEntity::class,
         OnDeviceSummaryRunEntity::class,
+        OnDeviceProcessingJobEntity::class,
+        OnDeviceTranscriptSegmentEntity::class,
+        OnDeviceSummaryNodeEntity::class,
     ],
-    version = 8,
+    version = 9,
     exportSchema = true,
 )
 abstract class OnDeviceDatabase : RoomDatabase() {
     abstract fun sessionDao(): OnDeviceSessionDao
+    abstract fun longProcessingDao(): OnDeviceLongProcessingDao
 
     companion object {
         @Volatile
@@ -38,6 +42,7 @@ abstract class OnDeviceDatabase : RoomDatabase() {
                         MIGRATION_5_6,
                         MIGRATION_6_7,
                         MIGRATION_7_8,
+                        MIGRATION_8_9,
                     )
                     .build()
                     .also { instance = it }
@@ -274,6 +279,164 @@ abstract class OnDeviceDatabase : RoomDatabase() {
                 db.execSQL(
                     "CREATE INDEX IF NOT EXISTS index_ondevice_summary_runs_state " +
                         "ON ondevice_summary_runs(state)",
+                )
+            }
+        }
+
+        val MIGRATION_8_9 = object : Migration(8, 9) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    "ALTER TABLE ondevice_sessions ADD COLUMN activeProcessingJobId TEXT DEFAULT NULL",
+                )
+                db.execSQL(
+                    "ALTER TABLE ondevice_sessions ADD COLUMN summaryRootNodeId TEXT DEFAULT NULL",
+                )
+                db.execSQL(
+                    "ALTER TABLE ondevice_sessions ADD COLUMN processingVersion INTEGER DEFAULT NULL",
+                )
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS ondevice_processing_jobs (
+                        id TEXT NOT NULL,
+                        sessionId TEXT NOT NULL,
+                        createdAt INTEGER NOT NULL,
+                        updatedAt INTEGER NOT NULL,
+                        state TEXT NOT NULL,
+                        stage TEXT NOT NULL,
+                        sourceFingerprint TEXT NOT NULL,
+                        sourceDurationMs INTEGER NOT NULL,
+                        sourceSizeBytes INTEGER NOT NULL,
+                        sourceSnapshotPath TEXT NOT NULL,
+                        pcmPath TEXT NOT NULL,
+                        serviceToken TEXT,
+                        completedSttSegments INTEGER NOT NULL,
+                        totalSttSegments INTEGER NOT NULL,
+                        completedSummaryNodes INTEGER NOT NULL,
+                        totalSummaryNodes INTEGER NOT NULL,
+                        currentSummaryLevel INTEGER NOT NULL,
+                        rootNodeId TEXT,
+                        pauseRequested INTEGER NOT NULL,
+                        cancelRequested INTEGER NOT NULL,
+                        retryCount INTEGER NOT NULL,
+                        failureCode TEXT,
+                        error TEXT,
+                        checkpointVersion INTEGER NOT NULL,
+                        dataPolicy TEXT NOT NULL,
+                        PRIMARY KEY(id),
+                        FOREIGN KEY(sessionId) REFERENCES ondevice_sessions(id)
+                            ON UPDATE NO ACTION ON DELETE CASCADE
+                    )
+                    """.trimIndent(),
+                )
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS ondevice_transcript_segments (
+                        id TEXT NOT NULL,
+                        jobId TEXT NOT NULL,
+                        sessionId TEXT NOT NULL,
+                        passType TEXT NOT NULL,
+                        ordinal INTEGER NOT NULL,
+                        startMs INTEGER NOT NULL,
+                        endMs INTEGER NOT NULL,
+                        text TEXT NOT NULL,
+                        textHash TEXT NOT NULL,
+                        sourceRangeHash TEXT NOT NULL,
+                        meaningfulChars INTEGER NOT NULL,
+                        state TEXT NOT NULL,
+                        createdAt INTEGER NOT NULL,
+                        updatedAt INTEGER NOT NULL,
+                        PRIMARY KEY(id),
+                        FOREIGN KEY(jobId) REFERENCES ondevice_processing_jobs(id)
+                            ON UPDATE NO ACTION ON DELETE CASCADE
+                    )
+                    """.trimIndent(),
+                )
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS ondevice_summary_nodes (
+                        id TEXT NOT NULL,
+                        jobId TEXT NOT NULL,
+                        sessionId TEXT NOT NULL,
+                        level INTEGER NOT NULL,
+                        ordinal INTEGER NOT NULL,
+                        nodeType TEXT NOT NULL,
+                        state TEXT NOT NULL,
+                        sourceStartMs INTEGER NOT NULL,
+                        sourceEndMs INTEGER NOT NULL,
+                        leafStartOrdinal INTEGER NOT NULL,
+                        leafEndOrdinal INTEGER NOT NULL,
+                        childNodeIds TEXT NOT NULL,
+                        inputPayload TEXT NOT NULL,
+                        inputHash TEXT NOT NULL,
+                        sourceHash TEXT NOT NULL,
+                        title TEXT NOT NULL,
+                        summary TEXT NOT NULL,
+                        evidenceChildIds TEXT NOT NULL,
+                        outputHash TEXT NOT NULL,
+                        attemptCount INTEGER NOT NULL,
+                        failureCode TEXT,
+                        violationCodes TEXT,
+                        modelVersion TEXT,
+                        runtimeType TEXT,
+                        generationProfile TEXT,
+                        durationMs INTEGER,
+                        startedAt INTEGER,
+                        completedAt INTEGER,
+                        createdAt INTEGER NOT NULL,
+                        updatedAt INTEGER NOT NULL,
+                        dataPolicy TEXT NOT NULL,
+                        PRIMARY KEY(id),
+                        FOREIGN KEY(jobId) REFERENCES ondevice_processing_jobs(id)
+                            ON UPDATE NO ACTION ON DELETE CASCADE
+                    )
+                    """.trimIndent(),
+                )
+                db.execSQL(
+                    "CREATE INDEX IF NOT EXISTS index_ondevice_processing_jobs_sessionId " +
+                        "ON ondevice_processing_jobs(sessionId)",
+                )
+                db.execSQL(
+                    "CREATE INDEX IF NOT EXISTS index_ondevice_processing_jobs_state " +
+                        "ON ondevice_processing_jobs(state)",
+                )
+                db.execSQL(
+                    "CREATE INDEX IF NOT EXISTS index_ondevice_processing_jobs_updatedAt " +
+                        "ON ondevice_processing_jobs(updatedAt)",
+                )
+                db.execSQL(
+                    "CREATE INDEX IF NOT EXISTS index_ondevice_transcript_segments_jobId " +
+                        "ON ondevice_transcript_segments(jobId)",
+                )
+                db.execSQL(
+                    "CREATE INDEX IF NOT EXISTS index_ondevice_transcript_segments_sessionId " +
+                        "ON ondevice_transcript_segments(sessionId)",
+                )
+                db.execSQL(
+                    "CREATE UNIQUE INDEX IF NOT EXISTS " +
+                        "index_ondevice_transcript_segments_jobId_passType_ordinal " +
+                        "ON ondevice_transcript_segments(jobId, passType, ordinal)",
+                )
+                db.execSQL(
+                    "CREATE INDEX IF NOT EXISTS " +
+                        "index_ondevice_transcript_segments_jobId_startMs_endMs " +
+                        "ON ondevice_transcript_segments(jobId, startMs, endMs)",
+                )
+                db.execSQL(
+                    "CREATE INDEX IF NOT EXISTS index_ondevice_summary_nodes_jobId " +
+                        "ON ondevice_summary_nodes(jobId)",
+                )
+                db.execSQL(
+                    "CREATE INDEX IF NOT EXISTS index_ondevice_summary_nodes_sessionId " +
+                        "ON ondevice_summary_nodes(sessionId)",
+                )
+                db.execSQL(
+                    "CREATE UNIQUE INDEX IF NOT EXISTS " +
+                        "index_ondevice_summary_nodes_jobId_level_ordinal_inputHash " +
+                        "ON ondevice_summary_nodes(jobId, level, ordinal, inputHash)",
+                )
+                db.execSQL(
+                    "CREATE INDEX IF NOT EXISTS index_ondevice_summary_nodes_jobId_state " +
+                        "ON ondevice_summary_nodes(jobId, state)",
                 )
             }
         }

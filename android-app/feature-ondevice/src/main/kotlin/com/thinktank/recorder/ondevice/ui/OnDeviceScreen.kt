@@ -90,6 +90,7 @@ import com.thinktank.recorder.ondevice.modelpack.ModelId
 import com.thinktank.recorder.ondevice.modelpack.ModelDeleteScope
 import com.thinktank.recorder.ondevice.modelpack.ModelVaultConnection
 import com.thinktank.recorder.ondevice.modelpack.ModelVaultState
+import com.thinktank.recorder.ondevice.processing.canResume
 import com.thinktank.recorder.ondevice.stt.SenseVoiceFileSttAvailability
 import java.time.Instant
 import java.time.ZoneId
@@ -105,6 +106,9 @@ fun OnDeviceScreen(
     onStartListening: () -> Unit,
     onStopListening: () -> Unit,
     onCancelListening: () -> Unit,
+    modifier: Modifier = Modifier,
+    onPauseLongProcessing: () -> Unit = {},
+    onResumeLongProcessing: () -> Unit = {},
     onHostStopped: () -> Unit,
     onClearMessage: () -> Unit,
     onSummarize: (String) -> Unit,
@@ -116,7 +120,6 @@ fun OnDeviceScreen(
     onDeleteModel: (ModelId, ModelDeleteScope) -> Unit,
     onConnectModelVault: (android.net.Uri) -> Unit = {},
     onDisconnectModelVault: () -> Unit = {},
-    modifier: Modifier = Modifier,
     heroImageRes: Int? = null,
 ) {
     val context = LocalContext.current
@@ -195,6 +198,8 @@ fun OnDeviceScreen(
                 },
                 onStop = onStopListening,
                 onCancel = onCancelListening,
+                onPauseLongProcessing = onPauseLongProcessing,
+                onResumeLongProcessing = onResumeLongProcessing,
                 modifier = Modifier.padding(horizontal = 20.dp),
             )
         }
@@ -719,6 +724,8 @@ private fun ListeningCard(
     onStart: () -> Unit,
     onStop: () -> Unit,
     onCancel: () -> Unit,
+    onPauseLongProcessing: () -> Unit,
+    onResumeLongProcessing: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val transcriptScrollState = rememberScrollState()
@@ -750,6 +757,8 @@ private fun ListeningCard(
                             state.listening -> "온디바이스 음성 인식 중"
                             state.fileTranscribing -> "1번 탭 녹음 전사 중"
                             state.processing -> state.processingLabel ?: "기기에서 처리 중"
+                            state.longProcessingJob?.canResume == true ->
+                                state.processingLabel ?: "중단된 장시간 처리"
                             else -> "새 로컬 기록"
                         },
                         style = MaterialTheme.typography.titleLarge,
@@ -839,7 +848,36 @@ private fun ListeningCard(
                     OutlinedButton(onClick = onCancel) { Text("취소") }
                 }
             } else if (state.processing) {
-                OutlinedButton(onClick = onCancel) { Text("처리 취소") }
+                Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    OutlinedButton(
+                        onClick = onPauseLongProcessing,
+                        modifier = Modifier.testTag("long-processing-pause"),
+                    ) {
+                        Icon(Icons.Default.Pause, contentDescription = null)
+                        Spacer(Modifier.size(8.dp))
+                        Text("일시 중지")
+                    }
+                    OutlinedButton(onClick = onCancel) { Text("처리 취소") }
+                }
+            } else if (state.longProcessingJob?.canResume == true) {
+                Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Button(
+                        onClick = onResumeLongProcessing,
+                        modifier = Modifier
+                            .weight(1f)
+                            .testTag("long-processing-resume"),
+                    ) {
+                        Icon(Icons.Default.GraphicEq, contentDescription = null)
+                        Spacer(Modifier.size(8.dp))
+                        Text("마지막 지점부터 재개")
+                    }
+                    OutlinedButton(
+                        onClick = onCancel,
+                        modifier = Modifier.testTag("long-processing-cancel"),
+                    ) {
+                        Text("취소")
+                    }
+                }
             } else {
                 Button(
                     onClick = onStart,
@@ -1273,7 +1311,11 @@ private fun FullTranscriptSheet(
                         .testTag("full-transcript-scroll"),
                 ) {
                     SelectionContainer {
-                        Text(transcript, style = MaterialTheme.typography.bodyLarge)
+                        Text(
+                            transcript,
+                            style = MaterialTheme.typography.bodyLarge,
+                            modifier = Modifier.testTag("full-transcript-content"),
+                        )
                     }
                 }
             }
