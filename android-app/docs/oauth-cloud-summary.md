@@ -13,8 +13,9 @@ OAuth account UI/controller integration, transcript prompt/schema parsing and SD
 
 ## Build configuration
 
-Set public client registrations and Provider-supported model IDs through Gradle properties,
-environment variables, or ignored `android-app/local.properties` entries:
+Reproducible compatibility defaults are source-controlled in
+`android-app/oauth-llm.defaults.properties`. A different registration or model can override them
+through Gradle properties, environment variables, or ignored `android-app/local.properties` entries:
 
 | Name | Purpose |
 |---|---|
@@ -25,8 +26,8 @@ environment variables, or ignored `android-app/local.properties` entries:
 | `THINKTANK_CODEX_MODEL` | Codex model used for structured summary |
 | `THINKTANK_XAI_MODEL` | xAI model used for structured summary |
 
-Append the required entries from the source-controlled `oauth-llm.properties.example` to the ignored
-`local.properties`. Values are intentionally omitted:
+For an override, append the required entries from `oauth-llm.properties.example` to the ignored
+`local.properties`. Override values are intentionally omitted:
 
 ```properties
 THINKTANK_ANTHROPIC_CLIENT_ID=
@@ -38,7 +39,10 @@ THINKTANK_XAI_MODEL=
 ```
 
 Do **not** add a client secret. This Android app is a public OAuth client; confidential secrets in
-an APK are not supported. `local.properties` must remain uncommitted.
+an APK are not supported. `local.properties` must remain uncommitted. The checked-in identifiers are
+compatibility registrations found in the approved read-only reference implementation; public does not
+imply registration ownership. Replace them with Provider-approved ThinkTank registrations before a
+production release.
 
 ## Runtime behavior
 

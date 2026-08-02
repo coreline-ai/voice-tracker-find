@@ -13,10 +13,16 @@ val localProperties = Properties().apply {
     if (file.isFile) file.inputStream().use(::load)
 }
 
+val oauthDefaultsFile = rootProject.file("oauth-llm.defaults.properties")
+val oauthDefaults = Properties().apply {
+    if (oauthDefaultsFile.isFile) oauthDefaultsFile.inputStream().use(::load)
+}
+
 fun setting(name: String): String =
     providers.gradleProperty(name).orNull
         ?: System.getenv(name)
         ?: localProperties.getProperty(name)
+        ?: oauthDefaults.getProperty(name)
         ?: ""
 
 fun quoted(value: String): String =
@@ -108,6 +114,34 @@ val verifyCloudSummaryBoundary by tasks.registering {
     }
 }
 
+val verifyTrackedOAuthDefaults by tasks.registering {
+    group = "verification"
+    description = "Verify source-controlled public OAuth registrations without confidential values."
+    doLast {
+        val required = setOf(
+            "THINKTANK_ANTHROPIC_CLIENT_ID",
+            "THINKTANK_ANTHROPIC_MODEL",
+            "THINKTANK_CODEX_CLIENT_ID",
+            "THINKTANK_CODEX_MODEL",
+            "THINKTANK_XAI_CLIENT_ID",
+            "THINKTANK_XAI_MODEL",
+        )
+        check(oauthDefaultsFile.isFile) { "Missing ${oauthDefaultsFile.path}" }
+        required.forEach { name ->
+            check(!oauthDefaults.getProperty(name).isNullOrBlank()) {
+                "Missing public OAuth default: $name"
+            }
+        }
+        val forbidden = oauthDefaults.stringPropertyNames().filter { name ->
+            listOf("SECRET", "TOKEN", "AUTHORIZATION_CODE", "PKCE", "COOKIE")
+                .any { marker -> marker in name.uppercase() }
+        }
+        check(forbidden.isEmpty()) {
+            "Confidential OAuth fields are forbidden in tracked defaults: ${forbidden.joinToString()}"
+        }
+    }
+}
+
 tasks.named("preBuild").configure {
-    dependsOn(verifyOAuthLlmArtifacts, verifyCloudSummaryBoundary)
+    dependsOn(verifyOAuthLlmArtifacts, verifyCloudSummaryBoundary, verifyTrackedOAuthDefaults)
 }

@@ -8,7 +8,7 @@
 | 자동 test/lint/build | `PASS` |
 | Room 9→10 physical-device migration | `PASS` (2 devices) |
 | SDK artifact 기준선 | `ai.coreline.oauthllm:oauth-llm-android:0.1.0` |
-| 로컬 public registration | configured in ignored `android-app/local.properties` |
+| public registration | source-controlled compatibility defaults; production replacement required |
 | 실계정 E2E | `DEFERRED_BY_OWNER` / `executed=false` |
 | release 배포 | unsigned, signing 전 |
 
@@ -26,9 +26,10 @@ generate, logout을 실행하지 않았으므로 해당 항목은 완료로 간�
 
 ## 실계정 단계 재개 체크리스트
 
-1. Provider별 QA 계정과 Android public OAuth client registration을 준비한다.
-2. `android-app/oauth-llm.properties.example`의 필요한 항목이 ignored
-   `android-app/local.properties`에 설정되어 있는지 확인한다. client secret은 추가하지 않는다.
+1. Provider별 QA 계정을 준비하고 source-controlled compatibility registration이 허용되는지
+   확인하거나 Provider-approved ThinkTank public registration으로 교체한다.
+2. 다른 registration/model이 필요하면 `android-app/oauth-llm.properties.example`을 참고해
+   ignored `android-app/local.properties`에 override한다. client secret은 추가하지 않는다.
 3. 배포용이 아닌 서명된 QA APK를 만들고 앱 ID/callback registration을 대조한다.
 4. `docs/qa/oauth-llm-e2e-runbook.md`를 Provider별로 독립 실행한다.
 5. token, code, PKCE, cookie, raw body, 실제 사적 전사를 제외한 sanitized evidence만 남긴다.

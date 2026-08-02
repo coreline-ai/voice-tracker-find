@@ -11,10 +11,12 @@
 - real-account E2E status: `DEFERRED_BY_OWNER`
 
 최초 clean 검증 빌드에는 Anthropic/Codex/xAI client ID와 model ID가 설정되지 않았다.
-이후 삼성폰의 로컬 검증 빌드에는 읽기 전용 호환성 참조에서 확인한 public client ID와
-단일 model ID를 ignored `android-app/local.properties`로 주입했다. 값은 저장소에 커밋하지
-않으며 client secret은 사용하지 않는다. 계정 연결 버튼 활성화와 삼성폰 설치·화면 표시까지만
-확인했고 실제 로그인/generate는 실행하지 않았다.
+이후 읽기 전용 호환성 참조에서 확인한 public client ID와 단일 model ID를
+`android-app/oauth-llm.defaults.properties`에 source-controlled compatibility defaults로
+추가했다. client secret은 사용하지 않는다. 계정 연결 버튼 활성화와 삼성폰 설치·화면
+표시까지만 확인했고 실제 로그인/generate는 실행하지 않았다. public identifier는 비밀 값이
+아니지만 등록 소유권을 뜻하지 않으므로 production 배포 전 Provider-approved ThinkTank
+registration으로 교체해야 한다.
 
 프로젝트 구현 기준선은 정리 완료 상태다. 실계정 단계 재개 시
 `oauth-cloud-summary-handoff.md`와 `oauth-llm-e2e-runbook.md`를 순서대로 따른다.
