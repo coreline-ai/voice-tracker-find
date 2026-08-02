@@ -7,6 +7,7 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.viewModels
 import com.thinktank.recorder.next.ui.NotesViewModel
+import com.thinktank.recorder.next.ui.CloudAccountsViewModel
 import com.thinktank.recorder.next.ui.RecordingViewModel
 import com.thinktank.recorder.next.ui.SettingsViewModel
 import com.thinktank.recorder.next.ui.ThinkTankApp
@@ -18,6 +19,7 @@ class MainActivity : ComponentActivity() {
     private val recordingViewModel by viewModels<RecordingViewModel>()
     private val notesViewModel by viewModels<NotesViewModel>()
     private val settingsViewModel by viewModels<SettingsViewModel>()
+    private val cloudAccountsViewModel by viewModels<CloudAccountsViewModel>()
     private val onDeviceViewModel by viewModels<OnDeviceViewModel>()
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -29,6 +31,7 @@ class MainActivity : ComponentActivity() {
                 recordingViewModel = recordingViewModel,
                 notesViewModel = notesViewModel,
                 settingsViewModel = settingsViewModel,
+                cloudAccountsViewModel = cloudAccountsViewModel,
                 onDeviceViewModel = onDeviceViewModel,
                 initialRoute = initialRoute,
             )

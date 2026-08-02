@@ -1,0 +1,138 @@
+{
+  "formatVersion": "1.1",
+  "component": {
+    "group": "ai.coreline.oauthllm",
+    "module": "oauth-llm-android",
+    "version": "0.1.0",
+    "attributes": {
+      "org.gradle.status": "release"
+    }
+  },
+  "createdBy": {
+    "gradle": {
+      "version": "8.11.1"
+    }
+  },
+  "variants": [
+    {
+      "name": "releaseVariantReleaseApiPublication",
+      "attributes": {
+        "org.gradle.category": "library",
+        "org.gradle.dependency.bundling": "external",
+        "org.gradle.libraryelements": "aar",
+        "org.gradle.usage": "java-api"
+      },
+      "dependencies": [
+        {
+          "group": "ai.coreline.oauthllm",
+          "module": "oauth-llm-api",
+          "version": {
+            "requires": "0.1.0"
+          }
+        },
+        {
+          "group": "org.jetbrains.kotlin",
+          "module": "kotlin-stdlib",
+          "version": {
+            "requires": "1.9.24"
+          }
+        }
+      ],
+      "files": [
+        {
+          "name": "oauth-llm-android-0.1.0.aar",
+          "url": "oauth-llm-android-0.1.0.aar",
+          "size": 231251,
+          "sha512": "da432e0262b441806132cd00cd0afe0fe6c2ab4b47c4d90f5740f868b2290537e79b24cef2ddf1e5edddce8694b35c4cd5e60b2cbdf32dfe458c70d3ce0480df",
+          "sha256": "63d5c1f1d9e3afc4756a73353e291a496513afa436379f48104a50c45de8cc08",
+          "sha1": "1d0775e635f72218aa80a9cf9997c12b361d65f7",
+          "md5": "442bc37f913db8cccfda96296bba9bd1"
+        }
+      ]
+    },
+    {
+      "name": "releaseVariantReleaseRuntimePublication",
+      "attributes": {
+        "org.gradle.category": "library",
+        "org.gradle.dependency.bundling": "external",
+        "org.gradle.libraryelements": "aar",
+        "org.gradle.usage": "java-runtime"
+      },
+      "dependencies": [
+        {
+          "group": "androidx.core",
+          "module": "core-ktx",
+          "version": {
+            "requires": "1.13.1"
+          }
+        },
+        {
+          "group": "net.openid",
+          "module": "appauth",
+          "version": {
+            "requires": "0.11.1"
+          }
+        },
+        {
+          "group": "org.jetbrains.kotlinx",
+          "module": "kotlinx-coroutines-android",
+          "version": {
+            "requires": "1.9.0"
+          }
+        },
+        {
+          "group": "com.squareup.okhttp3",
+          "module": "okhttp",
+          "version": {
+            "requires": "4.12.0"
+          }
+        },
+        {
+          "group": "ai.coreline.oauthllm",
+          "module": "oauth-llm-api",
+          "version": {
+            "requires": "0.1.0"
+          }
+        },
+        {
+          "group": "org.jetbrains.kotlin",
+          "module": "kotlin-stdlib",
+          "version": {
+            "requires": "1.9.24"
+          }
+        }
+      ],
+      "files": [
+        {
+          "name": "oauth-llm-android-0.1.0.aar",
+          "url": "oauth-llm-android-0.1.0.aar",
+          "size": 231251,
+          "sha512": "da432e0262b441806132cd00cd0afe0fe6c2ab4b47c4d90f5740f868b2290537e79b24cef2ddf1e5edddce8694b35c4cd5e60b2cbdf32dfe458c70d3ce0480df",
+          "sha256": "63d5c1f1d9e3afc4756a73353e291a496513afa436379f48104a50c45de8cc08",
+          "sha1": "1d0775e635f72218aa80a9cf9997c12b361d65f7",
+          "md5": "442bc37f913db8cccfda96296bba9bd1"
+        }
+      ]
+    },
+    {
+      "name": "releaseVariantReleaseSourcePublication",
+      "attributes": {
+        "org.gradle.category": "documentation",
+        "org.gradle.dependency.bundling": "external",
+        "org.gradle.docstype": "sources",
+        "org.gradle.usage": "java-runtime"
+      },
+      "files": [
+        {
+          "name": "oauth-llm-android-0.1.0-sources.jar",
+          "url": "oauth-llm-android-0.1.0-sources.jar",
+          "size": 35840,
+          "sha512": "dee8e9715fe0b355c8f648a83c0acf88e100dd8b486740c74061ec25af47e96ab6b539ed42f2563f1bd71ea98cd7caab55a606ab3158cac27cd3f5cc0173af93",
+          "sha256": "8f5e7914f0e6c9e074e958d6f12e22a30ee5d53ff60b51d9a4c8b3daa3ce5476",
+          "sha1": "5f076bae006f78bbcd3086c1f22f4819f3852936",
+          "md5": "7c4e743808bbde1043e96d3ddff95b1e"
+        }
+      ]
+    }
+  ]
+}

@@ -11,6 +11,7 @@ import com.thinktank.recorder.ondevice.api.MainRecordingSourceGateway
 import com.thinktank.recorder.ondevice.api.OnDeviceFailureStage
 import com.thinktank.recorder.ondevice.api.OnDeviceOperationKind
 import com.thinktank.recorder.ondevice.api.OnDeviceSessionState
+import com.thinktank.recorder.ondevice.api.RemoteSummaryGateway
 import com.thinktank.recorder.ondevice.api.SpeechEvent
 import com.thinktank.recorder.ondevice.api.SttCaptureProfile
 import com.thinktank.recorder.ondevice.api.SttEngineType
@@ -27,6 +28,7 @@ import com.thinktank.recorder.ondevice.modelpack.ModelDescriptor
 import com.thinktank.recorder.ondevice.modelpack.ModelDownloadManager
 import com.thinktank.recorder.ondevice.modelpack.ModelDownloadWorker
 import com.thinktank.recorder.ondevice.modelpack.ModelId
+import com.thinktank.recorder.ondevice.modelpack.LegacyModelStorage
 import com.thinktank.recorder.ondevice.modelpack.ModelStore
 import com.thinktank.recorder.ondevice.modelpack.ModelVaultState
 import com.thinktank.recorder.ondevice.processing.LongAudioJobState
@@ -49,6 +51,8 @@ import com.thinktank.recorder.ondevice.stt.SenseVoiceFileSpeechEngine
 import com.thinktank.recorder.ondevice.stt.SenseVoiceFileSttAvailability
 import com.thinktank.recorder.ondevice.stt.SpeechRecognitionException
 import com.thinktank.recorder.ondevice.summary.GemmaSummaryEngine
+import com.thinktank.recorder.ondevice.summary.SummaryEngineRouter
+import com.thinktank.recorder.ondevice.summary.SummaryRoutingException
 import java.util.UUID
 import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
@@ -118,6 +122,7 @@ data class OnDeviceUiState(
     val message: String? = null,
     val models: List<ModelUiState> = emptyList(),
     val modelVault: ModelVaultState = ModelVaultState(),
+    val legacyModelStorage: LegacyModelStorage = LegacyModelStorage(),
     val longProcessingJob: OnDeviceProcessingJobEntity? = null,
 ) {
     val micBusy: Boolean
@@ -128,6 +133,7 @@ data class OnDeviceUiState(
 class OnDeviceViewModel @Inject constructor(
     application: Application,
     private val mainRecordingSources: MainRecordingSourceGateway,
+    private val remoteSummaryGateway: RemoteSummaryGateway,
 ) : AndroidViewModel(application) {
     private val preferences = application.getSharedPreferences(PREFERENCES, 0)
     private val audioFiles = LocalAudioFileManager(application)
@@ -141,6 +147,7 @@ class OnDeviceViewModel @Inject constructor(
     private val speechEngine = AndroidOnDeviceSpeechEngine(application)
     private val fileSpeechEngine = SenseVoiceFileSpeechEngine(application, modelStore)
     private val gemmaSummaryEngine = GemmaSummaryEngine(application, modelStore)
+    private val summaryRouter = SummaryEngineRouter(remoteSummaryGateway, gemmaSummaryEngine)
     private val modelManager = ModelDownloadManager(application)
     private val coordinator = OnDeviceOperationCoordinator()
     private val nativeCapability = NativeRuntimeCapabilities.current()
@@ -162,6 +169,7 @@ class OnDeviceViewModel @Inject constructor(
     private val message = MutableStateFlow<String?>(null)
     private val refreshModels = MutableStateFlow(0)
     private val modelVaultState = MutableStateFlow(modelManager.vaultState())
+    private val legacyModelStorageState = MutableStateFlow(LegacyModelStorage())
 
     init {
         // Gemma 3 1B is the single fixed local-summary model.
@@ -182,6 +190,7 @@ class OnDeviceViewModel @Inject constructor(
         // Resume the verified local install automatically; no Wi-Fi or re-download is involved.
         modelManager.resumeCompletedDownloadsLocally()
         modelVaultState.value = modelManager.vaultState()
+        legacyModelStorageState.value = modelStore.legacyStorage()
         refreshModels.value += 1
     }
 
@@ -221,8 +230,12 @@ class OnDeviceViewModel @Inject constructor(
     private val localAiSelection = combine(selectedSttProfile, fileSelection) { sttProfile, file ->
         LocalAiSelection(sttProfile, file)
     }
-    private val modelRefreshState = combine(refreshModels, modelVaultState) { _, vault ->
-        vault
+    private val modelRefreshState = combine(
+        refreshModels,
+        modelVaultState,
+        legacyModelStorageState,
+    ) { _, vault, legacy ->
+        ModelStorageState(vault, legacy)
     }
 
     val uiState: StateFlow<OnDeviceUiState> = combine(
@@ -231,7 +244,7 @@ class OnDeviceViewModel @Inject constructor(
         activeState,
         modelManager.workInfos,
         modelRefreshState,
-    ) { sessionSources, selection, active, workInfos, vault ->
+    ) { sessionSources, selection, active, workInfos, modelStorage ->
         val longJob = sessionSources.longJob
         val longRunning = longJob?.jobState in setOf(
             LongAudioJobState.QUEUED,
@@ -267,7 +280,8 @@ class OnDeviceViewModel @Inject constructor(
             models = ModelCatalog.userManagedModels.map { descriptor ->
                 descriptor.toUiState(workInfos)
             },
-            modelVault = vault,
+            modelVault = modelStorage.vault,
+            legacyModelStorage = modelStorage.legacy,
             longProcessingJob = longJob,
         )
     }.stateIn(
@@ -292,6 +306,7 @@ class OnDeviceViewModel @Inject constructor(
                 )
             },
             modelVault = modelVaultState.value,
+            legacyModelStorage = legacyModelStorageState.value,
         ),
     )
 
@@ -362,7 +377,9 @@ class OnDeviceViewModel @Inject constructor(
         when (active.kind) {
             OnDeviceOperationKind.LIVE_STT -> speechEngine.cancel()
             OnDeviceOperationKind.FILE_STT -> fileSpeechEngine.cancel()
-            OnDeviceOperationKind.GEMMA_SUMMARY -> Unit
+            OnDeviceOperationKind.GEMMA_SUMMARY,
+            OnDeviceOperationKind.OAUTH_SUMMARY,
+            -> Unit
         }
         stopRequested.value = true
         coordinator.cancelActive()
@@ -480,6 +497,30 @@ class OnDeviceViewModel @Inject constructor(
                     }
                 },
                 onFailure = { it.message ?: "모델을 삭제하지 못했습니다." },
+            )
+        }
+    }
+
+    fun deleteLegacyModels() {
+        if (!uiState.value.legacyModelStorage.present) return
+        message.value = if (ResourceArbiter.activeWorkload() == null) {
+            "이전에 사용한 Qwen·EXAONE 파일을 정리하고 있습니다."
+        } else {
+            "실행 중인 로컬 AI 작업이 끝난 뒤 이전 모델 파일을 정리합니다."
+        }
+        viewModelScope.launch(Dispatchers.IO) {
+            val result = runCatching {
+                ResourceArbiter.withLease(NativeWorkload.MODEL_MAINTENANCE) {
+                    modelStore.deleteLegacyStorage()
+                }
+            }
+            legacyModelStorageState.value = modelStore.legacyStorage()
+            refreshModels.value += 1
+            message.value = result.fold(
+                onSuccess = { bytes ->
+                    "이전 Qwen·EXAONE 모델 파일 ${bytes / (1024L * 1024L)}MB를 정리했습니다."
+                },
+                onFailure = { it.message ?: "이전 모델 파일을 정리하지 못했습니다." },
             )
         }
     }
@@ -687,7 +728,13 @@ class OnDeviceViewModel @Inject constructor(
             val transcript = session?.transcript.orEmpty()
             if (transcript.isBlank()) {
                 withContext(Dispatchers.Main.immediate) {
-                    message.value = "Gemma로 요약할 전사 원문이 없습니다."
+                    message.value = "요약할 전사 원문이 없습니다."
+                }
+                return@launch
+            }
+            if (remoteSummaryGateway.activeProfile.value != null) {
+                withContext(Dispatchers.Main.immediate) {
+                    startPreferredSummary(sessionId, transcript)
                 }
                 return@launch
             }
@@ -714,6 +761,10 @@ class OnDeviceViewModel @Inject constructor(
     }
 
     private fun continueAfterTranscript(sessionId: String, transcript: String) {
+        if (remoteSummaryGateway.activeProfile.value != null) {
+            startPreferredSummary(sessionId, transcript)
+            return
+        }
         val descriptor = ModelCatalog.get(ModelId.GEMMA_SUMMARY_KO)
         if (!modelStore.snapshot(descriptor).ready) {
             message.value =
@@ -721,6 +772,93 @@ class OnDeviceViewModel @Inject constructor(
             return
         }
         startGemmaSummary(sessionId, transcript)
+    }
+
+    private fun startPreferredSummary(sessionId: String, transcript: String) {
+        val operation = reserve(sessionId, OnDeviceOperationKind.OAUTH_SUMMARY) ?: return
+        val providerLabel = remoteSummaryGateway.activeProfile.value?.provider?.id ?: "OAuth"
+        processing.value = true
+        processingLabel.value = "$providerLabel 우선 요약 중"
+        processingProgress.value = null
+        message.value = "선택한 OAuth 계정으로 전사 요약을 시도하고 있습니다."
+        launchOperation(operation) {
+            try {
+                recoveryJob.join()
+                val started = withContext(Dispatchers.IO) {
+                    repository.startOperation(
+                        id = sessionId,
+                        allowedStates = setOf(
+                            OnDeviceSessionState.TRANSCRIPT_READY,
+                            OnDeviceSessionState.FAILED_RECOVERABLE,
+                            OnDeviceSessionState.COMPLETE,
+                        ),
+                        targetState = OnDeviceSessionState.SUMMARIZING,
+                        token = operation.token,
+                    )
+                }
+                check(started) { "현재 기록은 요약을 시작할 수 없는 상태입니다." }
+                val summary = summaryRouter.summarize(transcript)
+                val saved = withContext(Dispatchers.IO) {
+                    repository.saveSummary(sessionId, operation.token, summary)
+                }
+                check(saved) { "만료된 요약 결과는 저장하지 않았습니다." }
+                message.value = when {
+                    summary.fallbackReason != null ->
+                        "원격 요약을 완료하지 못해 Gemma 3 1B로 안전하게 마쳤습니다."
+                    summary.engine == SummaryEngineType.GEMMA_LOCAL ->
+                        "Gemma 3 1B 로컬 요약을 완료했습니다."
+                    else -> "선택한 OAuth 계정의 클라우드 요약을 완료했습니다."
+                }
+            } catch (cancelled: CancellationException) {
+                withContext(NonCancellable + Dispatchers.IO) {
+                    repository.finishOperation(
+                        sessionId,
+                        operation.token,
+                        OnDeviceSessionState.TRANSCRIPT_READY,
+                        OnDeviceFailureStage.SUMMARIZE,
+                        "요약이 취소되었습니다.",
+                    )
+                }
+                throw cancelled
+            } catch (error: SummaryRoutingException) {
+                val safeMessage = when (error.failure.code.name) {
+                    "USER_CANCELLED" -> "원격 요약을 취소했습니다. 로컬 요약은 자동 실행하지 않았습니다."
+                    "INVALID_REQUEST" -> "요약 요청이 유효하지 않아 로컬 요약은 자동 실행하지 않았습니다."
+                    else -> "원격 요약을 완료하지 못했습니다."
+                }
+                withContext(NonCancellable + Dispatchers.IO) {
+                    repository.finishOperation(
+                        sessionId,
+                        operation.token,
+                        OnDeviceSessionState.TRANSCRIPT_READY,
+                        OnDeviceFailureStage.SUMMARIZE,
+                        safeMessage,
+                    )
+                }
+                message.value = safeMessage
+            } catch (error: Throwable) {
+                val safeMessage = if (
+                    remoteSummaryGateway.activeProfile.value != null &&
+                    !modelStore.snapshot(ModelCatalog.get(ModelId.GEMMA_SUMMARY_KO)).ready
+                ) {
+                    "원격 요약에 실패했고 로컬 폴백 모델이 없습니다. Gemma 3 1B를 설치하세요."
+                } else {
+                    error.message ?: "요약에 실패했습니다."
+                }
+                withContext(NonCancellable + Dispatchers.IO) {
+                    repository.finishOperation(
+                        sessionId,
+                        operation.token,
+                        OnDeviceSessionState.TRANSCRIPT_READY,
+                        OnDeviceFailureStage.SUMMARIZE,
+                        safeMessage,
+                    )
+                }
+                message.value = safeMessage
+            } finally {
+                finishUiOperation(operation)
+            }
+        }
     }
 
     private fun startGemmaSummary(sessionId: String, transcript: String) {
@@ -918,6 +1056,11 @@ class OnDeviceViewModel @Inject constructor(
     private data class LocalAiSelection(
         val sttProfile: SttCaptureProfile,
         val file: FileSelection,
+    )
+
+    private data class ModelStorageState(
+        val vault: ModelVaultState,
+        val legacy: LegacyModelStorage,
     )
 
     private data class SessionsAndSources(

@@ -118,6 +118,7 @@ fun OnDeviceScreen(
     onPauseModel: (ModelId) -> Unit,
     onRestoreModel: (ModelId) -> Unit,
     onDeleteModel: (ModelId, ModelDeleteScope) -> Unit,
+    onDeleteLegacyModels: () -> Unit = {},
     onConnectModelVault: (android.net.Uri) -> Unit = {},
     onDisconnectModelVault: () -> Unit = {},
     heroImageRes: Int? = null,
@@ -127,6 +128,7 @@ fun OnDeviceScreen(
     val latestHostStopped by rememberUpdatedState(onHostStopped)
     var pendingImport by remember { mutableStateOf<ModelId?>(null) }
     var pendingModelDelete by remember { mutableStateOf<ModelUiState?>(null) }
+    var pendingLegacyDelete by remember { mutableStateOf(false) }
     var sourcePickerShown by rememberSaveable { mutableStateOf(false) }
     val permissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission(),
@@ -270,6 +272,13 @@ fun OnDeviceScreen(
                     onDisconnect = onDisconnectModelVault,
                 )
                 Spacer(Modifier.height(10.dp))
+                if (state.legacyModelStorage.present) {
+                    LegacyModelStorageCard(
+                        bytes = state.legacyModelStorage.bytes,
+                        onDelete = { pendingLegacyDelete = true },
+                    )
+                    Spacer(Modifier.height(10.dp))
+                }
                 state.models.forEach { model ->
                     ModelCard(
                         model = model,
@@ -361,6 +370,32 @@ fun OnDeviceScreen(
                         Text("취소")
                     }
                 }
+            },
+        )
+    }
+    if (pendingLegacyDelete) {
+        AlertDialog(
+            onDismissRequest = { pendingLegacyDelete = false },
+            title = { Text("이전 모델 파일 정리") },
+            text = {
+                Text(
+                    "현재 앱에서 사용하지 않는 Qwen·EXAONE 내부 파일 " +
+                        "${formatBytes(state.legacyModelStorage.bytes)}를 삭제합니다. " +
+                        "Gemma, SenseVoice와 공유 모델 보관함 파일은 유지됩니다.",
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        pendingLegacyDelete = false
+                        onDeleteLegacyModels()
+                    },
+                ) {
+                    Text("이전 파일 삭제", color = MaterialTheme.colorScheme.error)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { pendingLegacyDelete = false }) { Text("취소") }
             },
         )
     }
@@ -995,6 +1030,35 @@ private fun ModelVaultCard(
 }
 
 @Composable
+private fun LegacyModelStorageCard(
+    bytes: Long,
+    onDelete: () -> Unit,
+) {
+    Card(
+        shape = RoundedCornerShape(18.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
+        modifier = Modifier.fillMaxWidth().testTag("legacy-model-storage-card"),
+    ) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier.padding(16.dp),
+        ) {
+            Icon(Icons.Default.Memory, contentDescription = null)
+            Spacer(Modifier.size(12.dp))
+            Column(Modifier.weight(1f)) {
+                Text("이전 모델 파일", style = MaterialTheme.typography.titleMedium)
+                Text(
+                    "현재 사용하지 않는 Qwen·EXAONE · ${formatBytes(bytes)}",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            OutlinedButton(onClick = onDelete) { Text("정리") }
+        }
+    }
+}
+
+@Composable
 private fun ModelCard(
     model: ModelUiState,
     installationAvailable: Boolean,
@@ -1123,8 +1187,15 @@ private fun SessionCard(
     var fullTranscriptShown by rememberSaveable(session.id) { mutableStateOf(false) }
     val hasTrustedGemmaSummary =
         session.summaryEngine == "GEMMA_LOCAL" &&
-            session.summaryValidationStatus == "PASSED_GROUNDED_V4" &&
+            session.summaryValidationStatus.isTrustedGemmaValidation() &&
             session.summary.isNotBlank()
+    val hasTrustedRemoteSummary =
+        session.summaryEngine in setOf("ANTHROPIC_OAUTH", "CODEX_OAUTH", "XAI_OAUTH") &&
+            session.summaryValidationStatus == "VALID" &&
+            session.summary.isNotBlank()
+    val hasTrustedSummary = hasTrustedGemmaSummary || hasTrustedRemoteSummary
+    val hierarchicalSummary =
+        session.summaryValidationStatus?.startsWith("PASSED_HIERARCHICAL_") == true
     Card(
         shape = RoundedCornerShape(18.dp),
         modifier = modifier.fillMaxWidth().testTag("session-${session.id}"),
@@ -1140,8 +1211,12 @@ private fun SessionCard(
                         )
                     }
                     Text(
-                        if (hasTrustedGemmaSummary) {
-                            "Gemma 요약 기록"
+                        if (hasTrustedSummary) {
+                            if (hasTrustedGemmaSummary) {
+                                "Gemma 요약 기록"
+                            } else {
+                                "${summaryEngineLabel(session.summaryEngine)} 요약 기록"
+                            }
                         } else {
                             "로컬 전사 기록"
                         },
@@ -1188,13 +1263,42 @@ private fun SessionCard(
                         .testTag("stt-quality-${session.id}"),
                 )
             }
-            if (hasTrustedGemmaSummary) {
+            if (hasTrustedSummary) {
                 HorizontalDivider(Modifier.padding(vertical = 10.dp))
                 Text(
-                    "Gemma 3 1B 요약 · 기본 모델",
+                    if (hasTrustedRemoteSummary) {
+                        "${summaryEngineLabel(session.summaryEngine)} · ${session.actualSummaryModelId.orEmpty()}"
+                    } else if (hierarchicalSummary) {
+                        "Gemma 3 1B 계층형 요약 · 전체 범위"
+                    } else {
+                        "Gemma 3 1B 요약 · 기본 모델"
+                    },
                     style = MaterialTheme.typography.labelLarge,
                     color = MaterialTheme.colorScheme.primary,
                 )
+                session.summaryFallbackReason?.let { reason ->
+                    Text(
+                        "원격 실패 후 로컬 폴백 · ${fallbackReasonLabel(reason)}",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.tertiary,
+                        modifier = Modifier.padding(top = 4.dp),
+                    )
+                }
+                if (hasTrustedRemoteSummary) {
+                    Text(
+                        buildString {
+                            append("지연 ${session.summaryDurationMs ?: 0}ms")
+                            session.summaryInputTokens?.let { append(" · 입력 ${it} tokens") }
+                            session.summaryOutputTokens?.let { append(" · 출력 ${it} tokens") }
+                            session.summaryProviderRequestId?.takeIf(String::isNotBlank)?.let {
+                                append(" · 요청 ${it.take(12)}")
+                            }
+                        },
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(top = 3.dp),
+                    )
+                }
                 if (session.title.isNotBlank()) {
                     Text(
                         session.title,
@@ -1202,16 +1306,32 @@ private fun SessionCard(
                         modifier = Modifier.padding(top = 6.dp),
                     )
                 }
-                session.summary.lineSequence()
+                val summaryLines = session.summary.lineSequence()
                     .map(String::trim)
                     .filter(String::isNotBlank)
-                    .forEach { bullet ->
+                    .toList()
+                summaryLines.forEachIndexed { index, bullet ->
+                    if (hierarchicalSummary && index == 0) {
                         Text(
-                            "• $bullet",
-                            style = MaterialTheme.typography.bodyMedium,
-                            modifier = Modifier.padding(top = 4.dp),
+                            "전체 핵심",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.padding(top = 8.dp),
+                        )
+                    } else if (hierarchicalSummary && index == 1) {
+                        Text(
+                            "구간 핵심",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.padding(top = 8.dp),
                         )
                     }
+                    Text(
+                        "• $bullet",
+                        style = MaterialTheme.typography.bodyMedium,
+                        modifier = Modifier.padding(top = 4.dp),
+                    )
+                }
                 if (session.actionItems.isNotBlank()) {
                     Text(
                         "할 일",
@@ -1250,10 +1370,10 @@ private fun SessionCard(
                     modifier = Modifier.padding(top = 4.dp),
                 ) {
                     Text(
-                        if (hasTrustedGemmaSummary) {
-                            "Gemma 3 1B로 다시 요약"
+                        if (hasTrustedSummary) {
+                            "선택한 AI로 다시 요약"
                         } else {
-                            "Gemma 3 1B 요약"
+                            "요약 실행"
                         },
                     )
                 }
@@ -1274,6 +1394,29 @@ private fun SessionCard(
             onDismiss = { fullTranscriptShown = false },
         )
     }
+}
+
+private fun String?.isTrustedGemmaValidation(): Boolean =
+    this?.startsWith("PASSED_GROUNDED_") == true ||
+        this?.startsWith("PASSED_HIERARCHICAL_") == true
+
+private fun summaryEngineLabel(engine: String): String = when (engine) {
+    "ANTHROPIC_OAUTH" -> "Anthropic OAuth"
+    "CODEX_OAUTH" -> "Codex OAuth"
+    "XAI_OAUTH" -> "xAI OAuth"
+    else -> "Gemma 3 1B"
+}
+
+private fun fallbackReasonLabel(reason: String): String = when (reason) {
+    "NOT_CONNECTED" -> "연결 없음"
+    "AUTHENTICATION_REQUIRED" -> "재인증 필요"
+    "NETWORK_UNAVAILABLE" -> "네트워크 없음"
+    "RATE_LIMITED" -> "요청 한도"
+    "PROVIDER_UNAVAILABLE" -> "Provider 일시 오류"
+    "TIMEOUT" -> "시간 초과"
+    "INVALID_PROVIDER_RESPONSE" -> "응답 형식 오류"
+    "APP_CONFIGURATION" -> "모델 설정 없음"
+    else -> reason
 }
 
 @Composable

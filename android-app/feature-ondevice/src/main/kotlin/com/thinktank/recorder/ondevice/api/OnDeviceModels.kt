@@ -9,6 +9,9 @@ enum class SttEngineType {
 
 enum class SummaryEngineType {
     GEMMA_LOCAL,
+    ANTHROPIC_OAUTH,
+    CODEX_OAUTH,
+    XAI_OAUTH,
 }
 
 /**
@@ -61,6 +64,7 @@ enum class OnDeviceOperationKind {
     LIVE_STT,
     FILE_STT,
     GEMMA_SUMMARY,
+    OAUTH_SUMMARY,
 }
 
 enum class OnDeviceFailureStage {
@@ -139,6 +143,13 @@ data class LocalSummary(
     val durationMs: Long? = null,
     val inputChars: Int? = null,
     val outputChars: Int? = null,
+    val requestedEngine: SummaryEngineType = engine,
+    val providerId: String? = null,
+    val providerRequestId: String? = null,
+    val inputTokens: Long? = null,
+    val outputTokens: Long? = null,
+    val fallbackReason: String? = null,
+    val dataPolicy: String = "LOCAL_ONLY",
 )
 
 sealed interface SpeechEvent {

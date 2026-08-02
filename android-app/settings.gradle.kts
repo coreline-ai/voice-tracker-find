@@ -15,6 +15,15 @@ pluginManagement {
 dependencyResolutionManagement {
     repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
     repositories {
+        exclusiveContent {
+            forRepository {
+                maven {
+                    name = "oauthLlmLocal"
+                    url = uri(rootDir.resolve("local-maven"))
+                }
+            }
+            filter { includeGroup("ai.coreline.oauthllm") }
+        }
         google()
         mavenCentral()
     }
@@ -23,4 +32,5 @@ dependencyResolutionManagement {
 rootProject.name = "thinktank-recorder-next"
 include(":app")
 include(":feature-ondevice")
+include(":feature-cloud-summary")
 include(":litert-bridge")

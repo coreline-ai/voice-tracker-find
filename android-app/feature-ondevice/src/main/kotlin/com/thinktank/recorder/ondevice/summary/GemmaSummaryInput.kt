@@ -31,26 +31,32 @@ internal object GemmaSummaryInputBuilder {
             .flatMap(::meaningfulTokens)
             .groupingBy(String::lowercase)
             .eachCount()
+        val leadTopics = meaningfulTokens(segments.first()).toSet()
 
-        val selected = segments.indices
+        val rankedIndexes = segments.indices
             .sortedWith(
                 compareByDescending<Int> { index ->
                     relevanceScore(segments[index], tokenFrequency) +
-                        positionBonus(index, segments.lastIndex)
+                        positionBonus(index, segments.lastIndex) +
+                        leadTopicOverlapScore(segments[index], leadTopics)
                 }.thenBy { it },
             )
-            .asSequence()
-            .map(segments::get)
-            .fold(mutableListOf<String>()) { accepted, candidate ->
-                if (accepted.size < MAX_EVIDENCE_SEGMENTS) {
-                    val proposed = accepted + candidate
-                    if (proposed.sumOf(String::length) <= MAX_PROMPT_SOURCE_CHARS) {
-                        accepted += candidate
+        val selected = buildList {
+            // Keep the lead segment as the topic anchor. A small model otherwise tends to prefer
+            // repeated meta-instructions containing words such as "핵심" or "해야".
+            add(segments.first())
+            rankedIndexes.asSequence()
+                .filter { it != 0 }
+                .map(segments::get)
+                .forEach { candidate ->
+                    if (
+                        size < MAX_EVIDENCE_SEGMENTS &&
+                        sumOf(String::length) + candidate.length <= MAX_PROMPT_SOURCE_CHARS
+                    ) {
+                        add(candidate)
                     }
                 }
-                accepted
-            }
-            .ifEmpty { mutableListOf(segments.first().take(MAX_PROMPT_SOURCE_CHARS)) }
+        }
 
         return GemmaSummaryInput(
             source = source,
@@ -124,6 +130,9 @@ internal object GemmaSummaryInputBuilder {
     private fun positionBonus(index: Int, lastIndex: Int): Int =
         if (index == 0 || index == lastIndex) POSITION_BONUS else 0
 
+    private fun leadTopicOverlapScore(text: String, leadTopics: Set<String>): Int =
+        meaningfulTokens(text).distinct().count(leadTopics::contains) * LEAD_TOPIC_TOKEN_BONUS
+
     internal fun normalize(value: String): String =
         value.replace(Regex("\\s+"), " ").trim()
 
@@ -131,6 +140,7 @@ internal object GemmaSummaryInputBuilder {
     private const val MAX_EVIDENCE_SEGMENTS = 2
     private const val MAX_PROMPT_SOURCE_CHARS = 700
     private const val POSITION_BONUS = 20
+    private const val LEAD_TOPIC_TOKEN_BONUS = 100
     private val TOKEN = Regex("[가-힣A-Za-z0-9]{2,}")
     private val NUMBER = Regex("\\d+")
     private val IMPORTANT_SIGNAL =

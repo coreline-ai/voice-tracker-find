@@ -19,6 +19,7 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
@@ -40,16 +41,22 @@ import androidx.compose.ui.unit.dp
 import com.thinktank.recorder.next.BuildConfig
 import com.thinktank.recorder.next.R
 import com.thinktank.recorder.next.ui.SettingsUiState
+import com.thinktank.recorder.next.ui.CloudAccountsUiState
 import com.thinktank.recorder.next.ui.common.SectionLabel
+import com.thinktank.recorder.ondevice.api.RemoteSummaryProvider
 
 @Composable
 fun SettingsScreen(
     state: SettingsUiState,
+    cloudAccounts: CloudAccountsUiState,
     onSaveServer: (String, String, String, Boolean) -> Unit,
     onChunkMinutes: (Int) -> Unit,
     onSchedule: (Boolean, Int, Int) -> Unit,
     onAutoSync: (Boolean, Boolean) -> Unit,
     onCheckUpdate: () -> Unit,
+    onConnectOAuth: (RemoteSummaryProvider) -> Unit,
+    onSelectOAuthProfile: (String) -> Unit,
+    onDisconnectOAuthProfile: (String) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     var serverUrl by remember { mutableStateOf(state.settings.serverUrl) }
@@ -161,6 +168,93 @@ fun SettingsScreen(
             enabled = state.settings.autoSync,
             onChecked = { onAutoSync(state.settings.autoSync, it) },
         )
+
+        Spacer(Modifier.height(28.dp))
+        SectionLabel("클라우드 요약 계정")
+        Text(
+            "활성 계정이 있으면 전사 텍스트만 해당 Provider로 보내 먼저 요약합니다. " +
+                "오디오 원본은 전송하지 않으며, 허용된 오류에서만 Gemma로 폴백합니다.",
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.padding(bottom = 10.dp),
+        )
+        cloudAccounts.accounts.providers.forEach { option ->
+            val providerProfiles = cloudAccounts.accounts.profiles.filter {
+                it.provider == option.provider
+            }
+            Column(
+                Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 6.dp)
+                    .clip(RoundedCornerShape(18.dp))
+                    .background(MaterialTheme.colorScheme.surface)
+                    .padding(14.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                ) {
+                    Column(Modifier.weight(1f)) {
+                        Text(option.provider.displayName(), style = MaterialTheme.typography.titleMedium)
+                        Text(
+                            when {
+                                !option.configured -> "빌드에 공개 client ID 필요"
+                                !option.modelConfigured -> "연결 가능 · 요약 model ID 설정 필요"
+                                else -> "연결·요약 설정 완료"
+                            },
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    OutlinedButton(
+                        onClick = { onConnectOAuth(option.provider) },
+                        enabled = option.configured && !cloudAccounts.busy,
+                    ) { Text("계정 연결") }
+                }
+                providerProfiles.forEach { profile ->
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        RadioButton(
+                            selected = cloudAccounts.accounts.activeProfileId == profile.profileId,
+                            onClick = { onSelectOAuthProfile(profile.profileId) },
+                            enabled = !profile.authenticationRequired && !cloudAccounts.busy,
+                        )
+                        Column(Modifier.weight(1f)) {
+                            Text(profile.displayName, style = MaterialTheme.typography.bodyMedium)
+                            Text(
+                                if (profile.authenticationRequired) "재인증 필요" else "연결됨",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = if (profile.authenticationRequired) {
+                                    MaterialTheme.colorScheme.error
+                                } else {
+                                    MaterialTheme.colorScheme.onSurfaceVariant
+                                },
+                            )
+                        }
+                        OutlinedButton(
+                            onClick = { onDisconnectOAuthProfile(profile.profileId) },
+                            enabled = !cloudAccounts.busy,
+                        ) { Text("해제") }
+                    }
+                }
+            }
+        }
+        cloudAccounts.message?.let { text ->
+            Text(
+                text,
+                style = MaterialTheme.typography.bodyMedium,
+                color = if ("못" in text || "필요" in text) {
+                    MaterialTheme.colorScheme.error
+                } else {
+                    MaterialTheme.colorScheme.primary
+                },
+                modifier = Modifier.padding(top = 6.dp),
+            )
+        }
 
         Spacer(Modifier.height(28.dp))
         SectionLabel("서버")
@@ -295,6 +389,12 @@ fun SettingsScreen(
         )
         Spacer(Modifier.height(48.dp))
     }
+}
+
+private fun RemoteSummaryProvider.displayName(): String = when (this) {
+    RemoteSummaryProvider.ANTHROPIC -> "Anthropic"
+    RemoteSummaryProvider.CODEX -> "Codex"
+    RemoteSummaryProvider.XAI -> "xAI"
 }
 
 @Composable

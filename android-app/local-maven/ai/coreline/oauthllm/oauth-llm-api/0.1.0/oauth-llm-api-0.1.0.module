@@ -1,0 +1,116 @@
+{
+  "formatVersion": "1.1",
+  "component": {
+    "group": "ai.coreline.oauthllm",
+    "module": "oauth-llm-api",
+    "version": "0.1.0",
+    "attributes": {
+      "org.gradle.status": "release"
+    }
+  },
+  "createdBy": {
+    "gradle": {
+      "version": "8.11.1"
+    }
+  },
+  "variants": [
+    {
+      "name": "apiElements",
+      "attributes": {
+        "org.gradle.category": "library",
+        "org.gradle.dependency.bundling": "external",
+        "org.gradle.jvm.environment": "standard-jvm",
+        "org.gradle.jvm.version": 17,
+        "org.gradle.libraryelements": "jar",
+        "org.gradle.usage": "java-api",
+        "org.jetbrains.kotlin.platform.type": "jvm"
+      },
+      "dependencies": [
+        {
+          "group": "org.jetbrains.kotlinx",
+          "module": "kotlinx-coroutines-core",
+          "version": {
+            "requires": "1.9.0"
+          }
+        },
+        {
+          "group": "org.jetbrains.kotlin",
+          "module": "kotlin-stdlib",
+          "version": {
+            "requires": "1.9.24"
+          }
+        }
+      ],
+      "files": [
+        {
+          "name": "oauth-llm-api-0.1.0.jar",
+          "url": "oauth-llm-api-0.1.0.jar",
+          "size": 40052,
+          "sha512": "091945a0d098f91d1e3bcf1d8d30fc96c0cc41391556a6469cc649d3822bc4d0c23a6f50697b0186b8c08f733aaaab46e6ff65efc5b165a5ba720b9f4a40109e",
+          "sha256": "6c4b7b58121e12e5101993bc25e233688be1a1ce639889b1875eaaaab9870de0",
+          "sha1": "1b167272cc2ae8ca54da78af379a581a75c4a4e0",
+          "md5": "7f609379f37bdb44c02003ccd432a11d"
+        }
+      ]
+    },
+    {
+      "name": "runtimeElements",
+      "attributes": {
+        "org.gradle.category": "library",
+        "org.gradle.dependency.bundling": "external",
+        "org.gradle.jvm.environment": "standard-jvm",
+        "org.gradle.jvm.version": 17,
+        "org.gradle.libraryelements": "jar",
+        "org.gradle.usage": "java-runtime",
+        "org.jetbrains.kotlin.platform.type": "jvm"
+      },
+      "dependencies": [
+        {
+          "group": "org.jetbrains.kotlinx",
+          "module": "kotlinx-coroutines-core",
+          "version": {
+            "requires": "1.9.0"
+          }
+        },
+        {
+          "group": "org.jetbrains.kotlin",
+          "module": "kotlin-stdlib",
+          "version": {
+            "requires": "1.9.24"
+          }
+        }
+      ],
+      "files": [
+        {
+          "name": "oauth-llm-api-0.1.0.jar",
+          "url": "oauth-llm-api-0.1.0.jar",
+          "size": 40052,
+          "sha512": "091945a0d098f91d1e3bcf1d8d30fc96c0cc41391556a6469cc649d3822bc4d0c23a6f50697b0186b8c08f733aaaab46e6ff65efc5b165a5ba720b9f4a40109e",
+          "sha256": "6c4b7b58121e12e5101993bc25e233688be1a1ce639889b1875eaaaab9870de0",
+          "sha1": "1b167272cc2ae8ca54da78af379a581a75c4a4e0",
+          "md5": "7f609379f37bdb44c02003ccd432a11d"
+        }
+      ]
+    },
+    {
+      "name": "sourcesElements",
+      "attributes": {
+        "org.gradle.category": "documentation",
+        "org.gradle.dependency.bundling": "external",
+        "org.gradle.docstype": "sources",
+        "org.gradle.usage": "java-runtime"
+      },
+      "files": [
+        {
+          "name": "oauth-llm-api-0.1.0-sources.jar",
+          "url": "oauth-llm-api-0.1.0-sources.jar",
+          "size": 4098,
+          "sha512": "54d15ec039bdb57d1e90425f73caae1a19b291df3fe4ecb2b67ff4b6c82f883952efb31f9b909997c1c24452a9dfb97038df953dae3685fdd05d9fdb035c41cd",
+          "sha256": "c63becd2d6aeb600ed44e6ec36b8c853f4a19b29bc4fd2c48ed67bb9e4781344",
+          "sha1": "12b819e2f9f4cabf367ff5aa6da5d58878576344",
+          "md5": "77c0466de5a6acc2c32683124aff4db5"
+        }
+      ]
+    }
+  ]
+}

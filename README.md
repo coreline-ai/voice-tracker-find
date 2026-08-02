@@ -52,8 +52,23 @@
 |---|---|
 | 녹음 | 음성 메모 녹음, 재생, 기기 저장공간 확인 |
 | 노트 | 서버가 정리한 노트와 원문 전사 확인, 수동 동기화 |
-| 설정 | 녹음 청크, 예약 시간, 자동 동기화 및 Wi-Fi 우선 정책 설정 |
-| 로컬 AI | 실시간 시스템 STT와 완료 녹음 파일용 로컬 STT 설정 |
+| 설정 | 녹음 청크, 동기화 정책, OAuth 클라우드 요약 계정 연결·활성 선택 |
+| 로컬 AI | 실시간 시스템 STT, 완료 녹음용 SenseVoice STT, Gemma 3 1B 로컬 요약 |
+
+OAuth 계정을 활성화하면 요약할 전사 텍스트만 사용자가 선택한 Provider로 전송하며 오디오
+원본은 전송하지 않는다. 허용된 원격 실패에서만 Gemma로 폴백하고 다른 Provider로 자동
+전환하지 않는다. 계정을 연결하지 않은 로컬 AI의 파일 전사와 Gemma 추론은 음성·전사문을
+서버로 보내지 않는다. SenseVoice 모델은
+사용자가 요청한 경우에만 Wi-Fi로 받고, Gemma는 공식 모델 파일을 직접 가져와 설치한다.
+
+OAuth 클라우드 요약 구현과 자동 검증은 완료되었고, 실계정 E2E는 사용자 결정에 따라
+`DEFERRED_BY_OWNER` 상태로 보류되어 있다.
+
+- [통합·빌드 설정](android-app/docs/oauth-cloud-summary.md)
+- [현재 인수인계 상태와 재개 체크리스트](docs/qa/oauth-cloud-summary-handoff.md)
+- [실계정 E2E 실행 런북](docs/qa/oauth-llm-e2e-runbook.md)
+현재 파일 분석은 최대 2시간까지 허용하지만 1시간·2시간 실음원 장기 안정성 검증은 진행
+중이므로 완료된 출시 보장으로 간주하지 않는다.
 
 > 모든 화면은 삼성 실기기에서 동일한 `1080 × 2340` 해상도로 캡처했습니다.
 
@@ -61,8 +76,12 @@
 
 ```bash
 uv venv
-uv pip install -e ".[dev]"
+uv sync --extra dev --extra server --extra tls
 ```
+
+`server`는 Cloud API·PostgreSQL·GCS·HTTP/2 계약 테스트 의존성을, `tls`는 LAN 수신기
+TLS 회귀 의존성을 포함한다. 애플리케이션 런타임만 설치할 때는 아래 운영 환경 extras를
+사용한다.
 
 ## 설치 (운영 환경)
 

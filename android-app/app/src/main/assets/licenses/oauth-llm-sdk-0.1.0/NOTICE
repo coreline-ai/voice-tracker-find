@@ -1,0 +1,13 @@
+OAuth LLM SDK for Android
+Copyright (c) 2026 [COPYRIGHT HOLDER LEGAL NAME — TO BE CONFIRMED BEFORE RELEASE]
+
+This SDK is independently maintained and distributed under the proprietary
+terms in LICENSE. It is not sponsored, endorsed, or distributed by Anthropic,
+OpenAI, or xAI. Provider names are used only to identify interoperable services.
+
+An application integrating this SDK is responsible for its own provider
+registrations, user disclosures, terms compliance, privacy obligations, and
+local fallback policy. No provider credential is bundled with the SDK.
+
+See THIRD_PARTY_NOTICES.md for third-party software and PROVENANCE.md for the
+clean-room/reference classification used by this repository.

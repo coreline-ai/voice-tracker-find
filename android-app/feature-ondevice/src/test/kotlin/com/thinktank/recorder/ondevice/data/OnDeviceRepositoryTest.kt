@@ -12,6 +12,7 @@ import com.thinktank.recorder.ondevice.api.SttDiagnostics
 import com.thinktank.recorder.ondevice.api.SttQualityStatus
 import com.thinktank.recorder.ondevice.api.SttResult
 import com.thinktank.recorder.ondevice.api.SttSegmentDiagnostic
+import com.thinktank.recorder.ondevice.api.SummaryEngineType
 import com.thinktank.recorder.ondevice.api.TranscriptSegment
 import com.thinktank.recorder.ondevice.recording.LocalAudioFileManager
 import java.io.File
@@ -110,6 +111,61 @@ class OnDeviceRepositoryTest : Closeable {
         assertEquals("핵심 내용", stored.summary)
         assertEquals("확인하기", stored.actionItems)
         assertEquals("GEMMA_SUMMARY_KO", stored.actualSummaryModelId)
+    }
+
+    @Test
+    fun oauthSummaryPersistsProviderUsageAndRemoteDataPolicy() = runBlocking {
+        val repository = OnDeviceRepository(database.sessionDao(), clock = { now++ })
+        val id = "oauth-summary"
+        repository.begin(
+            id = id,
+            sttEngine = SttEngineType.ANDROID_ON_DEVICE,
+            state = OnDeviceSessionState.TRANSCRIPT_READY,
+            operationToken = null,
+        )
+        repository.saveTranscript(id, "OAuth 계정으로 요약할 전사")
+        assertTrue(
+            repository.startOperation(
+                id = id,
+                allowedStates = setOf(OnDeviceSessionState.TRANSCRIPT_READY),
+                targetState = OnDeviceSessionState.SUMMARIZING,
+                token = "oauth-token",
+            ),
+        )
+
+        assertTrue(
+            repository.saveSummary(
+                id = id,
+                token = "oauth-token",
+                result = LocalSummary(
+                    title = "원격 요약",
+                    bullets = listOf("핵심"),
+                    actionItems = emptyList(),
+                    engine = SummaryEngineType.CODEX_OAUTH,
+                    requestedEngine = SummaryEngineType.CODEX_OAUTH,
+                    sourceHash = "source-hash",
+                    validationStatus = "VALID",
+                    requestedModelId = "configured-model",
+                    actualModelId = "configured-model",
+                    runtimeType = "OAUTH_CLOUD",
+                    durationMs = 45,
+                    providerId = "codex",
+                    providerRequestId = "request-safe-id",
+                    inputTokens = 30,
+                    outputTokens = 12,
+                    dataPolicy = OnDeviceSessionEntity.DATA_POLICY_REMOTE_TRANSCRIPT,
+                ),
+            ),
+        )
+
+        val stored = requireNotNull(database.sessionDao().get(id))
+        assertEquals("CODEX_OAUTH", stored.summaryEngine)
+        assertEquals("CODEX_OAUTH", stored.requestedSummaryEngine)
+        assertEquals("codex", stored.summaryProviderId)
+        assertEquals("request-safe-id", stored.summaryProviderRequestId)
+        assertEquals(30L, stored.summaryInputTokens)
+        assertEquals(12L, stored.summaryOutputTokens)
+        assertEquals(OnDeviceSessionEntity.DATA_POLICY_REMOTE_TRANSCRIPT, stored.dataPolicy)
     }
 
     @Test

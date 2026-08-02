@@ -21,7 +21,9 @@ internal object GemmaSummaryParser {
             .distinct()
         val bullet = candidates
             .mapNotNull { candidate ->
-                validateAndScore(candidate, normalizedSource)?.let { score -> candidate to score }
+                validateAndScore(candidate, normalizedSource)?.let { score ->
+                    candidate to score
+                }
             }
             .maxWithOrNull(
                 compareBy<Pair<String, Int>> { it.second }
@@ -107,9 +109,13 @@ internal object GemmaSummaryParser {
         }
     }
 
-    private fun validateAndScore(candidate: String, source: String): Int? {
+    private fun validateAndScore(
+        candidate: String,
+        source: String,
+    ): Int? {
         if (candidate.length !in MIN_BULLET_CHARS..MAX_BULLET_CHARS) return null
         if (!COMPLETE_ENDING.containsMatchIn(candidate.trim())) return null
+        if (DETACHED_SENTENCE_ENDING.containsMatchIn(candidate.trim())) return null
         if (candidate.contains("...") || candidate.contains('…')) return null
         if (NUMBER.findAll(candidate).map { it.value }.any { it !in source }) return null
         val sourceLower = source.lowercase()
@@ -126,7 +132,39 @@ internal object GemmaSummaryParser {
         val matches = tokens.count { tokenAppears(it, source) }
         val ratio = matches.toDouble() / tokens.size.toDouble()
         if (matches < 2 || ratio < MIN_EVIDENCE_RATIO) return null
-        return matches * 100 + (ratio * 100).toInt()
+        val salientTopics = salientTopicTokens(source)
+        val topicMatches = salientTopics.count { tokenAppears(it, candidate) }
+        val requiredTopicMatches = minOf(MIN_SALIENT_TOPIC_MATCHES, salientTopics.size)
+        if (
+            source.length >= MIN_SOURCE_CHARS_FOR_TOPIC_GATE &&
+            salientTopics.isNotEmpty() &&
+            topicMatches < requiredTopicMatches
+        ) {
+            return null
+        }
+        return matches * 100 + topicMatches * 200 + (ratio * 100).toInt()
+    }
+
+    /**
+     * Selects a small deterministic set from the complete source of record, rather than the
+     * prompt's reduced evidence. Frequency is preferred, while first appearance keeps
+     * equal-frequency inputs stable.
+     */
+    private fun salientTopicTokens(value: String): List<String> {
+        val tokens = TOKEN.findAll(value.lowercase())
+            .map { normalizeToken(it.value) }
+            .filter { it.length >= 2 }
+            .filterNot { it in STOP_WORDS || it in GENERIC_TOPIC_TOKENS }
+            .toList()
+        if (tokens.isEmpty()) return emptyList()
+        val counts = tokens.groupingBy { it }.eachCount()
+        val firstIndex = tokens.withIndex().associate { it.value to it.index }
+        return tokens.distinct()
+            .sortedWith(
+                compareByDescending<String> { counts.getValue(it) }
+                    .thenBy { firstIndex.getValue(it) },
+            )
+            .take(MAX_SALIENT_TOPICS)
     }
 
     private fun deterministicTitle(summary: String, evidence: List<String>): String {
@@ -188,18 +226,22 @@ internal object GemmaSummaryParser {
             }
         }
 
-    internal const val VALIDATION_STATUS = "PASSED_GROUNDED_V4"
+    internal const val VALIDATION_STATUS = "PASSED_GROUNDED_V6"
     private const val MAX_TITLE_CHARS = 28
     private const val MIN_BULLET_CHARS = 10
     private const val MAX_BULLET_CHARS = 80
     private const val TITLE_TOKEN_COUNT = 3
     private const val MIN_EVIDENCE_RATIO = 0.30
+    private const val MIN_SOURCE_CHARS_FOR_TOPIC_GATE = 80
+    private const val MIN_SALIENT_TOPIC_MATCHES = 2
+    private const val MAX_SALIENT_TOPICS = 8
     private val TOKEN = Regex("[가-힣A-Za-z0-9]{2,}")
     private val NUMBER = Regex("""\d+(?:[.,]\d+)?""")
     private val LATIN = Regex("[A-Za-z][A-Za-z0-9_-]+")
     private val COMPLETE_ENDING = Regex(
         """(?:다|요|함|임|음|됨|한다|했다|된다|이다|였다|있다|없다)[.!?。！？]?$""",
     )
+    private val DETACHED_SENTENCE_ENDING = Regex("""\s[다요함임음][.!?。！？]?$""")
     private val COMPLETE_SENTENCE = Regex(
         """.{10,80}?(?:합니다|됩니다|입니다|했습니다|한다|했다|된다|이다|있다|없다|해요|돼요|예요|이에요|다|요)[.!?。！？]?""",
     )
@@ -280,5 +322,33 @@ internal object GemmaSummaryParser {
         "것이다",
         "거예요",
         "생각",
+    )
+    private val GENERIC_TOPIC_TOKENS = setOf(
+        "담당자",
+        "관련",
+        "관련하여",
+        "여부",
+        "보고",
+        "문제",
+        "발견",
+        "기록",
+        "원인",
+        "수정",
+        "단계",
+        "근거",
+        "사용",
+        "제목",
+        "핵심",
+        "생성",
+        "입력",
+        "출력",
+        "숫자",
+        "나오면",
+        "결과",
+        "저장",
+        "다시",
+        "확인",
+        "정확하게",
+        "설명",
     )
 }

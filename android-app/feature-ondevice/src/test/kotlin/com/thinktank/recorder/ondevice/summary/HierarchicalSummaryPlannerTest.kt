@@ -26,11 +26,16 @@ class HierarchicalSummaryPlannerTest {
 
     @Test
     fun boundaryInputsNeverExceedConfiguredLimit() {
-        listOf(699, 700, 701, 10_000, 22_400, 44_800).forEach { chars ->
+        listOf(1, 699, 700, 701, 10_000, 22_400, 44_800).forEach { chars ->
             val duration = (chars * 160L).coerceAtLeast(1_000L)
             val tree = buildTree(segmentsFor(chars, duration))
             assertTrue("chars=$chars", tree.all { it.inputPayload.length <= 700 })
         }
+    }
+
+    @Test(expected = IllegalArgumentException::class)
+    fun emptyTranscriptIsRejectedBeforePlanning() {
+        planner.planLeafNodes(JOB_ID, emptyList())
     }
 
     @Test

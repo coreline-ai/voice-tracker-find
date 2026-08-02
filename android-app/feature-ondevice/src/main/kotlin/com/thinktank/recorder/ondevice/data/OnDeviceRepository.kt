@@ -304,13 +304,20 @@ class OnDeviceRepository(
     ) == 1
 
     suspend fun saveGemmaSummary(id: String, token: String, result: LocalSummary): Boolean {
+        return saveSummary(id, token, result)
+    }
+
+    suspend fun saveSummary(id: String, token: String, result: LocalSummary): Boolean {
         val now = clock()
-        return dao.saveGemmaSummaryForOperation(
+        return dao.saveSummaryForOperation(
             id = id,
             token = token,
             title = result.title,
             summary = result.bullets.joinToString("\n"),
             actionItems = result.actionItems.joinToString("\n"),
+            actualEngine = result.engine.name,
+            requestedEngine = result.requestedEngine.name,
+            fallbackReason = result.fallbackReason,
             modelVersion = result.modelVersion,
             validationStatus = result.validationStatus,
             requestedModelId = result.requestedModelId,
@@ -320,8 +327,13 @@ class OnDeviceRepository(
             durationMs = result.durationMs,
             inputChars = result.inputChars,
             outputChars = result.outputChars,
+            providerId = result.providerId,
+            providerRequestId = result.providerRequestId,
+            inputTokens = result.inputTokens,
+            outputTokens = result.outputTokens,
             sourceHash = result.sourceHash,
             generatedAt = now,
+            dataPolicy = result.dataPolicy,
             now = now,
         ) == 1
     }

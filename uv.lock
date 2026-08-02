@@ -2112,6 +2112,7 @@ audio = [
 ]
 cloud-api = [
     { name = "google-cloud-storage" },
+    { name = "h2" },
     { name = "hypercorn" },
     { name = "psycopg", extra = ["binary"] },
     { name = "sqlalchemy" },
@@ -2121,6 +2122,7 @@ dev = [
     { name = "httpx" },
     { name = "openapi-spec-validator" },
     { name = "pytest" },
+    { name = "pyyaml" },
     { name = "ruff" },
 ]
 gpu = [
@@ -2134,6 +2136,7 @@ server = [
     { name = "alembic" },
     { name = "google-cloud-storage" },
     { name = "google-cloud-tasks" },
+    { name = "h2" },
     { name = "hypercorn" },
     { name = "psycopg", extra = ["binary"] },
     { name = "sqlalchemy" },
@@ -2153,6 +2156,8 @@ requires-dist = [
     { name = "google-cloud-storage", marker = "extra == 'cloud-api'", specifier = ">=3,<4" },
     { name = "google-cloud-storage", marker = "extra == 'server'", specifier = ">=3,<4" },
     { name = "google-cloud-tasks", marker = "extra == 'server'", specifier = ">=2,<3" },
+    { name = "h2", marker = "extra == 'cloud-api'", specifier = ">=4.2,<5" },
+    { name = "h2", marker = "extra == 'server'", specifier = ">=4.2,<5" },
     { name = "httpx", marker = "extra == 'dev'", specifier = ">=0.28,<1" },
     { name = "hypercorn", marker = "extra == 'cloud-api'", specifier = ">=0.17.3,<0.18" },
     { name = "hypercorn", marker = "extra == 'server'", specifier = ">=0.17.3,<0.18" },
@@ -2164,6 +2169,7 @@ requires-dist = [
     { name = "pydub", marker = "extra == 'audio'", specifier = ">=0.25.1" },
     { name = "pytest", marker = "extra == 'dev'", specifier = ">=7.4.3" },
     { name = "python-dotenv", specifier = ">=1.0.0" },
+    { name = "pyyaml", marker = "extra == 'dev'", specifier = ">=6,<7" },
     { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.1.9" },
     { name = "silero-vad", marker = "extra == 'audio'", specifier = ">=5.1" },
     { name = "sqlalchemy", marker = "extra == 'cloud-api'", specifier = ">=2.0,<3" },

@@ -17,6 +17,7 @@ import com.thinktank.recorder.ondevice.data.OnDeviceProcessingJobEntity
 import com.thinktank.recorder.ondevice.modelpack.ModelCatalog
 import com.thinktank.recorder.ondevice.modelpack.ModelDeleteScope
 import com.thinktank.recorder.ondevice.modelpack.ModelId
+import com.thinktank.recorder.ondevice.modelpack.LegacyModelStorage
 import com.thinktank.recorder.ondevice.processing.LongAudioJobState
 import com.thinktank.recorder.ondevice.processing.LongAudioStage
 import org.junit.Rule
@@ -77,6 +78,35 @@ class OnDeviceScreenTest {
         composeRule.onAllNodesWithText("이전 요약 제목").assertCountEquals(0)
         composeRule.onAllNodesWithText("이전 요약 본문").assertCountEquals(0)
         composeRule.onAllNodesWithText("이전 할 일").assertCountEquals(0)
+    }
+
+    @Test
+    fun hierarchicalSummaryIsRenderedAsOverallAndSectionHighlights() {
+        render(
+            OnDeviceUiState(
+                sessions = listOf(
+                    OnDeviceSessionEntity(
+                        id = "hierarchical",
+                        createdAt = 1,
+                        updatedAt = 1,
+                        state = OnDeviceSessionState.COMPLETE.name,
+                        sttEngine = SttEngineType.SENSEVOICE_LOCAL_FILE.name,
+                        summaryEngine = "GEMMA_LOCAL",
+                        transcript = "장시간 녹음의 전체 전사 원문입니다.",
+                        title = "출시 준비 회의",
+                        summary = "출시 일정과 검증 기준을 확정했습니다.\n실기기 테스트 순서를 결정했습니다.",
+                        summaryValidationStatus = "PASSED_HIERARCHICAL_V2",
+                    ),
+                ),
+            ),
+        )
+
+        composeRule.onNodeWithTag("ondevice-scroll").performScrollToIndex(7)
+        composeRule.onNodeWithText("Gemma 요약 기록").assertIsDisplayed()
+        composeRule.onNodeWithText("Gemma 3 1B 계층형 요약 · 전체 범위").assertIsDisplayed()
+        composeRule.onNodeWithText("전체 핵심").assertIsDisplayed()
+        composeRule.onNodeWithText("구간 핵심").assertIsDisplayed()
+        composeRule.onNodeWithText("• 출시 일정과 검증 기준을 확정했습니다.").assertIsDisplayed()
     }
 
     @Test
@@ -171,6 +201,28 @@ class OnDeviceScreenTest {
     }
 
     @Test
+    fun legacyModelCleanupRequiresConfirmation() {
+        var deleted = false
+        render(
+            state = OnDeviceUiState(
+                legacyModelStorage = LegacyModelStorage(entryCount = 2, bytes = 3L * 1024 * 1024),
+            ),
+            onDeleteLegacyModels = { deleted = true },
+        )
+
+        composeRule.onNodeWithTag("ondevice-scroll").performScrollToIndex(5)
+        composeRule.onNodeWithTag("legacy-model-storage-card").assertIsDisplayed()
+        composeRule.onNodeWithText("정리").performClick()
+        composeRule.onNodeWithText("이전 모델 파일 정리").assertIsDisplayed()
+        composeRule.onNodeWithText("취소").performClick()
+        composeRule.runOnIdle { check(!deleted) }
+
+        composeRule.onNodeWithText("정리").performClick()
+        composeRule.onNodeWithText("이전 파일 삭제").performClick()
+        composeRule.runOnIdle { check(deleted) }
+    }
+
+    @Test
     fun rendersFirstTabRecordingImportWithSenseVoiceInstallGate() {
         render(
             OnDeviceUiState(
@@ -202,6 +254,7 @@ class OnDeviceScreenTest {
     private fun render(
         state: OnDeviceUiState,
         onDeleteModel: (ModelId, ModelDeleteScope) -> Unit = { _, _ -> },
+        onDeleteLegacyModels: () -> Unit = {},
     ) {
         composeRule.setContent {
             MaterialTheme {
@@ -223,6 +276,7 @@ class OnDeviceScreenTest {
                     onPauseModel = {},
                     onRestoreModel = {},
                     onDeleteModel = onDeleteModel,
+                    onDeleteLegacyModels = onDeleteLegacyModels,
                 )
             }
         }

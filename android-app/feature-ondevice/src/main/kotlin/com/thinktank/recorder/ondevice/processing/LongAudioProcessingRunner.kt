@@ -18,8 +18,11 @@ import com.thinktank.recorder.ondevice.recording.LocalAudioFileManager
 import com.thinktank.recorder.ondevice.stt.SenseVoiceFileSpeechEngine
 import com.thinktank.recorder.ondevice.stt.SttResumeState
 import com.thinktank.recorder.ondevice.summary.GemmaSummaryEngine
+import com.thinktank.recorder.ondevice.summary.HierarchicalSummaryGrounding
+import com.thinktank.recorder.ondevice.summary.HierarchicalSummaryProjection
 import com.thinktank.recorder.ondevice.summary.HierarchicalSummaryPlanner
 import com.thinktank.recorder.ondevice.summary.HierarchyCoverageValidator
+import com.thinktank.recorder.ondevice.summary.SummaryEvidenceCandidate
 import com.thinktank.recorder.ondevice.summary.SummaryNodeReference
 import com.thinktank.recorder.ondevice.summary.SummaryNodePlan
 import java.io.File
@@ -184,6 +187,11 @@ class LongAudioProcessingRunner(
                     totalSummaryNodes = jobs.allNodes(job.id).size,
                     currentSummaryLevel = level,
                 )
+                val lowerLevelNodes = if (level == 0) {
+                    emptyList()
+                } else {
+                    jobs.nodesAtLevel(job.id, level - 1)
+                }
                 nodes.filter { it.state != "PASSED" }.forEach { node ->
                     ensureRunnable(job.id)
                     val startedAt = System.currentTimeMillis()
@@ -211,14 +219,53 @@ class LongAudioProcessingRunner(
                         throw error
                     }
                     val now = System.currentTimeMillis()
+                    val generatedText = generated.bullets.joinToString("\n").trim()
+                    val grounding = HierarchicalSummaryGrounding.evaluate(
+                        summary = generatedText,
+                        candidates = evidenceCandidates(
+                            node = node,
+                            sourceSegments = sourceSegments,
+                            lowerLevelNodes = lowerLevelNodes,
+                        ),
+                    )
+                    if (!grounding.passed) {
+                        jobs.updateNode(
+                            node.copy(
+                                state = "QUALITY_REJECTED",
+                                attemptCount = node.attemptCount + 1,
+                                title = generated.title,
+                                summary = generatedText,
+                                evidenceChildIds = grounding.evidenceIds.joinToString(
+                                    HierarchicalSummaryPlanner.CHILD_SEPARATOR,
+                                ),
+                                outputHash = sha256(generatedText),
+                                failureCode = "SUMMARY_NODE_UNGROUNDED",
+                                violationCodes = grounding.violationCodes.joinToString(","),
+                                modelVersion = generated.modelVersion,
+                                runtimeType = generated.runtimeType,
+                                generationProfile = generated.generationProfile,
+                                durationMs = generated.durationMs,
+                                startedAt = startedAt,
+                                completedAt = now,
+                                updatedAt = now,
+                            ),
+                        )
+                        throw LongAudioProcessingException(
+                            code = "SUMMARY_NODE_UNGROUNDED",
+                            message = "하위 원문에 근거하지 않은 요약은 최종 결과로 사용하지 않습니다.",
+                            stage = OnDeviceFailureStage.SUMMARIZE,
+                        )
+                    }
                     jobs.updateNode(
                         node.copy(
                             state = "PASSED",
                             attemptCount = node.attemptCount + 1,
                             title = generated.title,
-                            summary = generated.bullets.joinToString("\n"),
-                            evidenceChildIds = node.childNodeIds,
-                            outputHash = sha256(generated.bullets.joinToString("\n")),
+                            summary = generatedText,
+                            evidenceChildIds = grounding.evidenceIds.joinToString(
+                                HierarchicalSummaryPlanner.CHILD_SEPARATOR,
+                            ),
+                            outputHash = sha256(generatedText),
                             failureCode = null,
                             violationCodes = null,
                             modelVersion = generated.modelVersion,
@@ -310,20 +357,27 @@ class LongAudioProcessingRunner(
                 token = summaryToken,
             ),
         ) { "최종 계층형 요약을 session에 적용할 수 없습니다." }
+        val projection = HierarchicalSummaryProjection.build(
+            rootSummary = finalRoot.summary,
+            sectionSummaries = allNodes
+                .filter { it.level == 0 && it.state == "PASSED" }
+                .sortedBy(OnDeviceSummaryNodeEntity::ordinal)
+                .map(OnDeviceSummaryNodeEntity::summary),
+        )
         val finalSummary = LocalSummary(
             title = finalRoot.title,
-            bullets = listOf(finalRoot.summary),
+            bullets = projection.bullets,
             actionItems = emptyList(),
             sourceHash = sha256(currentSession.transcript),
             modelVersion = finalRoot.modelVersion,
-            validationStatus = "PASSED_HIERARCHICAL_V1",
+            validationStatus = "PASSED_HIERARCHICAL_V2",
             requestedModelId = "GEMMA_SUMMARY_KO",
             actualModelId = "GEMMA_SUMMARY_KO",
             runtimeType = finalRoot.runtimeType,
             generationProfile = finalRoot.generationProfile,
             durationMs = allNodes.sumOf { it.durationMs ?: 0L },
             inputChars = finalRoot.inputPayload.length,
-            outputChars = finalRoot.summary.length,
+            outputChars = projection.bullets.joinToString("\n").length,
         )
         check(
             jobs.finalizeSuccess(
@@ -421,6 +475,30 @@ class LongAudioProcessingRunner(
             summary = summary,
             sourceHash = sourceHash,
         )
+
+    private fun evidenceCandidates(
+        node: OnDeviceSummaryNodeEntity,
+        sourceSegments: List<com.thinktank.recorder.ondevice.data.OnDeviceTranscriptSegmentEntity>,
+        lowerLevelNodes: List<OnDeviceSummaryNodeEntity>,
+    ): List<SummaryEvidenceCandidate> {
+        val childIds = node.childNodeIds
+            .split(HierarchicalSummaryPlanner.CHILD_SEPARATOR)
+            .filter(String::isNotBlank)
+        if (node.level == 0) {
+            val segmentsById = sourceSegments.associateBy { it.id }
+            return childIds.mapNotNull { childId ->
+                segmentsById[childId.substringBefore('#')]?.let { segment ->
+                    SummaryEvidenceCandidate(id = childId, text = segment.text)
+                }
+            }
+        }
+        val nodesById = lowerLevelNodes.associateBy(OnDeviceSummaryNodeEntity::id)
+        return childIds.mapNotNull { childId ->
+            nodesById[childId]?.let { child ->
+                SummaryEvidenceCandidate(id = childId, text = child.summary)
+            }
+        }
+    }
 
     private fun sha256(value: String): String =
         MessageDigest.getInstance("SHA-256")

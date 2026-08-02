@@ -33,11 +33,13 @@ class ModelStoreArtifactTest {
             archiveRoot = "",
         )
         store.delete(descriptor.id)
+        store.deleteLegacyStorage()
     }
 
     @After
     fun tearDown() {
         store.delete(descriptor.id)
+        store.deleteLegacyStorage()
     }
 
     @Test
@@ -74,5 +76,43 @@ class ModelStoreArtifactTest {
 
         assertFalse(store.installDir(descriptor.id).exists())
         assertFalse(artifact.exists())
+    }
+
+    @Test
+    fun legacyCleanupTargetsOnlyFixedQwenAndExaonePaths() {
+        val root = store.modelRoot()
+        val qwenInstalled = java.io.File(root, "qwen_summary_ko/model.gguf").apply {
+            parentFile?.mkdirs()
+            writeText("qwen-old")
+        }
+        val exaoneArtifact = java.io.File(
+            root,
+            ".artifacts/exaone_summary_ko/exaone-old.gguf",
+        ).apply {
+            parentFile?.mkdirs()
+            writeText("exaone-old")
+        }
+        val qwenPartial = java.io.File(root, ".downloads/qwen_summary_ko.part").apply {
+            parentFile?.mkdirs()
+            writeText("partial")
+        }
+        val currentGemma = java.io.File(root, "gemma_summary_ko/current.keep").apply {
+            parentFile?.mkdirs()
+            writeText("keep")
+        }
+
+        val before = store.legacyStorage()
+        assertEquals(3, before.entryCount)
+        assertEquals(qwenInstalled.length() + exaoneArtifact.length() + qwenPartial.length(), before.bytes)
+
+        assertEquals(before.bytes, store.deleteLegacyStorage())
+        assertFalse(qwenInstalled.exists())
+        assertFalse(exaoneArtifact.exists())
+        assertFalse(qwenPartial.exists())
+        assertTrue(currentGemma.isFile)
+        assertEquals(LegacyModelStorage(), store.legacyStorage())
+        assertEquals(0L, store.deleteLegacyStorage())
+
+        currentGemma.delete()
     }
 }

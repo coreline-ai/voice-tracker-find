@@ -148,6 +148,7 @@ ksp {
 
 dependencies {
     implementation(project(":feature-ondevice"))
+    implementation(project(":feature-cloud-summary"))
 
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.activity.compose)
@@ -250,6 +251,18 @@ val verifyBundledFontLicenses by tasks.registering {
     }
 }
 
+val verifyOAuthLlmNotices by tasks.registering {
+    group = "verification"
+    description = "Verify the proprietary OAuth LLM SDK license and provenance are packaged."
+    doLast {
+        val directory = file("src/main/assets/licenses/oauth-llm-sdk-0.1.0")
+        listOf("LICENSE", "NOTICE", "THIRD_PARTY_NOTICES.md", "PROVENANCE.md").forEach { name ->
+            val notice = directory.resolve(name)
+            check(notice.isFile && notice.length() > 0) { "OAuth LLM SDK notice is missing: $name" }
+        }
+    }
+}
+
 tasks.named("preBuild").configure {
-    dependsOn(verifyRasterAssets, verifyBundledFontLicenses)
+    dependsOn(verifyRasterAssets, verifyBundledFontLicenses, verifyOAuthLlmNotices)
 }

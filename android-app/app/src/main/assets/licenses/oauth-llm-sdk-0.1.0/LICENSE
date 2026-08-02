@@ -1,0 +1,23 @@
+PROPRIETARY SOFTWARE LICENSE
+
+Copyright (c) 2026 [COPYRIGHT HOLDER LEGAL NAME — TO BE CONFIRMED BEFORE RELEASE]
+All rights reserved.
+
+This software and its associated documentation are proprietary and confidential.
+No permission is granted to use, copy, modify, merge, publish, distribute,
+sublicense, sell, reverse engineer, or create derivative works from any portion
+of the software except under a separate written agreement signed by the
+copyright holder.
+
+Possession of a copy does not transfer title or any intellectual-property
+right. The software is provided "AS IS", without warranties of any kind, to the
+maximum extent permitted by applicable law. In no event shall the copyright
+holder be liable for any claim, damages, or other liability arising from the
+software except as required by applicable law or an executed written agreement.
+
+Third-party components remain subject to their respective licenses. Those
+components and licenses are identified in THIRD_PARTY_NOTICES.md.
+
+RELEASE BLOCKER: replace the bracketed copyright-holder placeholder with the
+owner's full legal name before distributing an artifact outside an authorized
+private evaluation.

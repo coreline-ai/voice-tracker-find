@@ -282,6 +282,45 @@ class OnDeviceDatabaseMigrationTest {
         }
     }
 
+    @Test
+    fun migration9To10AddsOAuthSummaryProvenanceWithoutChangingExistingRows() {
+        helper.createDatabase(DATABASE_NAME_V10, 9).use { db ->
+            db.execSQL(
+                """
+                INSERT INTO ondevice_sessions (
+                    id, createdAt, updatedAt, state, sttEngine, summaryEngine,
+                    transcript, title, summary, actionItems, sourceType,
+                    summarySourceHash, dataPolicy
+                ) VALUES (
+                    'legacy-v9', 1, 2, 'COMPLETE', 'SENSEVOICE_LOCAL_FILE',
+                    'GEMMA_LOCAL', '보존할 전사', '기존 제목', '기존 요약', '',
+                    'MAIN_RECORDER_CHUNK', 'source-hash', 'LOCAL_ONLY'
+                )
+                """.trimIndent(),
+            )
+        }
+
+        helper.runMigrationsAndValidate(
+            DATABASE_NAME_V10,
+            10,
+            true,
+            OnDeviceDatabase.MIGRATION_9_10,
+        ).use { db ->
+            db.query(
+                """
+                SELECT transcript, summary, summaryProviderId, summaryProviderRequestId,
+                       summaryInputTokens, summaryOutputTokens
+                FROM ondevice_sessions WHERE id = 'legacy-v9'
+                """.trimIndent(),
+            ).use { cursor ->
+                assertTrue(cursor.moveToFirst())
+                assertTrue(cursor.getString(0) == "보존할 전사")
+                assertTrue(cursor.getString(1) == "기존 요약")
+                for (index in 2..5) assertTrue(cursor.isNull(index))
+            }
+        }
+    }
+
     private companion object {
         const val DATABASE_NAME = "ondevice-migration-test"
         const val DATABASE_NAME_V5 = "ondevice-migration-v5-test"
@@ -289,5 +328,6 @@ class OnDeviceDatabaseMigrationTest {
         const val DATABASE_NAME_V7 = "ondevice-migration-v7-test"
         const val DATABASE_NAME_V8 = "ondevice-migration-v8-test"
         const val DATABASE_NAME_V9 = "ondevice-migration-v9-test"
+        const val DATABASE_NAME_V10 = "ondevice-migration-v10-test"
     }
 }

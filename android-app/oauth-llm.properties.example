@@ -1,0 +1,10 @@
+# OAuth LLM public-client configuration template.
+# Append only the entries you need to the ignored android-app/local.properties file.
+# Never add a client secret, token, authorization code, PKCE value, cookie, or account credential.
+
+THINKTANK_ANTHROPIC_CLIENT_ID=
+THINKTANK_ANTHROPIC_MODEL=
+THINKTANK_CODEX_CLIENT_ID=
+THINKTANK_CODEX_MODEL=
+THINKTANK_XAI_CLIENT_ID=
+THINKTANK_XAI_MODEL=

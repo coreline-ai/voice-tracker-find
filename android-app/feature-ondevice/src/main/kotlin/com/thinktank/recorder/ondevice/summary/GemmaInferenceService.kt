@@ -207,7 +207,7 @@ class GemmaInferenceService : Service() {
 
     private companion object {
         const val MAX_INPUT_CHARS = 10_000
-        const val GENERATION_PROFILE = "gemma3-1b-litert-cpu8-grounded-v4"
+        const val GENERATION_PROFILE = "gemma3-1b-litert-cpu8-grounded-v6"
         const val SYSTEM_PROMPT =
             "한국어 전사 원문에 근거한 짧은 요약만 생성하고 JSON 객체 하나만 출력하세요."
     }

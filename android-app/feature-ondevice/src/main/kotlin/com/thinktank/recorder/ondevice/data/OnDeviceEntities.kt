@@ -41,6 +41,10 @@ data class OnDeviceSessionEntity(
     val summaryDurationMs: Long? = null,
     val summaryInputChars: Int? = null,
     val summaryOutputChars: Int? = null,
+    val summaryProviderId: String? = null,
+    val summaryProviderRequestId: String? = null,
+    val summaryInputTokens: Long? = null,
+    val summaryOutputTokens: Long? = null,
     val sttInputDurationMs: Long? = null,
     val sttProcessedThroughMs: Long? = null,
     val sttSegmentCount: Int? = null,
@@ -64,6 +68,8 @@ data class OnDeviceSessionEntity(
 ) {
     companion object {
         const val DATA_POLICY_LOCAL_ONLY = "LOCAL_ONLY"
+        const val DATA_POLICY_REMOTE_TRANSCRIPT = "REMOTE_TRANSCRIPT_OAUTH"
+        const val DATA_POLICY_REMOTE_THEN_LOCAL = "REMOTE_TRANSCRIPT_THEN_LOCAL"
         const val SOURCE_TYPE_LIVE_MIC = "LIVE_MIC"
         const val SOURCE_TYPE_MAIN_RECORDER_CHUNK = "MAIN_RECORDER_CHUNK"
     }

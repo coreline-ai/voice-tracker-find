@@ -14,6 +14,7 @@ dependencies = [
 dev = [
     "httpx>=0.28,<1",
     "openapi-spec-validator>=0.7.2,<0.8",
+    "pyyaml>=6,<7",
     "pytest>=7.4.3",
     "ruff>=0.1.9",
 ]
@@ -35,6 +36,7 @@ llm = [
 ]
 cloud-api = [
     "google-cloud-storage>=3,<4",
+    "h2>=4.2,<5",
     "hypercorn>=0.17.3,<0.18",
     "psycopg[binary]>=3.2,<4",
     "sqlalchemy>=2.0,<3",
@@ -44,6 +46,7 @@ server = [
     "alembic>=1.16,<2",
     "google-cloud-storage>=3,<4",
     "google-cloud-tasks>=2,<3",
+    "h2>=4.2,<5",
     "hypercorn>=0.17.3,<0.18",
     "psycopg[binary]>=3.2,<4",
     "sqlalchemy>=2.0,<3",

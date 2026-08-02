@@ -11,6 +11,14 @@ data class InstalledModel(
     val installedAt: Long?,
 )
 
+data class LegacyModelStorage(
+    val entryCount: Int = 0,
+    val bytes: Long = 0L,
+) {
+    val present: Boolean
+        get() = entryCount > 0 && bytes > 0L
+}
+
 class ModelStore(context: Context) {
     private val root = File(context.filesDir, "ondevice/models").apply { mkdirs() }
     val downloadRoot: File = File(root, ".downloads").apply { mkdirs() }
@@ -135,10 +143,53 @@ class ModelStore(context: Context) {
         artifactDir(id).deleteRecursively()
     }
 
+    /**
+     * Reports only the fixed Qwen/EXAONE paths used by previous app versions. Unknown files and
+     * the current Gemma/SenseVoice paths are intentionally excluded.
+     */
+    fun legacyStorage(): LegacyModelStorage {
+        val existing = legacyPaths().filter(File::exists)
+        return LegacyModelStorage(
+            entryCount = existing.size,
+            bytes = existing.sumOf(::pathBytes),
+        )
+    }
+
+    /** Deletes only user-confirmed Qwen/EXAONE internal files and returns the released bytes. */
+    fun deleteLegacyStorage(): Long {
+        val paths = legacyPaths().filter(File::exists)
+        val bytes = paths.sumOf(::pathBytes)
+        paths.forEach { path ->
+            check(path.deleteRecursively()) { "이전 모델 파일을 삭제하지 못했습니다: ${path.name}" }
+        }
+        return bytes
+    }
+
+    private fun legacyPaths(): List<File> = LEGACY_MODEL_DIRECTORY_NAMES.flatMap { name ->
+        listOf(
+            File(root, name),
+            File(root, ".staging-$name"),
+            File(root, ".backup-$name"),
+            File(artifactRoot, name),
+            File(downloadRoot, "$name.part"),
+            File(downloadRoot, "$name.etag"),
+        )
+    }
+
+    private fun pathBytes(path: File): Long = when {
+        path.isFile -> path.length()
+        path.isDirectory -> path.walkTopDown().filter(File::isFile).sumOf(File::length)
+        else -> 0L
+    }
+
     fun modelRoot(): File = root
 
     companion object {
         const val MARKER = "installed.json"
+        private val LEGACY_MODEL_DIRECTORY_NAMES = listOf(
+            "qwen_summary_ko",
+            "exaone_summary_ko",
+        )
     }
 }
 

@@ -1,0 +1,74 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd" xmlns="http://maven.apache.org/POM/4.0.0"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+  <!-- This module was also published with a richer model, Gradle metadata,  -->
+  <!-- which should be used instead. Do not delete the following line which  -->
+  <!-- is to indicate to Gradle or any Gradle module metadata file consumer  -->
+  <!-- that they should prefer consuming it instead. -->
+  <!-- do_not_remove: published-with-gradle-metadata -->
+  <modelVersion>4.0.0</modelVersion>
+  <groupId>ai.coreline.oauthllm</groupId>
+  <artifactId>oauth-llm-android</artifactId>
+  <version>0.1.0</version>
+  <packaging>aar</packaging>
+  <name>OAuth LLM Android</name>
+  <description>Android OAuth, encrypted credential storage, and cloud LLM provider adapters.</description>
+  <url>urn:private:ai.coreline.oauthllm:oauth-llm-android</url>
+  <licenses>
+    <license>
+      <name>Proprietary</name>
+      <distribution>repo</distribution>
+      <comments>All rights reserved; see the LICENSE distributed with this project.</comments>
+    </license>
+  </licenses>
+  <developers>
+    <developer>
+      <id>owner</id>
+      <name>Copyright holder named in LICENSE</name>
+      <organization>Private SDK owner</organization>
+    </developer>
+  </developers>
+  <scm>
+    <connection>scm:git:PRIVATE_REPOSITORY_URL_REQUIRED</connection>
+    <developerConnection>scm:git:PRIVATE_REPOSITORY_URL_REQUIRED</developerConnection>
+    <url>urn:private:oauth-llm-sdk-android</url>
+  </scm>
+  <dependencies>
+    <dependency>
+      <groupId>ai.coreline.oauthllm</groupId>
+      <artifactId>oauth-llm-api</artifactId>
+      <version>0.1.0</version>
+      <scope>compile</scope>
+    </dependency>
+    <dependency>
+      <groupId>org.jetbrains.kotlin</groupId>
+      <artifactId>kotlin-stdlib</artifactId>
+      <version>1.9.24</version>
+      <scope>compile</scope>
+    </dependency>
+    <dependency>
+      <groupId>androidx.core</groupId>
+      <artifactId>core-ktx</artifactId>
+      <version>1.13.1</version>
+      <scope>runtime</scope>
+    </dependency>
+    <dependency>
+      <groupId>net.openid</groupId>
+      <artifactId>appauth</artifactId>
+      <version>0.11.1</version>
+      <scope>runtime</scope>
+    </dependency>
+    <dependency>
+      <groupId>org.jetbrains.kotlinx</groupId>
+      <artifactId>kotlinx-coroutines-android</artifactId>
+      <version>1.9.0</version>
+      <scope>runtime</scope>
+    </dependency>
+    <dependency>
+      <groupId>com.squareup.okhttp3</groupId>
+      <artifactId>okhttp</artifactId>
+      <version>4.12.0</version>
+      <scope>runtime</scope>
+    </dependency>
+  </dependencies>
+</project>

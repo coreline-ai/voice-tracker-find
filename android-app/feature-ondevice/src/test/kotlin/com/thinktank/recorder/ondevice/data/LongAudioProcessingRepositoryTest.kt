@@ -108,6 +108,9 @@ class LongAudioProcessingRepositoryTest : Closeable {
                 sttEngine = "SENSEVOICE_LOCAL_FILE",
                 summaryEngine = "GEMMA_LOCAL",
                 transcript = "기존 STT 원문을 그대로 사용해 다시 요약합니다.",
+                title = "기존 제목",
+                summary = "기존 요약은 새 root가 통과할 때까지 유지합니다.",
+                summaryRootNodeId = "existing-root",
             ),
         )
         val repository = LongAudioProcessingRepository(database) { now++ }
@@ -127,6 +130,32 @@ class LongAudioProcessingRepositoryTest : Closeable {
             "기존 STT 원문을 그대로 사용해 다시 요약합니다.",
             database.sessionDao().get("existing-session")?.transcript,
         )
+        assertEquals(
+            "기존 요약은 새 root가 통과할 때까지 유지합니다.",
+            database.sessionDao().get("existing-session")?.summary,
+        )
+        assertEquals("existing-root", database.sessionDao().get("existing-session")?.summaryRootNodeId)
+    }
+
+    @Test
+    fun oneHourJobIsAccepted() = runBlocking {
+        val repository = LongAudioProcessingRepository(database) { now++ }
+
+        val job = repository.createJob(
+            source = MainRecordingSource(
+                id = "one-hour",
+                createdAt = 1L,
+                durationMs = 60L * 60L * 1_000L,
+                sizeBytes = 1L,
+                sha256 = "e".repeat(64),
+                extension = "m4a",
+                storageState = "READY",
+            ),
+            sourceSnapshot = java.io.File("/tmp/one-hour.m4a"),
+            pcmFile = java.io.File("/tmp/one-hour.pcm"),
+        )
+
+        assertEquals(60L * 60L * 1_000L, job.sourceDurationMs)
     }
 
     @Test

@@ -1,6 +1,8 @@
 package com.thinktank.recorder.next.ui
 
 import android.app.Activity
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.isSystemInDarkTheme
@@ -73,13 +75,20 @@ fun ThinkTankApp(
     recordingViewModel: RecordingViewModel,
     notesViewModel: NotesViewModel,
     settingsViewModel: SettingsViewModel,
+    cloudAccountsViewModel: CloudAccountsViewModel,
     onDeviceViewModel: OnDeviceViewModel,
     initialRoute: String = "recording",
 ) {
     val recording by recordingViewModel.uiState.collectAsStateWithLifecycle()
     val notes by notesViewModel.uiState.collectAsStateWithLifecycle()
     val settings by settingsViewModel.uiState.collectAsStateWithLifecycle()
+    val cloudAccounts by cloudAccountsViewModel.uiState.collectAsStateWithLifecycle()
     val onDevice by onDeviceViewModel.uiState.collectAsStateWithLifecycle()
+    val oauthConnectLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.StartActivityForResult(),
+    ) { result ->
+        cloudAccountsViewModel.completeConnect(result.data)
+    }
     val darkTheme = isSystemInDarkTheme()
 
     ThinkTankTheme(darkTheme = darkTheme) {
@@ -150,11 +159,17 @@ fun ThinkTankApp(
                 composable("settings") {
                     SettingsScreen(
                         state = settings,
+                        cloudAccounts = cloudAccounts,
                         onSaveServer = settingsViewModel::saveServer,
                         onChunkMinutes = settingsViewModel::updateChunkMinutes,
                         onSchedule = settingsViewModel::updateSchedule,
                         onAutoSync = settingsViewModel::updateAutoSync,
                         onCheckUpdate = settingsViewModel::checkVersion,
+                        onConnectOAuth = { provider ->
+                            cloudAccountsViewModel.connectIntent(provider)?.let(oauthConnectLauncher::launch)
+                        },
+                        onSelectOAuthProfile = cloudAccountsViewModel::select,
+                        onDisconnectOAuthProfile = cloudAccountsViewModel::disconnect,
                     )
                 }
                 composable("ondevice") {
@@ -178,6 +193,7 @@ fun ThinkTankApp(
                         onPauseModel = onDeviceViewModel::pauseModel,
                         onRestoreModel = onDeviceViewModel::restoreModel,
                         onDeleteModel = onDeviceViewModel::deleteModel,
+                        onDeleteLegacyModels = onDeviceViewModel::deleteLegacyModels,
                         onConnectModelVault = onDeviceViewModel::connectModelVault,
                         onDisconnectModelVault = onDeviceViewModel::disconnectModelVault,
                         heroImageRes = R.drawable.hero_recording_chamber,

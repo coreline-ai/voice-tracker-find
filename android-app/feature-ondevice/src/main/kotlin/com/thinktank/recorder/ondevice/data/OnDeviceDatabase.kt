@@ -16,7 +16,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         OnDeviceTranscriptSegmentEntity::class,
         OnDeviceSummaryNodeEntity::class,
     ],
-    version = 9,
+    version = 10,
     exportSchema = true,
 )
 abstract class OnDeviceDatabase : RoomDatabase() {
@@ -43,6 +43,7 @@ abstract class OnDeviceDatabase : RoomDatabase() {
                         MIGRATION_6_7,
                         MIGRATION_7_8,
                         MIGRATION_8_9,
+                        MIGRATION_9_10,
                     )
                     .build()
                     .also { instance = it }
@@ -437,6 +438,23 @@ abstract class OnDeviceDatabase : RoomDatabase() {
                 db.execSQL(
                     "CREATE INDEX IF NOT EXISTS index_ondevice_summary_nodes_jobId_state " +
                         "ON ondevice_summary_nodes(jobId, state)",
+                )
+            }
+        }
+
+        val MIGRATION_9_10 = object : Migration(9, 10) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    "ALTER TABLE ondevice_sessions ADD COLUMN summaryProviderId TEXT DEFAULT NULL",
+                )
+                db.execSQL(
+                    "ALTER TABLE ondevice_sessions ADD COLUMN summaryProviderRequestId TEXT DEFAULT NULL",
+                )
+                db.execSQL(
+                    "ALTER TABLE ondevice_sessions ADD COLUMN summaryInputTokens INTEGER DEFAULT NULL",
+                )
+                db.execSQL(
+                    "ALTER TABLE ondevice_sessions ADD COLUMN summaryOutputTokens INTEGER DEFAULT NULL",
                 )
             }
         }
