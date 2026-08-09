@@ -5,6 +5,8 @@
 > **설치하려는 경우** 이 README 가 아니라 **`DISTRIBUTE.md`**(빠른 안내) 또는
 > **`SETUP.md`**(Claude 실행 런북)를 보세요. 아래는 개발/참조용입니다.
 
+> 다른 환경에서 개발을 이어갈 때는 **[HANDOFF.md](HANDOFF.md)**부터 확인하세요.
+
 ## 앱 미리보기
 
 `com.thinktank.recorder.next` v1.0.0은 기존 앱과 함께 설치할 수 있는 별도 Android Compose 앱입니다.
