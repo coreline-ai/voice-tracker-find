@@ -14,7 +14,7 @@
   <img src="https://img.shields.io/badge/Kotlin-1.9.24-7F52FF?style=for-the-badge&logo=kotlin&logoColor=white" alt="Kotlin 1.9.24">
   <img src="https://img.shields.io/badge/Python-3.12%2B-3776AB?style=for-the-badge&logo=python&logoColor=white" alt="Python 3.12 or later">
   <img src="https://img.shields.io/badge/tests-645%20passed-2EA44F?style=for-the-badge&logo=pytest&logoColor=white" alt="645 tests passed">
-  <img src="https://img.shields.io/badge/license-Proprietary-111827?style=for-the-badge" alt="Proprietary license">
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-2EA44F?style=for-the-badge" alt="MIT license"></a>
 </p>
 
 <p align="center">
@@ -347,12 +347,24 @@ forwarding을 제거했습니다. 증적과 SHA-256은
 | `android-app/app` | Android 앱, 녹음·노트·설정 UI, Receiver/OAuth 연결 |
 | `android-app/feature-cloud-summary` | OAuth 기반 원격 요약과 typed failure mapping |
 | `android-app/feature-ondevice` | SenseVoice/Gemma, 모델 관리, 로컬 fallback |
-| `android-app/local-maven` | 독립 proprietary OAuth LLM SDK Maven artifact |
+| `android-app/local-maven` | 별도 라이선스 OAuth LLM SDK Maven artifact |
 | `src/airvoice` | Python pipeline, LAN Receiver, Cloud API |
 | `web/dashboard` | AI R Voice Console 정적 UI |
 | `docs/receiver-api-v1.yaml` | Android/Receiver V1 계약 |
 | `docs/qa` | QA 보고서와 OAuth 실계정 실행 runbook |
 | `scripts/verify_rebrand.py` | 활성 영역의 legacy identity allowlist gate |
+
+## License
+
+Copyright © 2026 Coreline AI. AI R Voice의 소스 코드는 [MIT License](LICENSE)로 제공됩니다.
+
+다만 아래 항목에는 각 파일·artifact에 포함된 별도 라이선스가 적용되며, root MIT License로
+대체되지 않습니다.
+
+- `android-app/local-maven`과 `android-app/app/src/main/assets/licenses/oauth-llm-sdk-0.1.0`의
+  독립 OAuth LLM SDK artifact
+- `android-app/app/src/main/assets/licenses/FONT-LICENSES.txt`의 bundled font
+- Gradle, AndroidX, Kotlin 등 외부 의존성 및 해당 고지
 
 ## 문서
 

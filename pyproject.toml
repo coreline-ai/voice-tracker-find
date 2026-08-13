@@ -4,6 +4,7 @@
 name = "ai-r-voice"
 version = "0.1.0"
 description = "Automated voice-note pipeline: ingest -> VAD -> transcribe -> extract -> organize"
+license = { text = "MIT" }
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
