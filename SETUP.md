@@ -4,6 +4,7 @@
 > 새 PC에서 Claude Code 를 열고 이 폴더에서 "SETUP.md 대로 설치해줘" 라고 하면,
 > Claude 가 아래 단계를 하나씩 실행하고 검증한다. 🙋 표시는 사람이 직접 해야 하는
 > 단계(로그인·물리 장치·관리자 권한)로, Claude 는 여기서 멈추고 사용자에게 요청한다.
+> Android 앱 identity, OAuth 정책과 최신 검증 상태는 [README.md](README.md)를 정본으로 한다.
 
 **대상 환경(전제):** Windows 10/11 · NVIDIA GPU(빠른 STT) · Claude Code 구독.
 STT 백엔드는 각자의 Claude 로그인(`AI_PROVIDER=claude_cli`)을 쓴다 — 추가 API 비용 없음.
@@ -133,7 +134,7 @@ New-NetFirewallRule -DisplayName "AI R Voice LAN 수신기" `
 
 ---
 
-## 7. 🙋 폰 앱 (두 번째 기기라 손이 필요)
+## 7. 🙋 Android 디바이스 앱 연결
 
 1. 같은 폴더의 `ai-r-voice.apk` 를 USB 등 안전한 전달 방식으로 폰에 설치한다.
    Receiver bearer token을 URL에 넣는 브라우저 APK 다운로드는 지원하지 않는다.
@@ -146,7 +147,7 @@ New-NetFirewallRule -DisplayName "AI R Voice LAN 수신기" `
    - 마이크(RECORD_AUDIO)·알림(POST_NOTIFICATIONS): 앱 첫 실행 시 허용.
    - **통화녹음을 올리려면** 설정 → 앱 → 권한 → "모든 파일 액세스"(MANAGE_EXTERNAL_STORAGE)를
      **수동으로 켜야** 한다(안드 11+ 특수 권한). 안 켜면 통화녹음만 안 올라간다(앱 녹음은 무관).
-   - 밤샘 녹음 생존: 배터리 → "제한 없음" + 심층 잠자기 제외(삼성).
+   - 장시간 사용: 기기별 배터리 설정에서 앱을 "제한 없음"으로 두고 절전 예외를 설정한다.
 
 ---
 

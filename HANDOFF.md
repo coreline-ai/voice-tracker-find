@@ -5,8 +5,9 @@
 - Android release package: `com.coreline.ai.voice`
 - 브랜치: `main`
 - 작업 시작 커밋: `582175a5d801c0a68774461da88ede4503e317ad`
-- 현재 원격: `https://github.com/coreline-ai/voice-tracker-find.git` (GitHub 저장소 rename 전)
-- 현재 상태: 리브랜딩 구현·자동 검증 및 PD20 수동 QA/web 연결 검증 완료, commit/push 및 외부 운영 gate 대기
+- 현재 원격: `https://github.com/coreline-ai/voice-tracker-find.git`
+- 최신 반영 커밋: `90b7ba0 docs: refresh GitHub README presentation`
+- 현재 상태: 리브랜딩 구현·자동 검증·Android 앱/Receiver/Web Console 연결 검증·main push 완료. 외부 운영 gate 대기
 
 ## 1. 구현 상태
 
@@ -32,15 +33,15 @@ artifact 계약은 재설계하지 않았다.
 - Anthropic/Codex/xAI 실계정 OAuth E2E
 - Provider 승인 production registration 전환
 - release APK 정식 서명과 스토어 배포
-- Samsung 실기기 설치·재설치 지속성·녹음·로컬 AI smoke
+- 승인된 Android 디바이스의 설치·재설치 지속성·실기기 E2E smoke
 - Room instrumentation migration 1→10 재실행
 - Cloud/GCP staging E2E
-- GitHub 저장소 rename, 최종 commit/push
+- GitHub 저장소 rename과 fresh clone 검증
 
 ## 2. 새 환경에서 시작하기
 
-현재 GitHub rename이 아직 실행되지 않았으므로 clone URL은 원격 rename 완료 후 확정한다.
-기존 checkout을 인계받은 경우 다음 순서로 시작한다.
+현재 clone URL은 위 원격 주소다. GitHub 저장소 rename을 수행하기 전에도 기존 checkout과
+fresh clone은 이 주소를 사용한다. 기존 checkout을 인계받은 경우 다음 순서로 시작한다.
 
 ```bash
 git switch main
@@ -48,12 +49,15 @@ git status --short
 git pull --ff-only origin main
 
 cd android-app
-JAVA_HOME="/path/to/jdk17" ./gradlew --no-configuration-cache --no-parallel \
+source scripts/resolve_java_home.sh
+airvoice_require_java21
+./gradlew --no-daemon \
   :feature-cloud-summary:testDebugUnitTest \
   :feature-ondevice:testDebugUnitTest \
   :app:testDebugUnitTest \
   :app:lintDebug \
-  :app:assembleDebug
+  :app:verifyVariantTransportPolicy \
+  :app:assembleDevicePreview
 ```
 
 Python:
@@ -163,7 +167,7 @@ wheel zip-import + `python -m airvoice.main --help`: pass
 
 ### Android
 
-다음 작업을 한 clean build에서 실행했다.
+다음 작업을 재검증 build에서 실행했다.
 
 ```text
 :feature-cloud-summary:testDebugUnitTest
@@ -202,19 +206,18 @@ deprecation warning은 출력됐지만 빌드는 성공했다.
 
 ## 7. 실기기 결과
 
-`adb devices -l`에는 `PD20` 한 대만 연결되어 있었다. Samsung 단말은 아니지만 사용자의
-명시적 요청에 따라 QA APK를 수동 update-install하고 cold start, 메인 UI, Receiver 연결을
-검증했다. `adb reverse tcp:8765`로 임시 local Receiver에 연결했으며 UI는
-`서버와 안전하게 연결되었습니다`를 표시했다. OAuth 계정 UI(Anthropic/Codex/xAI)도 렌더링을
-확인했다. PD20은 사용 가능한 마이크 입력이 없어서 녹음은 실행하지 못했다.
+연결된 Android 디바이스에서 사용자의 명시적 요청에 따라 QA APK를 수동 update-install하고
+cold start, 메인 UI, Receiver 연결을 검증했다. `adb reverse tcp:8765`로 임시 local Receiver에
+연결했으며 UI는 `서버와 안전하게 연결되었습니다`를 표시했다. OAuth 계정 UI
+(Anthropic/Codex/xAI)도 렌더링을 확인했다.
 
 실제 browser 새 세션에서도 `AI R Voice · LAN Console` title, token 인증 후 `정상 연결`과
 `정상 운영` 상태, console error/warning 0건을 확인했다. API는 인증 없이는 401, 임시 token으로
 200이며 응답에는 token/절대 로컬 경로가 포함되지 않았다. 테스트 token은 세션에서 제거하고
 임시 Receiver를 종료한다.
 
-Samsung launcher/cold-start/녹음/local-AI/재설치 지속성과 Room instrumentation은 여전히
-미실행이다. 제조사 확인을 강제하는 다음 스크립트가 정식 Samsung gate다.
+승인된 Android 디바이스의 재설치 지속성·실기기 E2E와 Room instrumentation은 추가 검증
+예정이다. 기기 격리 보호를 강제하는 다음 스크립트가 정식 Android device gate다.
 
 실행 재개 시:
 
@@ -224,15 +227,15 @@ cd android-app
 ./scripts/run_device_qa.sh --case core
 ```
 
-스크립트 자체가 Samsung 제조사 확인과 `.qa`/`.deviceTest` package 격리를 강제한다.
+스크립트 자체가 승인된 기기 확인과 `.qa`/`.deviceTest` package 격리를 강제한다.
 
 ## 8. 다음 작업 순서
 
-1. Samsung 단말만 연결하고 Phase 9 smoke와 Room migration instrumentation을 실행한다.
+1. 승인된 Android 디바이스에서 Phase 9 smoke와 Room migration instrumentation을 실행한다.
 2. `docs/qa/oauth-llm-e2e-runbook.md`로 사용자 승인 시에만 Provider별 실계정 E2E를 실행한다.
 3. production OAuth registration과 release signing을 준비한다.
 4. GitHub 저장소를 `coreline-ai/ai-r-voice`로 rename하고 origin/fresh clone을 검증한다.
-5. 현재 변경을 리뷰한 뒤 의미 단위 commit과 push를 수행한다.
+5. GitHub 저장소 rename 여부를 결정한 뒤 origin/fresh clone을 검증한다.
 
 PowerShell은 현재 macOS 환경에 `pwsh`가 없어 parser/Pester를 실행하지 못했다. shell script는
 `bash -n`을 통과했고 Windows script는 새 module/path/task 이름으로 정적 갱신했다.
@@ -244,4 +247,4 @@ PowerShell은 현재 macOS 환경에 `pwsh`가 없어 parser/Pester를 실행하
   Gradle 설정, 로그, 스크린샷, fixture에 추가하지 않는다.
 - public client ID는 비밀이 아니지만 registration 소유권이나 production 승인을 의미하지 않는다.
 - SDK artifact 갱신은 version/checksum/POM/license/API 호환성을 한 변경으로 검증한다.
-- 실계정·서명·Samsung·GitHub gate를 자동 테스트 성공과 혼동해 완료로 표시하지 않는다.
+- 실계정·서명·Android 실기기·GitHub rename gate를 자동 테스트 성공과 혼동해 완료로 표시하지 않는다.
