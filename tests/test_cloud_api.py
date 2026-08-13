@@ -20,20 +20,20 @@ from hypercorn.asyncio import serve
 from sqlalchemy.exc import TimeoutError as PoolTimeoutError
 from starlette.requests import ClientDisconnect
 
-from thinktank.cloud_api import (
+from airvoice.cloud_api import (
     CloudApiServices,
     build_hypercorn_config,
     create_cloud_app,
 )
-from thinktank.cloud_admin import issue_token
-from thinktank.receiver_v1 import V1Error, normalize_etag
-from thinktank.server.auth import BearerTokenAuthenticator, CloudPrincipal
-from thinktank.server.runtime import (
+from airvoice.cloud_admin import issue_token
+from airvoice.receiver_v1 import V1Error, normalize_etag
+from airvoice.server.auth import BearerTokenAuthenticator, CloudPrincipal
+from airvoice.server.runtime import (
     CloudApiConfigurationError,
     CloudApiSettings,
 )
-from thinktank.server.security import token_digest
-from thinktank.server.stream_bridge import STREAM_CHUNK_SIZE
+from airvoice.server.security import token_digest
+from airvoice.server.stream_bridge import STREAM_CHUNK_SIZE
 
 TOKEN = "phase3-test-bearer"
 USER = "user1"
@@ -325,7 +325,7 @@ def test_health_ready_request_id_and_redacted_trace_log(
     caplog: pytest.LogCaptureFixture,
 ) -> None:
     trace_id = "0123456789abcdef0123456789abcdef"
-    caplog.set_level("INFO", logger="thinktank.cloud_api")
+    caplog.set_level("INFO", logger="airvoice.cloud_api")
     response = _request(
         api.app,
         "GET",
@@ -529,7 +529,7 @@ def test_note_crud_etag_and_log_redaction(
     api: ApiHarness,
     caplog: pytest.LogCaptureFixture,
 ) -> None:
-    caplog.set_level("INFO", logger="thinktank.cloud_api")
+    caplog.set_level("INFO", logger="airvoice.cloud_api")
     secret_content = "body-must-not-appear-in-logs"
     create = _request(
         api.app,
@@ -667,7 +667,7 @@ def test_unknown_exception_message_is_not_logged(
 ) -> None:
     leaked = f"{TOKEN}?X-Goog-Signature=must-not-log"
     api.readiness.failure = RuntimeError(leaked)
-    caplog.set_level("INFO", logger="thinktank.cloud_api")
+    caplog.set_level("INFO", logger="airvoice.cloud_api")
 
     response = _request(api.app, "GET", "/api/v1/ready")
 

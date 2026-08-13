@@ -1,13 +1,13 @@
 # Local OAuth LLM Maven repository
 
-This directory contains the private, proprietary `0.1.0` publication consumed by ThinkTank:
+This directory contains the private, proprietary `0.1.0` publication consumed by AI R Voice:
 
 - `ai.coreline.oauthllm:oauth-llm-api:0.1.0`
 - `ai.coreline.oauthllm:oauth-llm-android:0.1.0`
 
 The artifacts were copied without modification from the independent SDK repository's successful
 `publishAllPublicationsToLocalFileRepository` output on 2026-08-02 KST.
-The adjacent `.sha256`/`.sha512` files are the publication checksums. ThinkTank never uses a Gradle
+The adjacent `.sha256`/`.sha512` files are the publication checksums. AI R Voice never uses a Gradle
 source-project dependency on that repository.
 
 To update this directory, publish a reviewed SemVer release from the independent repository, verify its

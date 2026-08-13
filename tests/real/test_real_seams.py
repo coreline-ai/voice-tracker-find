@@ -5,7 +5,7 @@ scripts/smoke_real.py 의 단계 함수를 그대로 재사용한다(검증 로�
 전제(라이브러리/입력/API키)가 없으면 각 테스트가 자동 skip 하므로, 평소
 `pytest` 실행에서는 조용히 건너뛴다. 실물 검증 시에만 명시적으로:
 
-    THINKTANK_REAL_AUDIO=path/to/clip.m4a CLAUDE_API_KEY=... pytest -m real
+    AIRVOICE_REAL_AUDIO=path/to/clip.m4a CLAUDE_API_KEY=... pytest -m real
 """
 
 from __future__ import annotations
@@ -31,9 +31,9 @@ _spec.loader.exec_module(smoke_real)
 
 
 def _require_audio() -> Path:
-    raw = os.environ.get("THINKTANK_REAL_AUDIO")
+    raw = os.environ.get("AIRVOICE_REAL_AUDIO")
     if not raw:
-        pytest.skip("THINKTANK_REAL_AUDIO 미설정 (실물 오디오 경로 필요)")
+        pytest.skip("AIRVOICE_REAL_AUDIO 미설정 (실물 오디오 경로 필요)")
     path = Path(raw).expanduser()
     if not path.is_file():
         pytest.skip(f"오디오 파일 없음: {path}")

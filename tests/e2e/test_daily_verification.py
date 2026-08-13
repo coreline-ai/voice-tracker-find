@@ -20,7 +20,7 @@ from pathlib import Path
 import pytest
 
 from tests.vault_text import daily_all_text
-from thinktank.db import (
+from airvoice.db import (
     Status,
     get_daily_stats,
     get_recordings,
@@ -28,10 +28,10 @@ from thinktank.db import (
     insert_recording,
     update_recording_status,
 )
-from thinktank.extract import ExtractedItem, extract_items, items_from_json
-from thinktank.notes.daily import render_daily_note, write_daily_note
-from thinktank.notes.renderer import normalize_filename, render_wikilink
-from thinktank.topics import TOPICS_SUBDIR, merge_topics
+from airvoice.extract import ExtractedItem, extract_items, items_from_json
+from airvoice.notes.daily import render_daily_note, write_daily_note
+from airvoice.notes.renderer import normalize_filename, render_wikilink
+from airvoice.topics import TOPICS_SUBDIR, merge_topics
 
 
 @pytest.fixture

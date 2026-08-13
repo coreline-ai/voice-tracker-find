@@ -19,11 +19,11 @@ import re
 from dataclasses import fields as dataclass_fields
 from pathlib import Path
 
-from thinktank.emerge import EmergedIdea, Evidence, count_topic_items, run_emerge
-from thinktank.extract import ExtractedItem
-from thinktank.notes.emerged import write_emerged_notes
-from thinktank.notes.renderer import normalize_filename
-from thinktank.topics import merge_topics
+from airvoice.emerge import EmergedIdea, Evidence, count_topic_items, run_emerge
+from airvoice.extract import ExtractedItem
+from airvoice.notes.emerged import write_emerged_notes
+from airvoice.notes.renderer import normalize_filename
+from airvoice.topics import merge_topics
 
 
 def _item(text: str, topics: list[str], **overrides) -> ExtractedItem:

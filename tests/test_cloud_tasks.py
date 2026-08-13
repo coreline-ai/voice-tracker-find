@@ -10,11 +10,11 @@ pytest.importorskip("google.cloud.tasks_v2")
 
 from google.api_core.exceptions import AlreadyExists
 
-from thinktank.adapters.cloud_tasks import (
+from airvoice.adapters.cloud_tasks import (
     CloudTasksOutboxPublisher,
     deterministic_task_name,
 )
-from thinktank.server.ports import OutboxRecord
+from airvoice.server.ports import OutboxRecord
 
 
 class FakeTasksClient:

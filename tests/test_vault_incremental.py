@@ -6,10 +6,10 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from thinktank.cluster import TopicClaim, assign_clusters, build_prompt
-from thinktank.vault_apply import parse_index_clusters
-from thinktank.vault_incremental import normalize_incremental
-from thinktank.vault_index import (
+from airvoice.cluster import TopicClaim, assign_clusters, build_prompt
+from airvoice.vault_apply import parse_index_clusters
+from airvoice.vault_incremental import normalize_incremental
+from airvoice.vault_index import (
     INDEX_SUBDIR,
     VAULT_INDEX_FILENAME,
     _write_lf,

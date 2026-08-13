@@ -14,17 +14,17 @@ from typing import Any
 
 import pytest
 
-from thinktank.adapters.local_receiver import LocalReceiverV1Adapter, UploadReceipt
-from thinktank.config import Settings
-from thinktank.receiver import create_server
-from thinktank.receiver_v1 import V1Error
-from thinktank.server.ports import ReceiverV1Persistence
-from thinktank.server.upload_domain import (
+from airvoice.adapters.local_receiver import LocalReceiverV1Adapter, UploadReceipt
+from airvoice.config import Settings
+from airvoice.receiver import create_server
+from airvoice.receiver_v1 import V1Error
+from airvoice.server.ports import ReceiverV1Persistence
+from airvoice.server.upload_domain import (
     UploadFingerprint,
     orphan_matches,
     receipt_matches,
 )
-from thinktank.users import User
+from airvoice.users import User
 
 
 class FakeCloudPersistence:

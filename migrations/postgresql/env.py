@@ -8,13 +8,13 @@ from logging.config import fileConfig
 from alembic import context
 from sqlalchemy import engine_from_config, pool
 
-from thinktank.server.schema import metadata
+from airvoice.server.schema import metadata
 
 config = context.config
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)
 
-database_url = os.environ.get("THINKTANK_DATABASE_URL", "").strip()
+database_url = os.environ.get("AIRVOICE_DATABASE_URL", "").strip()
 if database_url:
     config.set_main_option("sqlalchemy.url", database_url)
 

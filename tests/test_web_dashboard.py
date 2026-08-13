@@ -9,9 +9,9 @@ from pathlib import Path
 
 import pytest
 
-from thinktank.config import Settings
-from thinktank.receiver import create_server
-from thinktank.users import User
+from airvoice.config import Settings
+from airvoice.receiver import create_server
+from airvoice.users import User
 
 
 TOKEN = "dashboard-test-token"
@@ -69,8 +69,27 @@ def test_dashboard_static_page_is_public(dashboard_server: str) -> None:
     status, body, headers = _get(f"{dashboard_server}/dashboard")
 
     assert status == 200
-    assert b"ThinkTank Receiver" in body
+    assert b"AI R Voice" in body
     assert headers["Content-Security-Policy"].startswith("default-src 'self'")
+
+
+def test_dashboard_favicon_is_publicly_served(dashboard_server: str) -> None:
+    status, body, headers = _get(f"{dashboard_server}/dashboard/favicon.svg")
+
+    assert status == 200
+    assert body.startswith(b"<svg")
+    assert headers["Content-Type"] == "image/svg+xml"
+
+
+def test_dashboard_migrates_legacy_session_token_without_exposing_it(
+    dashboard_server: str,
+) -> None:
+    status, script, _ = _get(f"{dashboard_server}/dashboard/token-storage.js")
+
+    assert status == 200
+    assert b"airvoice-receiver-dashboard-token" in script
+    assert b"storage.removeItem(LEGACY_TOKEN_KEY)" in script
+    assert b"localStorage" not in script
 
 
 def test_dashboard_explains_action_and_hides_inactive_errors(dashboard_server: str) -> None:

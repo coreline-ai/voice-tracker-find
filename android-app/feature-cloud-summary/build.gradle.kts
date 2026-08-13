@@ -29,19 +29,19 @@ fun quoted(value: String): String =
     "\"${value.replace("\\", "\\\\").replace("\"", "\\\"")}\""
 
 android {
-    namespace = "com.thinktank.recorder.cloudsummary"
+    namespace = "com.coreline.ai.voice.cloudsummary"
     compileSdk = libs.versions.compileSdk.get().toInt()
 
     defaultConfig {
         minSdk = libs.versions.minSdk.get().toInt()
         consumerProguardFiles("consumer-rules.pro")
 
-        buildConfigField("String", "ANTHROPIC_CLIENT_ID", quoted(setting("THINKTANK_ANTHROPIC_CLIENT_ID")))
-        buildConfigField("String", "CODEX_CLIENT_ID", quoted(setting("THINKTANK_CODEX_CLIENT_ID")))
-        buildConfigField("String", "XAI_CLIENT_ID", quoted(setting("THINKTANK_XAI_CLIENT_ID")))
-        buildConfigField("String", "ANTHROPIC_MODEL", quoted(setting("THINKTANK_ANTHROPIC_MODEL")))
-        buildConfigField("String", "CODEX_MODEL", quoted(setting("THINKTANK_CODEX_MODEL")))
-        buildConfigField("String", "XAI_MODEL", quoted(setting("THINKTANK_XAI_MODEL")))
+        buildConfigField("String", "ANTHROPIC_CLIENT_ID", quoted(setting("AIRVOICE_ANTHROPIC_CLIENT_ID")))
+        buildConfigField("String", "CODEX_CLIENT_ID", quoted(setting("AIRVOICE_CODEX_CLIENT_ID")))
+        buildConfigField("String", "XAI_CLIENT_ID", quoted(setting("AIRVOICE_XAI_CLIENT_ID")))
+        buildConfigField("String", "ANTHROPIC_MODEL", quoted(setting("AIRVOICE_ANTHROPIC_MODEL")))
+        buildConfigField("String", "CODEX_MODEL", quoted(setting("AIRVOICE_CODEX_MODEL")))
+        buildConfigField("String", "XAI_MODEL", quoted(setting("AIRVOICE_XAI_MODEL")))
     }
 
     compileOptions {
@@ -104,8 +104,8 @@ val verifyCloudSummaryBoundary by tasks.registering {
     doLast {
         val violations = fileTree("src/main/kotlin") { include("**/*.kt") }.flatMap { source ->
             source.readLines().filter { line ->
-                line.startsWith("import com.thinktank.recorder.ondevice.") &&
-                    !line.startsWith("import com.thinktank.recorder.ondevice.api.")
+                line.startsWith("import com.coreline.ai.voice.ondevice.") &&
+                    !line.startsWith("import com.coreline.ai.voice.ondevice.api.")
             }.map { line -> "${source.path}: $line" }
         }
         check(violations.isEmpty()) {
@@ -119,12 +119,12 @@ val verifyTrackedOAuthDefaults by tasks.registering {
     description = "Verify source-controlled public OAuth registrations without confidential values."
     doLast {
         val required = setOf(
-            "THINKTANK_ANTHROPIC_CLIENT_ID",
-            "THINKTANK_ANTHROPIC_MODEL",
-            "THINKTANK_CODEX_CLIENT_ID",
-            "THINKTANK_CODEX_MODEL",
-            "THINKTANK_XAI_CLIENT_ID",
-            "THINKTANK_XAI_MODEL",
+            "AIRVOICE_ANTHROPIC_CLIENT_ID",
+            "AIRVOICE_ANTHROPIC_MODEL",
+            "AIRVOICE_CODEX_CLIENT_ID",
+            "AIRVOICE_CODEX_MODEL",
+            "AIRVOICE_XAI_CLIENT_ID",
+            "AIRVOICE_XAI_MODEL",
         )
         check(oauthDefaultsFile.isFile) { "Missing ${oauthDefaultsFile.path}" }
         required.forEach { name ->

@@ -8,7 +8,7 @@ from pathlib import Path
 
 import pytest
 
-from thinktank.db import (
+from airvoice.db import (
     InvalidTransitionError,
     Recording,
     Status,

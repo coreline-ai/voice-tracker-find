@@ -18,11 +18,11 @@ from pathlib import Path
 
 import pytest
 
-from thinktank.extract import ExtractedItem
-from thinktank.notes.daily import write_daily_note
-from thinktank.notes.renderer import normalize_filename
-from thinktank.notes.topic import TopicEntry
-from thinktank.topics import Topic, merge_topics
+from airvoice.extract import ExtractedItem
+from airvoice.notes.daily import write_daily_note
+from airvoice.notes.renderer import normalize_filename
+from airvoice.notes.topic import TopicEntry
+from airvoice.topics import Topic, merge_topics
 
 
 def _item(text: str, topics: list[str], **overrides) -> ExtractedItem:
@@ -229,7 +229,7 @@ class TestFilenameSlugConvention:
 # Obsidian은 [[링크텍스트]]를 대소문자만 무시하는 파일명 exact 매칭으로 해석한다
 # (공백<->하이픈 자동 치환은 없다). merge_topics()는 파일명을
 # normalize_filename()으로 슬러그화(공백/언더스코어->하이픈, 소문자화)하지만
-# render_daily_note()의 _render_item_line()(src/thinktank/notes/daily.py:46-61)은
+# render_daily_note()의 _render_item_line()(src/airvoice/notes/daily.py:46-61)은
 # item.topics 원본 문자열을 그대로 render_wikilink()에 넘긴다. 주제명에 공백이나
 # 대문자가 섞이면 데일리 노트의 위키링크는 topics 노트 파일과 문자열이 달라져
 # Obsidian에서 연결되지 않는다(broken link).

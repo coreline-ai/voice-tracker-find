@@ -9,7 +9,7 @@ from pathlib import Path
 
 import pytest
 
-from thinktank.emerge import (
+from airvoice.emerge import (
     EmergedIdea,
     Evidence,
     count_topic_items,
@@ -333,7 +333,7 @@ def test_run_emerge_respects_custom_min_topics(tmp_path: Path):
 
 def test_emerge_module_importable_without_anthropic_installed():
     """anthropic 미설치 환경에서도 모듈 최상단 임포트는 성공해야 한다."""
-    import thinktank.emerge as emerge_module
+    import airvoice.emerge as emerge_module
 
     assert hasattr(emerge_module, "load_emerger")
 
@@ -366,7 +366,7 @@ def test_load_cli_emerger_produces_emerged_ideas_via_run_emerge(
     tmp_path: Path, monkeypatch
 ):
     """load_cli_emerger 로 만든 함수를 run_emerge 에 주입하면 EmergedIdea 를 만든다."""
-    from thinktank.emerge import load_cli_emerger
+    from airvoice.emerge import load_cli_emerger
 
     _seed_topics(tmp_path, ["design", "feature", "ai-features"])
 
@@ -376,7 +376,7 @@ def test_load_cli_emerger_produces_emerged_ideas_via_run_emerge(
         assert "design" in prompt
         return raw_response
 
-    monkeypatch.setattr("thinktank.claude_cli.run_claude_cli", _fake_run_claude_cli)
+    monkeypatch.setattr("airvoice.claude_cli.run_claude_cli", _fake_run_claude_cli)
 
     emerge_fn = load_cli_emerger()
     ideas = run_emerge(tmp_path, emerge_fn, date="2025-01-15")

@@ -8,15 +8,15 @@ from pathlib import Path
 
 import pytest
 
-from thinktank.cleanup import run_cleanup
-from thinktank.db import (
+from airvoice.cleanup import run_cleanup
+from airvoice.db import (
     Recording,
     Status,
     get_recordings,
     init_db,
     insert_recording,
 )
-from thinktank.notes.renderer import archive_filename
+from airvoice.notes.renderer import archive_filename
 
 
 @pytest.fixture

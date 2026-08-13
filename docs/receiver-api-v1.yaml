@@ -1,6 +1,6 @@
 openapi: 3.1.0
 info:
-  title: ThinkTank Receiver API
+  title: AI R Voice Receiver API
   version: 1.0.0
   description: |
     Compose Android 클라이언트와 기존 receiver가 함께 사용하는 additive V1 계약이다.

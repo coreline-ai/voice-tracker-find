@@ -3,8 +3,8 @@
 # @TEST tests/test_emerged_note.py
 from pathlib import Path
 
-from thinktank.emerge import EmergedIdea, Evidence
-from thinktank.notes.emerged import render_emerged_note, write_emerged_notes
+from airvoice.emerge import EmergedIdea, Evidence
+from airvoice.notes.emerged import render_emerged_note, write_emerged_notes
 
 
 def _idea(**overrides) -> EmergedIdea:

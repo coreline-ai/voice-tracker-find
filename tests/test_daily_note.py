@@ -3,8 +3,8 @@
 # @TEST tests/test_daily_note.py
 from pathlib import Path
 
-from thinktank.extract import ExtractedItem
-from thinktank.notes.daily import (
+from airvoice.extract import ExtractedItem
+from airvoice.notes.daily import (
     render_daily_note,
     render_daily_section,
     section_items,

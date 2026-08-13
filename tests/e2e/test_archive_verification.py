@@ -18,7 +18,7 @@ from pathlib import Path
 
 import pytest
 
-from thinktank.db import (
+from airvoice.db import (
     Recording,
     Status,
     get_cleanup_targets,
@@ -27,13 +27,13 @@ from thinktank.db import (
     insert_recording,
     update_recording_status,
 )
-from thinktank.notes.archive import (
+from airvoice.notes.archive import (
     Segment,
     Transcript,
     render_archive_note,
     write_archive_note,
 )
-from thinktank.transcribe import RawSegment, transcribe_audio
+from airvoice.transcribe import RawSegment, transcribe_audio
 
 
 @pytest.fixture

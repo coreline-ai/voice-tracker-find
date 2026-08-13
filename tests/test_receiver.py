@@ -17,16 +17,16 @@ from urllib.parse import quote
 
 import pytest
 
-import thinktank.receiver as receiver_mod
-from thinktank.receiver import _Handler, _is_safe_name, create_server, ensure_cert
+import airvoice.receiver as receiver_mod
+from airvoice.receiver import _Handler, _is_safe_name, create_server, ensure_cert
 
 
 def _make_user(name: str, token: str, ingest_dir: Path, vault: Path):
     """테스트용 User (경로만 다르고 나머지 설정은 기본값)."""
     from dataclasses import replace as _replace
 
-    from thinktank.config import Settings
-    from thinktank.users import User
+    from airvoice.config import Settings
+    from airvoice.users import User
 
     settings = Settings(
         claude_api_key="test-key",
@@ -242,7 +242,7 @@ def test_ADS_이름은_업로드가_거부되고_파일도_안_생긴다(receive
 
 def test_디스크_여유가_없으면_507(receiver: Fixture, monkeypatch) -> None:  # noqa: ANN001
     monkeypatch.setattr(
-        "thinktank.receiver._has_room_for", lambda directory, incoming: False
+        "airvoice.receiver._has_room_for", lambda directory, incoming: False
     )
 
     response = _request(_upload_url(receiver, "rec.m4a"), method="PUT", data=b"x")
@@ -645,7 +645,7 @@ def receiver_with_apk(tmp_path: Path) -> Iterator[Fixture]:
     """APK 경로가 설정된 수신기."""
     vault = tmp_path / "vault"
     (vault / "10-daily").mkdir(parents=True)
-    apk = tmp_path / "thinktank-recorder.apk"
+    apk = tmp_path / "ai-r-voice.apk"
     apk.write_bytes(b"PK\x03\x04fake-apk")
     apk.with_suffix(".version.txt").write_text("버전 0.1.15", encoding="utf-8")
 

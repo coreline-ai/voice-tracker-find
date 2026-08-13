@@ -7,7 +7,7 @@ from pathlib import Path
 import yaml
 from openapi_spec_validator import validate
 
-from thinktank.server.contracts import (
+from airvoice.server.contracts import (
     MAX_V1_UPLOAD_BYTES,
     UPLOAD_MEDIA_TYPES,
     UPLOAD_WIRE_STATUSES,
@@ -17,7 +17,7 @@ ROOT = Path(__file__).resolve().parents[1]
 OPENAPI = ROOT / "docs" / "receiver-api-v1.yaml"
 ANDROID_API_TEST = (
     ROOT
-    / "android-app/app/src/test/kotlin/com/thinktank/recorder/next"
+    / "android-app/app/src/test/kotlin/com/coreline/ai/voice"
     / "data/remote/ReceiverApiTest.kt"
 )
 

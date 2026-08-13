@@ -27,7 +27,7 @@ generate, logout을 실행하지 않았으므로 해당 항목은 완료로 간�
 ## 실계정 단계 재개 체크리스트
 
 1. Provider별 QA 계정을 준비하고 source-controlled compatibility registration이 허용되는지
-   확인하거나 Provider-approved ThinkTank public registration으로 교체한다.
+   확인하거나 Provider-approved AI R Voice public registration으로 교체한다.
 2. 다른 registration/model이 필요하면 `android-app/oauth-llm.properties.example`을 참고해
    ignored `android-app/local.properties`에 override한다. client secret은 추가하지 않는다.
 3. 배포용이 아닌 서명된 QA APK를 만들고 앱 ID/callback registration을 대조한다.

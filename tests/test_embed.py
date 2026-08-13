@@ -5,7 +5,7 @@ from __future__ import annotations
 
 import pytest
 
-from thinktank.embed import EmbedError, cosine, load_embedder
+from airvoice.embed import EmbedError, cosine, load_embedder
 
 
 def test_같은_벡터의_코사인은_1() -> None:

@@ -12,13 +12,13 @@ pytest.importorskip("google.cloud.storage")
 
 from google.api_core.exceptions import PreconditionFailed
 
-from thinktank.adapters.cloud_storage import GcsUploadStore
-from thinktank.receiver_v1 import V1Error
-from thinktank.server.object_keys import (
+from airvoice.adapters.cloud_storage import GcsUploadStore
+from airvoice.receiver_v1 import V1Error
+from airvoice.server.object_keys import (
     content_type_for_filename,
     recording_object_key,
 )
-from thinktank.server.orphan_sweeper import sweep_orphans
+from airvoice.server.orphan_sweeper import sweep_orphans
 
 
 class FakeBlob:

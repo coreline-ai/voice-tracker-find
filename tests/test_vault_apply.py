@@ -5,7 +5,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from thinktank.vault_apply import (
+from airvoice.vault_apply import (
     apply_clusters,
     parse_index_clusters,
     transform_note,

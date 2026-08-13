@@ -1,5 +1,5 @@
 <resources>
-    <style name="Theme.ThinkTank" parent="android:style/Theme.Material.NoActionBar">
+    <style name="Theme.AirVoice" parent="android:style/Theme.Material.NoActionBar">
         <item name="android:fontFamily">sans</item>
         <item name="android:windowLightStatusBar">false</item>
         <item name="android:statusBarColor">@color/archive_ink</item>

@@ -3,7 +3,7 @@ plugins {
 }
 
 android {
-    namespace = "com.thinktank.recorder.ondevice.summary.litert"
+    namespace = "com.coreline.ai.voice.ondevice.summary.litert"
     compileSdk = libs.versions.compileSdk.get().toInt()
 
     defaultConfig {

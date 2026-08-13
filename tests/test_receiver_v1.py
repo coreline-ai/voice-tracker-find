@@ -30,10 +30,10 @@ from urllib.parse import quote, urlsplit
 
 import pytest
 
-from thinktank.config import Settings
-from thinktank.receiver import create_server
-from thinktank.receiver_v1 import STALE_UPLOAD_TEMP_SECONDS
-from thinktank.users import User
+from airvoice.config import Settings
+from airvoice.receiver import create_server
+from airvoice.receiver_v1 import STALE_UPLOAD_TEMP_SECONDS
+from airvoice.users import User
 
 
 TOKEN = "v1-contract-token"
@@ -165,10 +165,10 @@ def _upload(
     chunk_id: str | None = None,
 ) -> Response:
     stable_recording_id = recording_id or str(
-        uuid.uuid5(uuid.NAMESPACE_URL, f"thinktank-recording:{filename}")
+        uuid.uuid5(uuid.NAMESPACE_URL, f"airvoice-recording:{filename}")
     )
     stable_chunk_id = chunk_id or str(
-        uuid.uuid5(uuid.NAMESPACE_URL, f"thinktank-chunk:{filename}")
+        uuid.uuid5(uuid.NAMESPACE_URL, f"airvoice-chunk:{filename}")
     )
     return _request(
         _v1_upload_url(receiver, filename),
@@ -408,7 +408,7 @@ def test_v1_upload_returns_structured_507_before_writing(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setattr(
-        "thinktank.adapters.local_receiver.has_room_for", lambda *_: False
+        "airvoice.adapters.local_receiver.has_room_for", lambda *_: False
     )
     response = _upload(receiver, "no-space.m4a", b"audio")
     assert response.status == 507
@@ -465,7 +465,7 @@ def test_v1_parallel_identical_upload_has_one_creator_and_no_corruption(
         assert payload["size"] == len(body)
         assert payload["sha256"] == expected_hash
     assert not list(receiver.ingest_dir.glob("*.part"))
-    assert not list(receiver.ingest_dir.glob(".thinktank.*"))
+    assert not list(receiver.ingest_dir.glob(".airvoice.*"))
 
 
 def test_v1_reused_recording_chunk_with_new_key_is_a_structured_conflict(
@@ -502,8 +502,8 @@ def test_v1_startup_cleans_only_stale_request_temp_files(tmp_path: Path) -> None
     vault = tmp_path / "vault"
     ingest_dir.mkdir()
     vault.mkdir()
-    stale = ingest_dir / ".thinktank-v1.interrupted.part"
-    recent = ingest_dir / ".thinktank-v1.active.part"
+    stale = ingest_dir / ".airvoice-v1.interrupted.part"
+    recent = ingest_dir / ".airvoice-v1.active.part"
     final_recording = ingest_dir / "recording.m4a"
     stale.write_bytes(b"interrupted")
     recent.write_bytes(b"still-relevant")
@@ -744,7 +744,7 @@ def test_v1_note_archive_rejects_an_already_archived_source(receiver: Receiver) 
 def test_v1_apk_info_and_download_are_authenticated_and_hashed(tmp_path: Path) -> None:
     ingest_dir = tmp_path / "inbox"
     vault = tmp_path / "vault"
-    apk = tmp_path / "thinktank-next.apk"
+    apk = tmp_path / "airvoice-next.apk"
     apk_bytes = b"not-a-real-apk-but-an-exact-byte-contract-fixture"
     apk.write_bytes(apk_bytes)
     apk.with_suffix(".version.json").write_text(

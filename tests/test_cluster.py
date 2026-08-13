@@ -5,7 +5,7 @@ from __future__ import annotations
 
 import json
 
-from thinktank.cluster import (
+from airvoice.cluster import (
     TopicClaim,
     assign_clusters,
     build_prompt,

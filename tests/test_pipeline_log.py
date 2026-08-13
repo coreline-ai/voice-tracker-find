@@ -4,8 +4,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from thinktank.notes.pipeline_log import PIPELINE_LOG_FILENAME, append_pipeline_log
-from thinktank.report import PipelineRun, RunError
+from airvoice.notes.pipeline_log import PIPELINE_LOG_FILENAME, append_pipeline_log
+from airvoice.report import PipelineRun, RunError
 
 
 def _sample_run(**overrides) -> PipelineRun:

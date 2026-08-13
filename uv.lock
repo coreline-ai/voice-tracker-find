@@ -2096,7 +2096,7 @@ wheels = [
 ]
 
 [[package]]
-name = "thinktank"
+name = "ai-r-voice"
 version = "0.1.0"
 source = { editable = "." }
 dependencies = [

@@ -19,23 +19,24 @@ fun secret(name: String): String? =
         ?: System.getenv(name)
         ?: localProperties.getProperty(name)
 
-val releaseStore = secret("THINKTANK_RELEASE_STORE_FILE")
-// The physical-device debug build talks to the Mac mini receiver over LAN.
-// Override this with THINKTANK_DEBUG_SERVER_URL for an emulator or another host.
-val debugServerUrl = secret("THINKTANK_DEBUG_SERVER_URL") ?: "http://192.168.0.71:8765"
+val releaseStore = secret("AIRVOICE_RELEASE_STORE_FILE")
+// A debug-only Receiver URL may be supplied per developer machine. Never bake a
+// DHCP address into the published QA APK: the empty default forces an explicit
+// connection choice in Settings.
+val debugServerUrl = secret("AIRVOICE_DEBUG_SERVER_URL") ?: ""
 val hasReleaseSigning = listOf(
     releaseStore,
-    secret("THINKTANK_RELEASE_STORE_PASSWORD"),
-    secret("THINKTANK_RELEASE_KEY_ALIAS"),
-    secret("THINKTANK_RELEASE_KEY_PASSWORD"),
+    secret("AIRVOICE_RELEASE_STORE_PASSWORD"),
+    secret("AIRVOICE_RELEASE_KEY_ALIAS"),
+    secret("AIRVOICE_RELEASE_KEY_PASSWORD"),
 ).all { !it.isNullOrBlank() }
 
 android {
-    namespace = "com.thinktank.recorder.next"
+    namespace = "com.coreline.ai.voice"
     compileSdk = libs.versions.compileSdk.get().toInt()
 
     defaultConfig {
-        applicationId = "com.thinktank.recorder.next"
+        applicationId = "com.coreline.ai.voice"
         minSdk = libs.versions.minSdk.get().toInt()
         targetSdk = libs.versions.targetSdk.get().toInt()
         versionCode = 1
@@ -54,9 +55,9 @@ android {
         if (hasReleaseSigning) {
             create("release") {
                 storeFile = rootProject.file(releaseStore!!)
-                storePassword = secret("THINKTANK_RELEASE_STORE_PASSWORD")
-                keyAlias = secret("THINKTANK_RELEASE_KEY_ALIAS")
-                keyPassword = secret("THINKTANK_RELEASE_KEY_PASSWORD")
+                storePassword = secret("AIRVOICE_RELEASE_STORE_PASSWORD")
+                keyAlias = secret("AIRVOICE_RELEASE_KEY_ALIAS")
+                keyPassword = secret("AIRVOICE_RELEASE_KEY_PASSWORD")
             }
         }
     }
@@ -72,8 +73,8 @@ android {
                 "\"${debugServerUrl}\"",
             )
         }
-        // Persistent Samsung preview package. Keep the historical `.qa` application ID so the
-        // existing on-device database and downloaded models survive `adb install -r` updates.
+        // Persistent Samsung preview package. Keep the `.qa` suffix stable so data created by
+        // AI R Voice preview builds survives subsequent `adb install -r` updates.
         create("devicePreview") {
             initWith(getByName("debug"))
             applicationIdSuffix = ".qa"
@@ -232,6 +233,34 @@ val verifyRasterAssets by tasks.registering {
             }
         }
         check(assets.size == 7) { "Expected 7 approved raster assets, found ${assets.size}" }
+    }
+}
+
+val verifyVariantTransportPolicy by tasks.registering {
+    group = "verification"
+    description = "Keep local QA/test Receiver HTTP support out of the release manifest."
+    dependsOn(
+        "processDevicePreviewManifest",
+        "processDeviceTestManifest",
+        "processReleaseManifest",
+    )
+    doLast {
+        fun mergedManifest(variant: String): String =
+            file(
+                "build/intermediates/merged_manifests/" +
+                    "$variant/process${variant.replaceFirstChar(Char::uppercase)}Manifest/" +
+                    "AndroidManifest.xml",
+            ).readText()
+
+        check("android:usesCleartextTraffic=\"true\"" in mergedManifest("devicePreview")) {
+            "devicePreview must permit local HTTP Receiver QA"
+        }
+        check("android:usesCleartextTraffic=\"true\"" in mergedManifest("deviceTest")) {
+            "deviceTest must permit local HTTP instrumentation endpoints"
+        }
+        check("android:usesCleartextTraffic=\"false\"" in mergedManifest("release")) {
+            "release must keep cleartext transport disabled"
+        }
     }
 }
 

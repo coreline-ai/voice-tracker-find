@@ -1,4 +1,4 @@
-# thinktank 설치 — Claude 실행용 런북
+# AI R Voice 설치 — Claude 실행용 런북
 
 > **이 문서는 Claude Code 가 읽고 순서대로 실행하는 설치 안내서다.**
 > 새 PC에서 Claude Code 를 열고 이 폴더에서 "SETUP.md 대로 설치해줘" 라고 하면,
@@ -65,7 +65,7 @@ ollama pull nomic-embed-text
 CTranslate2 로 돌고, 여기 torch 는 silero-vad 가 딸려온 CPU 전용 휠이라 GPU 가 멀쩡해도
 `False` 가 나온다. **실제 faster-whisper 를 CUDA 로 띄워** 판정한다:
 ```powershell
-.\.venv\Scripts\python -c "from thinktank.transcribe import _add_cuda_dll_dirs; _add_cuda_dll_dirs(); from faster_whisper import WhisperModel; WhisperModel('tiny', device='cuda', compute_type='float16'); print('GPU STT ok')"
+.\.venv\Scripts\python -c "from airvoice.transcribe import _add_cuda_dll_dirs; _add_cuda_dll_dirs(); from faster_whisper import WhisperModel; WhisperModel('tiny', device='cuda', compute_type='float16'); print('GPU STT ok')"
 ```
 - `GPU STT ok` 가 뜨면 성공 → 4단계에서 `WHISPER_DEVICE=cuda` 그대로 둔다.
 - 실패(DLL/CUDA 오류)면 🙋 사용자에게 알리고, 1단계의 `nvidia-cudnn-cu12`/`nvidia-cublas-cu12`
@@ -75,11 +75,19 @@ CTranslate2 로 돌고, 여기 torch 는 silero-vad 가 딸려온 CPU 전용 휠
 
 ## 4. 설정 (.env + 토큰 + 볼트 + APK 배치)
 
+리브랜딩 이전 설치에서 데이터를 이어 쓰는 경우 먼저 아래를 실행한다. 첫 명령은 검사만 하고,
+두 번째 명령만 실제 복사를 수행한다. 새 런타임 홈에 데이터가 있으면 자동 병합하지 않는다.
+
+```powershell
+.\.venv\Scripts\python -m airvoice.legacy_migration
+.\.venv\Scripts\python -m airvoice.legacy_migration --apply
+```
+
 1. **`.env` 생성** (`.env.example` 를 복사 후 아래로 채움):
    ```
    AI_PROVIDER=claude_cli
-   INGEST_DIR=D:/thinktank            # 녹음 유입 폴더 (원하는 경로)
-   OBSIDIAN_VAULT=~/thinktank-vault   # 노트 볼트
+   INGEST_DIR=D:/airvoice            # 녹음 유입 폴더 (원하는 경로)
+   OBSIDIAN_VAULT=~/ai-r-voice-vault   # 노트 볼트
    WHISPER_DEVICE=cuda                # GPU 없으면 cpu
    RECEIVER_AUTO_PROCESS=1            # 업로드 즉시 처리
    ```
@@ -88,13 +96,13 @@ CTranslate2 로 돌고, 여기 torch 는 silero-vad 가 딸려온 CPU 전용 휠
    ```powershell
    .\.venv\Scripts\python -c "import secrets; print(secrets.token_urlsafe(32))"
    ```
-   출력값을 `~/.thinktank/receiver-token.txt` 에 저장(폴더 없으면 생성). 폰 설정에도 이 값을 넣는다.
-3. **볼트 폴더 생성**: `New-Item -ItemType Directory -Force ~/thinktank-vault`
+   출력값을 `~/.airvoice/receiver-token.txt` 에 저장(폴더 없으면 생성). 폰 설정에도 이 값을 넣는다.
+3. **볼트 폴더 생성**: `New-Item -ItemType Directory -Force ~/ai-r-voice-vault`
 4. **APK 를 수신기가 서빙할 위치로 복사** (폰이 `/apk` 로 받으려면 필요 — 런처는
-   `~/.thinktank/thinktank-recorder.apk` 한 곳만 본다):
+   `~/.airvoice/ai-r-voice.apk` 한 곳만 본다):
    ```powershell
-   New-Item -ItemType Directory -Force ~/.thinktank | Out-Null
-   Copy-Item .\thinktank-recorder.apk ~/.thinktank/
+   New-Item -ItemType Directory -Force ~/.airvoice | Out-Null
+   Copy-Item .\ai-r-voice.apk ~/.airvoice/
    ```
 
 ---
@@ -105,9 +113,9 @@ CTranslate2 로 돌고, 여기 torch 는 silero-vad 가 딸려온 CPU 전용 휠
 .\scripts\register_receiver_task.ps1     # 로그온 시 수신기 자동 시작
 .\scripts\register_task.ps1              # 매일 02:00 파이프라인+증분 정규화
 # 트리거가 "로그온 시"라 등록만으론 지금 안 뜬다 — 이번 세션에선 직접 시작한다:
-Start-ScheduledTask -TaskName thinktank-receiver
+Start-ScheduledTask -TaskName airvoice-receiver
 ```
-**검증:** `Get-ScheduledTask thinktank-receiver, thinktank-nightly` 존재 +
+**검증:** `Get-ScheduledTask airvoice-receiver, airvoice-nightly` 존재 +
 기동 확인(~10초 후): `Invoke-WebRequest http://127.0.0.1:8765/health` → `ok`.
 
 ---
@@ -116,7 +124,7 @@ Start-ScheduledTask -TaskName thinktank-receiver
 
 관리자 PowerShell 에서(사용자에게 실행 요청):
 ```powershell
-New-NetFirewallRule -DisplayName "thinktank LAN 수신기" `
+New-NetFirewallRule -DisplayName "AI R Voice LAN 수신기" `
   -Direction Inbound -Action Allow -Protocol TCP -LocalPort 8765 `
   -Profile Private -RemoteAddress 192.168.0.0/24
 ```
@@ -127,7 +135,7 @@ New-NetFirewallRule -DisplayName "thinktank LAN 수신기" `
 
 ## 7. 🙋 폰 앱 (두 번째 기기라 손이 필요)
 
-1. 같은 폴더의 `thinktank-recorder.apk` 를 USB 등 안전한 전달 방식으로 폰에 설치한다.
+1. 같은 폴더의 `ai-r-voice.apk` 를 USB 등 안전한 전달 방식으로 폰에 설치한다.
    Receiver bearer token을 URL에 넣는 브라우저 APK 다운로드는 지원하지 않는다.
 2. 앱 ③ 설정 탭:
    - 서버 주소: `http://<PC IP>:8765`
@@ -147,9 +155,9 @@ New-NetFirewallRule -DisplayName "thinktank LAN 수신기" `
 1. 🙋 폰에서 녹음 몇 초 → 앱에서 "동기화"(또는 자동). PC `INGEST_DIR` 에 `.m4a` 도착 확인.
 2. 파이프라인 1회 수동 실행:
    ```powershell
-   .\.venv\Scripts\python -m thinktank.main
+   .\.venv\Scripts\python -m airvoice.main
    ```
-3. **검증:** `~/thinktank-vault/10-daily/` 에 오늘 날짜 노트가 생겼는지.
+3. **검증:** `~/ai-r-voice-vault/10-daily/` 에 오늘 날짜 노트가 생겼는지.
    생겼으면 설치 성공 — 이후엔 업로드 즉시(수신기 트리거) + 야간 정규화가 자동으로 돈다.
 
 ---
@@ -162,9 +170,9 @@ IP(`100.x`)로 바꾼다. 그러면 집·밖 어디서나 동작한다. (LAN IP 
 ---
 
 ## 문제 대응 (Claude 참고)
-- 수신기가 안 뜸 → `~/.thinktank/receiver.log` 확인. 기동에 ~10초 걸리니 성급히 실패 판정 X.
-- `/apk` 가 404 → APK 를 `~/.thinktank/thinktank-recorder.apk` 로 복사했는지(4-4) 확인.
+- 수신기가 안 뜸 → `~/.airvoice/receiver.log` 확인. 기동에 ~10초 걸리니 성급히 실패 판정 X.
+- `/apk` 가 404 → APK 를 `~/.airvoice/ai-r-voice.apk` 로 복사했는지(4-4) 확인.
 - STT 가 CPU 로 돎 → 3단계 검증 재실행 + `nvidia-cudnn-cu12`/`nvidia-cublas-cu12` 설치 여부
   + `.env` 의 `WHISPER_DEVICE=cuda`(미설정이면 torch 자동감지로 cpu 로 떨어진다).
 - claude CLI 순간 실패(rate limit) → 재시도. 정규화는 미분류로 흘렸다가 다음 야간에 자가치유.
-- 코드 구조는 `src/thinktank/` 참고.
+- 코드 구조는 `src/airvoice/` 참고.

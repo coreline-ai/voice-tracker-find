@@ -1,6 +1,6 @@
 # OAuth cloud summary integration
 
-ThinkTank consumes the independent SDK only from `android-app/local-maven`:
+AI R Voice consumes the independent SDK only from `android-app/local-maven`:
 
 ```text
 ai.coreline.oauthllm:oauth-llm-android:0.1.0
@@ -19,29 +19,29 @@ through Gradle properties, environment variables, or ignored `android-app/local.
 
 | Name | Purpose |
 |---|---|
-| `THINKTANK_ANTHROPIC_CLIENT_ID` | Anthropic public OAuth client ID |
-| `THINKTANK_CODEX_CLIENT_ID` | Codex public OAuth client ID |
-| `THINKTANK_XAI_CLIENT_ID` | xAI public OAuth client ID |
-| `THINKTANK_ANTHROPIC_MODEL` | Anthropic model used for structured summary |
-| `THINKTANK_CODEX_MODEL` | Codex model used for structured summary |
-| `THINKTANK_XAI_MODEL` | xAI model used for structured summary |
+| `AIRVOICE_ANTHROPIC_CLIENT_ID` | Anthropic public OAuth client ID |
+| `AIRVOICE_CODEX_CLIENT_ID` | Codex public OAuth client ID |
+| `AIRVOICE_XAI_CLIENT_ID` | xAI public OAuth client ID |
+| `AIRVOICE_ANTHROPIC_MODEL` | Anthropic model used for structured summary |
+| `AIRVOICE_CODEX_MODEL` | Codex model used for structured summary |
+| `AIRVOICE_XAI_MODEL` | xAI model used for structured summary |
 
 For an override, append the required entries from `oauth-llm.properties.example` to the ignored
 `local.properties`. Override values are intentionally omitted:
 
 ```properties
-THINKTANK_ANTHROPIC_CLIENT_ID=
-THINKTANK_ANTHROPIC_MODEL=
-THINKTANK_CODEX_CLIENT_ID=
-THINKTANK_CODEX_MODEL=
-THINKTANK_XAI_CLIENT_ID=
-THINKTANK_XAI_MODEL=
+AIRVOICE_ANTHROPIC_CLIENT_ID=
+AIRVOICE_ANTHROPIC_MODEL=
+AIRVOICE_CODEX_CLIENT_ID=
+AIRVOICE_CODEX_MODEL=
+AIRVOICE_XAI_CLIENT_ID=
+AIRVOICE_XAI_MODEL=
 ```
 
 Do **not** add a client secret. This Android app is a public OAuth client; confidential secrets in
 an APK are not supported. `local.properties` must remain uncommitted. The checked-in identifiers are
 compatibility registrations found in the approved read-only reference implementation; public does not
-imply registration ownership. Replace them with Provider-approved ThinkTank registrations before a
+imply registration ownership. Replace them with Provider-approved AI R Voice registrations before a
 production release.
 
 ## Runtime behavior
@@ -55,7 +55,7 @@ production release.
 6. With no active profile, the existing local-only flow remains the default.
 
 OAuth credentials, authorization codes, PKCE verifiers, raw HTTP objects and raw Provider error
-bodies are owned by the SDK and never enter ThinkTank contracts, logs, Room rows or Compose state.
+bodies are owned by the SDK and never enter AI R Voice contracts, logs, Room rows or Compose state.
 
 ## Verification
 

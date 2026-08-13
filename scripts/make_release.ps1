@@ -1,6 +1,6 @@
 <#
 .SYNOPSIS
-    Build a privacy-safe distributable zip of thinktank for other people.
+    Build a privacy-safe distributable zip of AI R Voice for other people.
 
 .DESCRIPTION
     Uses an ALLOWLIST: only named, known-safe items are copied into the release.
@@ -12,19 +12,19 @@
     They install Claude Code, open it here, and say "follow SETUP.md".
 
 .PARAMETER Output
-    Path of the zip to create. Default: <repo-parent>\thinktank-release.zip
+    Path of the zip to create. Default: <repo-parent>\ai-r-voice-release.zip
 
 .PARAMETER Apk
-    Path to the phone APK to bundle. Default: ~/.thinktank/thinktank-recorder.apk
+    Path to the phone APK to bundle. Default: ~/.airvoice/ai-r-voice.apk
 #>
 param(
     [string]$Output,
-    [string]$Apk = (Join-Path $HOME ".thinktank\thinktank-recorder.apk")
+    [string]$Apk = (Join-Path $HOME ".airvoice\ai-r-voice.apk")
 )
 
 $ErrorActionPreference = "Stop"
 $RepoRoot = Split-Path -Parent $PSScriptRoot
-if (-not $Output) { $Output = Join-Path (Split-Path -Parent $RepoRoot) "thinktank-release.zip" }
+if (-not $Output) { $Output = Join-Path (Split-Path -Parent $RepoRoot) "ai-r-voice-release.zip" }
 
 # Only these are copied. Everything else (vault, .env, tokens, recordings, DB) is excluded by omission.
 $AllowFiles = @("pyproject.toml", "README.md", "SETUP.md", "DISTRIBUTE.md", ".env.example")
@@ -32,7 +32,7 @@ $AllowDirs  = @("src", "scripts", "tests")
 # .claude: ship generic tooling only; never personal/stateful subfolders.
 $ClaudeKeep = @("agents", "commands", "skills")
 
-$Staging = Join-Path ([System.IO.Path]::GetTempPath()) ("thinktank-rel-" + [System.IO.Path]::GetRandomFileName())
+$Staging = Join-Path ([System.IO.Path]::GetTempPath()) ("ai-r-voice-rel-" + [System.IO.Path]::GetRandomFileName())
 New-Item -ItemType Directory -Force -Path $Staging | Out-Null
 
 function Copy-Clean($src, $dstParent) {
@@ -53,9 +53,9 @@ if (Test-Path $claudeSrc) {
     foreach ($sub in $ClaudeKeep) { Copy-Clean (Join-Path $claudeSrc $sub) $claudeDst }
 }
 
-# APK (built via GitHub Actions, copied to ~/.thinktank by the release flow).
+# APK (built via GitHub Actions, copied to ~/.airvoice by the release flow).
 if (Test-Path $Apk) {
-    Copy-Item $Apk (Join-Path $Staging "thinktank-recorder.apk")
+    Copy-Item $Apk (Join-Path $Staging "ai-r-voice.apk")
 } else {
     Write-Warning "APK not found at $Apk — release will omit it. Phone can still fetch via /apk."
 }

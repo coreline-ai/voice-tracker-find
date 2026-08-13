@@ -1,0 +1,52 @@
+{
+  "schemaVersion": 1,
+  "product": {
+    "displayName": "AI R Voice",
+    "webName": "AI R Voice Console",
+    "browserTitle": "AI R Voice · LAN Console"
+  },
+  "android": {
+    "applicationId": {
+      "from": "com.thinktank.recorder.next",
+      "to": "com.coreline.ai.voice"
+    },
+    "variants": {
+      "debug": "com.coreline.ai.voice.debug",
+      "qa": "com.coreline.ai.voice.qa",
+      "deviceTest": "com.coreline.ai.voice.deviceTest"
+    },
+    "packages": {
+      "cloudSummary": "com.coreline.ai.voice.cloudsummary",
+      "onDevice": "com.coreline.ai.voice.ondevice",
+      "liteRt": "com.coreline.ai.voice.ondevice.summary.litert"
+    },
+    "rootProject": "ai-r-voice-android",
+    "database": "airvoice.db",
+    "dataStore": "airvoice_settings",
+    "deepLinkScheme": "airvoice"
+  },
+  "python": {
+    "distribution": {
+      "from": "thinktank-voice-pipeline",
+      "to": "ai-r-voice"
+    },
+    "module": {
+      "from": "thinktank",
+      "to": "airvoice"
+    },
+    "runtimeHome": "~/.airvoice",
+    "vault": "~/ai-r-voice-vault"
+  },
+  "operations": {
+    "tasks": [
+      "airvoice-nightly",
+      "airvoice-receiver"
+    ],
+    "apk": "ai-r-voice.apk",
+    "releaseZip": "ai-r-voice-release.zip",
+    "environmentPrefix": "AIRVOICE_"
+  },
+  "web": {
+    "sessionStorageKey": "airvoice-receiver-dashboard-token"
+  }
+}

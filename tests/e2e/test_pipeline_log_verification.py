@@ -20,9 +20,9 @@ from pathlib import Path
 
 import pytest
 
-from thinktank.db import Status, init_db, insert_recording, update_recording_status
-from thinktank.notes.pipeline_log import append_pipeline_log
-from thinktank.report import PipelineRun, build_run_report
+from airvoice.db import Status, init_db, insert_recording, update_recording_status
+from airvoice.notes.pipeline_log import append_pipeline_log
+from airvoice.report import PipelineRun, build_run_report
 
 
 @pytest.fixture

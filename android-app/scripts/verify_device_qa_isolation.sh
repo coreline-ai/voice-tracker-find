@@ -8,7 +8,7 @@ INSTALLER="$ROOT_DIR/scripts/install_samsung_preview.sh"
 LEGACY_RUNNER="$ROOT_DIR/../scripts/run_samsung_device_tests.sh"
 JAVA_RESOLVER="$ROOT_DIR/scripts/resolve_java_home.sh"
 APP_BUILD="$ROOT_DIR/app/build.gradle.kts"
-PROTECTED_PACKAGE="com.thinktank.recorder.next.qa"
+PROTECTED_PACKAGE="com.coreline.ai.voice.qa"
 
 fail() {
   echo "Device QA isolation check failed: $*" >&2
@@ -27,7 +27,7 @@ grep -Fq 'testBuildType = "deviceTest"' "$APP_BUILD" ||
   fail "instrumentation is not pinned to deviceTest"
 grep -Fq ':app:connectedDeviceTestAndroidTest' "$RUNNER" ||
   fail "runner does not target deviceTest instrumentation"
-grep -Fq 'PACKAGE_NAME="com.thinktank.recorder.next.qa"' "$INSTALLER" ||
+grep -Fq 'PACKAGE_NAME="com.coreline.ai.voice.qa"' "$INSTALLER" ||
   fail "persistent preview installer package is not pinned"
 grep -Fq 'APPROVED_SERIAL="R3CY40PXCAP"' "$INSTALLER" ||
   fail "persistent preview installer serial is not pinned"
@@ -35,7 +35,7 @@ grep -Fq 'install -r -t "$APK_PATH"' "$INSTALLER" ||
   fail "persistent preview installer does not use data-preserving replacement"
 grep -Fq 'run_device_qa.sh" --case core' "$LEGACY_RUNNER" ||
   fail "legacy Samsung runner does not delegate to isolated deviceTest QA"
-grep -Fq 'thinktank_require_java21' "$INSTALLER" ||
+grep -Fq 'airvoice_require_java21' "$INSTALLER" ||
   fail "persistent preview installer is not pinned to Java 21+"
 grep -Fq 'jdk-21.0.11+10/Contents/Home' "$JAVA_RESOLVER" ||
   fail "Java 21 resolver does not include the managed Temurin runtime"

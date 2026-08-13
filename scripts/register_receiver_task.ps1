@@ -1,11 +1,11 @@
 ﻿<#
 .SYNOPSIS
-    thinktank LAN 수신기를 로그온 시 자동 시작하도록 작업 스케줄러에 등록한다.
+    AI R Voice LAN 수신기를 로그온 시 자동 시작하도록 작업 스케줄러에 등록한다.
 
 .DESCRIPTION
     Syncthing 을 제거한 뒤로 수신기가 유일한 캡처 경로다. 터미널 창을 띄워두는
     방식은 창을 닫거나 재부팅하면 끊기므로, 로그온 시 창 없이 자동 시작하도록
-    "thinktank-receiver" 작업을 등록한다. 이미 있으면 갱신하므로 여러 번 실행해도 안전하다.
+    "airvoice-receiver" 작업을 등록한다. 이미 있으면 갱신하므로 여러 번 실행해도 안전하다.
 
     파이프라인 태스크(register_task.ps1)와 다른 점:
     - 상주 서비스라 실행 시간 제한을 없앤다(기본 3일이면 그때 죽는다).
@@ -22,7 +22,7 @@
     수신기 포트. 기본 8765. 방화벽 규칙과 폰 설정의 포트가 같아야 한다.
 
 .PARAMETER LogFile
-    수신기 로그 경로. 기본 ~/.thinktank/receiver.log
+    수신기 로그 경로. 기본 ~/.airvoice/receiver.log
 
 .PARAMETER Unregister
     등록된 작업을 제거하고 종료한다.
@@ -41,13 +41,14 @@
 param(
     [string]$ProjectRoot = (Split-Path -Parent $PSScriptRoot),
     [int]$Port = 8765,
-    [string]$LogFile = (Join-Path $HOME ".thinktank\receiver.log"),
+    [string]$LogFile = (Join-Path $HOME ".airvoice\receiver.log"),
     [switch]$Unregister
 )
 
 $ErrorActionPreference = "Stop"
 
-$TaskName = "thinktank-receiver"
+$TaskName = "airvoice-receiver"
+$LegacyTaskName = "thinktank-receiver"
 
 if ($Unregister) {
     if (Get-ScheduledTask -TaskName $TaskName -ErrorAction SilentlyContinue) {
@@ -61,6 +62,11 @@ if ($Unregister) {
     return
 }
 
+$legacyTask = Get-ScheduledTask -TaskName $LegacyTaskName -ErrorAction SilentlyContinue
+if ($legacyTask) {
+    Write-Warning "이전 '$LegacyTaskName' 태스크가 남아 있어 포트 충돌이 발생할 수 있습니다. 새 수신기 검증 후 'Unregister-ScheduledTask -TaskName $LegacyTaskName -Confirm:`$false'로 제거하세요."
+}
+
 $ProjectRoot = (Resolve-Path -Path $ProjectRoot).Path
 $Launcher = Join-Path $ProjectRoot "scripts\run_receiver.ps1"
 $PythonExe = Join-Path $ProjectRoot ".venv\Scripts\python.exe"
@@ -72,7 +78,7 @@ if (-not (Test-Path $Launcher)) {
     throw "런처를 찾을 수 없습니다: $Launcher"
 }
 
-$tokenFile = Join-Path $HOME ".thinktank\receiver-token.txt"
+$tokenFile = Join-Path $HOME ".airvoice\receiver-token.txt"
 if (-not (Test-Path $tokenFile)) {
     Write-Host "토큰이 아직 없습니다. 첫 실행 때 생성됩니다 -> $tokenFile" -ForegroundColor Yellow
 }
@@ -109,7 +115,7 @@ Register-ScheduledTask `
     -Trigger $Trigger `
     -Settings $Settings `
     -Principal $Principal `
-    -Description "thinktank LAN 수신기 (폰 -> PC 녹음 업로드). 로그온 시 자동 시작." `
+    -Description "AI R Voice LAN 수신기 (폰 -> PC 녹음 업로드). 로그온 시 자동 시작." `
     -Force `
     | Out-Null
 

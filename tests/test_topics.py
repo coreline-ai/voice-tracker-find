@@ -5,8 +5,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from thinktank.extract import ExtractedItem
-from thinktank.topics import Topic, TopicEntry, merge_topics
+from airvoice.extract import ExtractedItem
+from airvoice.topics import Topic, TopicEntry, merge_topics
 
 
 def _item(text: str, topics: list[str], **overrides) -> ExtractedItem:

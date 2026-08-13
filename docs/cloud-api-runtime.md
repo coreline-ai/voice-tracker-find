@@ -1,6 +1,6 @@
 # Cloud API runtime
 
-`thinktank.cloud_api`는 Cloud Run용 Receiver V1 API다. TLS는 Cloud Run에서 종료하며
+`airvoice.cloud_api`는 Cloud Run용 Receiver V1 API다. TLS는 Cloud Run에서 종료하며
 container는 `0.0.0.0:$PORT`의 h2c/HTTP 서버만 연다.
 
 ## 필수 환경 변수
@@ -31,7 +31,7 @@ peppered HMAC digest만 저장된다. 출력은 Secret Manager로 옮기고 shel
 않는다.
 
 ```bash
-python -m thinktank.cloud_admin issue-token \
+python -m airvoice.cloud_admin issue-token \
   --user-id user1 \
   --version 1 \
   --expires-in-days 90
@@ -40,7 +40,7 @@ python -m thinktank.cloud_admin issue-token \
 폐기는 원문 token 없이 `tokenId`로 수행한다.
 
 ```bash
-python -m thinktank.cloud_admin revoke-token --token-id UUID
+python -m airvoice.cloud_admin revoke-token --token-id UUID
 ```
 
 ## Container build
@@ -51,7 +51,7 @@ Apple Silicon Mac mini에서도 Cloud Run의 Linux x86_64 계약에 맞춰 교�
 docker build \
   --platform linux/amd64 \
   --file Dockerfile.api \
-  --tag REGION-docker.pkg.dev/PROJECT/REPOSITORY/thinktank-api:TAG \
+  --tag REGION-docker.pkg.dev/PROJECT/REPOSITORY/airvoice-api:TAG \
   .
 ```
 

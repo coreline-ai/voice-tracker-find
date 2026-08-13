@@ -10,8 +10,8 @@ from pathlib import Path
 
 import pytest
 
-from thinktank.db import Status, init_db, insert_recording
-from thinktank.report import PipelineRun, RunError, build_run_report, format_duration
+from airvoice.db import Status, init_db, insert_recording
+from airvoice.report import PipelineRun, RunError, build_run_report, format_duration
 
 
 @pytest.fixture

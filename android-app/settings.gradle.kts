@@ -29,7 +29,7 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "thinktank-recorder-next"
+rootProject.name = "ai-r-voice-android"
 include(":app")
 include(":feature-ondevice")
 include(":feature-cloud-summary")

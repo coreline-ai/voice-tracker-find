@@ -1,10 +1,10 @@
 ﻿<#
 .SYNOPSIS
-    thinktank 배치 파이프라인을 Windows 작업 스케줄러에 매일 실행 태스크로 등록한다.
+    AI R Voice 배치 파이프라인을 Windows 작업 스케줄러에 매일 실행 태스크로 등록한다.
 
 .DESCRIPTION
-    프로젝트 venv의 python.exe 절대경로로 `python -m thinktank.main` 을 지정한 시각
-    (기본 02:00)에 매일 실행하도록 "thinktank-nightly" 작업을 등록한다.
+    프로젝트 venv의 python.exe 절대경로로 `python -m airvoice.main` 을 지정한 시각
+    (기본 02:00)에 매일 실행하도록 "airvoice-nightly" 작업을 등록한다.
     이미 등록되어 있으면 설정을 갱신한다(멱등). 작업 자체가 실패하면(예: 크래시)
     1시간 뒤 자동으로 재시도하도록 설정한다.
 
@@ -16,14 +16,14 @@
     매일 실행 시각 ("HH:mm", 24시간제). 기본값: "02:00".
 
 .PARAMETER Unregister
-    지정하면 등록된 "thinktank-nightly" 태스크를 제거하고 종료한다.
+    지정하면 등록된 "airvoice-nightly" 태스크를 제거하고 종료한다.
 
 .EXAMPLE
     .\scripts\register_task.ps1
     기본 경로(../)와 기본 시각(02:00)으로 태스크를 등록(또는 갱신)한다.
 
 .EXAMPLE
-    .\scripts\register_task.ps1 -ProjectRoot "D:\Project\thinktank" -Time "03:30"
+    .\scripts\register_task.ps1 -ProjectRoot "D:\Project\airvoice" -Time "03:30"
     지정한 프로젝트 루트/시각으로 태스크를 등록한다.
 
 .EXAMPLE
@@ -46,7 +46,8 @@ param(
 
 $ErrorActionPreference = "Stop"
 
-$TaskName = "thinktank-nightly"
+$TaskName = "airvoice-nightly"
+$LegacyTaskName = "thinktank-nightly"
 
 if ($Unregister) {
     $existingTask = Get-ScheduledTask -TaskName $TaskName -ErrorAction SilentlyContinue
@@ -58,6 +59,11 @@ if ($Unregister) {
         Write-Host "'$TaskName' 태스크가 존재하지 않습니다. 제거할 것이 없습니다."
     }
     return
+}
+
+$legacyTask = Get-ScheduledTask -TaskName $LegacyTaskName -ErrorAction SilentlyContinue
+if ($legacyTask) {
+    Write-Warning "이전 '$LegacyTaskName' 태스크가 남아 있어 중복 실행될 수 있습니다. 새 태스크 검증 후 'Unregister-ScheduledTask -TaskName $LegacyTaskName -Confirm:`$false'로 제거하세요."
 }
 
 $ProjectRoot = (Resolve-Path -Path $ProjectRoot).Path
@@ -110,7 +116,7 @@ Register-ScheduledTask `
     -Trigger $Trigger `
     -Settings $Settings `
     -Principal $Principal `
-    -Description "thinktank 야간 배치 파이프라인 (ingest -> vad -> transcribe -> extract -> organize)" `
+    -Description "AI R Voice 야간 배치 파이프라인 (ingest -> vad -> transcribe -> extract -> organize)" `
     -Force `
     | Out-Null
 
@@ -128,7 +134,7 @@ else {
     Write-Host "'$TaskName' 태스크를 새로 등록했습니다."
 }
 
-Write-Host "실행 프로그램: $Launcher (python -m thinktank.main)"
-Write-Host "로그: $env:USERPROFILE\.thinktank\pipeline.log"
+Write-Host "실행 프로그램: $Launcher (python -m airvoice.main)"
+Write-Host "로그: $env:USERPROFILE\.airvoice\pipeline.log"
 Write-Host "작업 디렉터리: $ProjectRoot"
 Write-Host "실행 시각: 매일 $Time (실패 시 1시간 간격 최대 3회 재시도)"

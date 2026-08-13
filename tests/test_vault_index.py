@@ -6,7 +6,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from thinktank.vault_index import (
+from airvoice.vault_index import (
     TopicRecord,
     generate_vault_index,
     render_vault_index,

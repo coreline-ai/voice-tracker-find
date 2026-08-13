@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-from thinktank.db import (
+from airvoice.db import (
     Recording,
     Status,
     get_recordings,
@@ -16,8 +16,8 @@ from thinktank.db import (
     insert_recording,
     update_recording_status,
 )
-from thinktank.notes.archive import Segment, Transcript
-from thinktank.transcribe import (
+from airvoice.notes.archive import Segment, Transcript
+from airvoice.transcribe import (
     RawSegment,
     format_timestamp,
     render_transcript_text,
@@ -317,7 +317,7 @@ except ImportError:
     reason="faster-whisper 미설치 - 실 모델 검증은 P5 E2E에서 수행",
 )
 def test_load_transcriber_returns_callable_with_real_model():
-    from thinktank.transcribe import load_transcriber
+    from airvoice.transcribe import load_transcriber
 
     transcriber = load_transcriber()
 

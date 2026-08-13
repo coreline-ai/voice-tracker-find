@@ -14,15 +14,15 @@ from pathlib import Path
 
 import pytest
 
-import thinktank.main
+import airvoice.main
 from tests.vault_text import daily_all_text
-from thinktank.config import Settings
-from thinktank.db import Status, get_recordings
-from thinktank.extract import ExtractedItem
-from thinktank.main import main, run_pipeline, should_run_emerge
-from thinktank.notes.emerged import IDEAS_SUBDIR
-from thinktank.transcribe import RawSegment
-from thinktank.vad import VadSegment
+from airvoice.config import Settings
+from airvoice.db import Status, get_recordings
+from airvoice.extract import ExtractedItem
+from airvoice.main import main, run_pipeline, should_run_emerge
+from airvoice.notes.emerged import IDEAS_SUBDIR
+from airvoice.transcribe import RawSegment
+from airvoice.vad import VadSegment
 
 
 @pytest.fixture
@@ -490,15 +490,15 @@ class TestEmergeIntegration:
 class TestCli:
     @pytest.fixture(autouse=True)
     def _isolate_users(self, monkeypatch, settings: Settings):
-        """실제 ~/.thinktank/users.json 을 읽지 않게 막는다.
+        """실제 ~/.airvoice/users.json 을 읽지 않게 막는다.
 
         안 막으면 이 PC 에 설정된 진짜 사용자(와 그 사람의 실제 경로)가 테스트로
         새어 들어온다.
         """
-        from thinktank.users import User
+        from airvoice.users import User
 
         monkeypatch.setattr(
-            thinktank.main,
+            airvoice.main,
             "load_users",
             lambda base: [User(name="", token="t", settings=base)],
         )
@@ -508,14 +508,14 @@ class TestCli:
     ):
         captured: dict = {}
 
-        monkeypatch.setattr(thinktank.main, "load_settings", lambda: settings)
+        monkeypatch.setattr(airvoice.main, "load_settings", lambda: settings)
 
         def _fake_run_pipeline(passed_settings, **kwargs):
             captured["settings"] = passed_settings
             captured["kwargs"] = kwargs
             return "sentinel-report"
 
-        monkeypatch.setattr(thinktank.main, "run_pipeline", _fake_run_pipeline)
+        monkeypatch.setattr(airvoice.main, "run_pipeline", _fake_run_pipeline)
 
         result = main(["--force-emerge", "--date", "2025-03-01"])
 
@@ -528,9 +528,9 @@ class TestCli:
     ):
         captured: dict = {}
 
-        monkeypatch.setattr(thinktank.main, "load_settings", lambda: settings)
+        monkeypatch.setattr(airvoice.main, "load_settings", lambda: settings)
         monkeypatch.setattr(
-            thinktank.main,
+            airvoice.main,
             "run_pipeline",
             lambda passed_settings, **kwargs: captured.update(kwargs=kwargs),
         )
@@ -578,15 +578,15 @@ class TestAiProviderSelection:
             return _emerge
 
         monkeypatch.setattr(
-            thinktank.main, "load_cli_extractor", _fake_load_cli_extractor
+            airvoice.main, "load_cli_extractor", _fake_load_cli_extractor
         )
-        monkeypatch.setattr(thinktank.main, "load_cli_emerger", _fake_load_cli_emerger)
+        monkeypatch.setattr(airvoice.main, "load_cli_emerger", _fake_load_cli_emerger)
 
         def _fail_if_called(*_args, **_kwargs):
             raise AssertionError("claude_cli provider 는 API 로더를 호출하면 안 된다.")
 
-        monkeypatch.setattr(thinktank.main, "load_extractor", _fail_if_called)
-        monkeypatch.setattr(thinktank.main, "load_emerger", _fail_if_called)
+        monkeypatch.setattr(airvoice.main, "load_extractor", _fail_if_called)
+        monkeypatch.setattr(airvoice.main, "load_emerger", _fail_if_called)
 
         run_pipeline(
             cli_settings,
@@ -677,7 +677,7 @@ class TestDateAttribution:
         for path in daily.glob("*.md"):
             path.unlink()
 
-        dates = thinktank.main.rebuild_daily_notes(settings)
+        dates = airvoice.main.rebuild_daily_notes(settings)
 
         assert set(dates) == {"2026-07-13", "2026-07-15"}
         assert (daily / "2026-07-13.md").is_file()

@@ -1,6 +1,6 @@
 # Quiet Archive UX Intent
 
-ThinkTank Recorder는 AI 기능을 과시하는 앱이 아니라 사용자가 말한 내용을 잃지 않고
+AI R Voice Recorder는 AI 기능을 과시하는 앱이 아니라 사용자가 말한 내용을 잃지 않고
 조용히 기록한 뒤 믿을 수 있는 노트로 되찾는 개인 아카이브다.
 
 ## 경험 원칙

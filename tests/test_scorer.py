@@ -3,7 +3,7 @@
 # @TEST tests/test_scorer.py
 from __future__ import annotations
 
-from thinktank.scorer import (
+from airvoice.scorer import (
     Node,
     hybrid_score,
     rank_candidates,

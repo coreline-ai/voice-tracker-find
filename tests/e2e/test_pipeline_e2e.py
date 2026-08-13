@@ -1,6 +1,6 @@
 # @TASK P5-T5.2 - E2E 통합 테스트 (전체 배치 파이프라인)
 # @SPEC docs/planning/06-tasks.md#P5-T5.2
-"""thinktank.main.run_pipeline 전체 플로우를 오프라인(fake 의존성 전부 주입)으로
+"""airvoice.main.run_pipeline 전체 플로우를 오프라인(fake 의존성 전부 주입)으로
 검증하는 E2E 테스트.
 
 실제 GPU/torch/faster-whisper/anthropic 는 전혀 사용하지 않고, detect_speech/
@@ -32,14 +32,14 @@ from pathlib import Path
 import pytest
 
 from tests.vault_text import daily_all_text
-from thinktank.config import Settings
-from thinktank.db import Status, get_recordings
-from thinktank.extract import ExtractedItem
-from thinktank.main import run_pipeline, should_run_emerge
-from thinktank.notes.emerged import IDEAS_SUBDIR
-from thinktank.notes.renderer import archive_filename, normalize_filename
-from thinktank.transcribe import RawSegment
-from thinktank.vad import VadSegment
+from airvoice.config import Settings
+from airvoice.db import Status, get_recordings
+from airvoice.extract import ExtractedItem
+from airvoice.main import run_pipeline, should_run_emerge
+from airvoice.notes.emerged import IDEAS_SUBDIR
+from airvoice.notes.renderer import archive_filename, normalize_filename
+from airvoice.transcribe import RawSegment
+from airvoice.vad import VadSegment
 
 
 @pytest.fixture

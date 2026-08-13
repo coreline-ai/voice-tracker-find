@@ -9,7 +9,7 @@ ADB_BIN="${ADB_BIN:-$ADB_DEFAULT}"
 APPROVED_SERIAL="R3CY40PXCAP"
 APPROVED_MANUFACTURER="samsung"
 APPROVED_MODEL="SM-S931N"
-PACKAGE_NAME="com.thinktank.recorder.next.qa"
+PACKAGE_NAME="com.coreline.ai.voice.qa"
 APK_PATH="$ROOT_DIR/app/build/outputs/apk/devicePreview/app-devicePreview.apk"
 METADATA_PATH="$ROOT_DIR/app/build/outputs/apk/devicePreview/output-metadata.json"
 ALLOW_FIRST_INSTALL=false
@@ -18,7 +18,7 @@ usage() {
   cat <<'USAGE'
 Usage: install_samsung_preview.sh [--allow-first-install]
 
-Builds com.thinktank.recorder.next.qa and updates only Samsung SM-S931N
+Builds com.coreline.ai.voice.qa and updates only Samsung SM-S931N
 (R3CY40PXCAP) with `adb install -r`. The script never uninstalls or clears app data.
 
 --allow-first-install  Required only when the persistent .qa package is not installed yet.
@@ -63,7 +63,7 @@ model="$("$ADB_BIN" -s "$APPROVED_SERIAL" shell getprop ro.product.model | tr -d
 }
 
 cd "$ROOT_DIR"
-thinktank_require_java21
+airvoice_require_java21
 ./gradlew :app:assembleDevicePreview
 
 [[ -f "$APK_PATH" && -f "$METADATA_PATH" ]] || {
@@ -116,7 +116,7 @@ after_models="$(
 )"
 
 "$ADB_BIN" -s "$APPROVED_SERIAL" shell am start -W \
-  -n "$PACKAGE_NAME/com.thinktank.recorder.next.MainActivity"
+  -n "$PACKAGE_NAME/com.coreline.ai.voice.MainActivity"
 
 echo "Persistent Samsung preview update completed."
 echo "  serial=$APPROVED_SERIAL"

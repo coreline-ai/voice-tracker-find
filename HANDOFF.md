@@ -1,42 +1,69 @@
-# ThinkTank 프로젝트 핸드오프
+# AI R Voice 프로젝트 핸드오프
 
-- 작성 기준: `2026-08-10 KST`
-- 저장소: `https://github.com/coreline-ai/voice-tracker-find.git`
+- 갱신 일시: `2026-08-13 KST`
+- 제품명: `AI R Voice`
+- Android release package: `com.coreline.ai.voice`
 - 브랜치: `main`
-- 구현 기준 커밋: `34d0b4c` (`chore: track public OAuth compatibility defaults`)
+- 작업 시작 커밋: `582175a5d801c0a68774461da88ede4503e317ad`
+- 현재 원격: `https://github.com/coreline-ai/voice-tracker-find.git` (GitHub 저장소 rename 전)
+- 현재 상태: 리브랜딩 구현·자동 검증 및 PD20 수동 QA/web 연결 검증 완료, commit/push 및 외부 운영 gate 대기
 
-## 1. 현재 상태
+## 1. 구현 상태
 
-현재 코드는 **프로덕션급 구현 기준선**이다. 독립 OAuth LLM SDK artifact 소비, OAuth 계정
-설정 UI, 클라우드 우선·Gemma 폴백, Room provenance, 장시간 로컬 처리 기반과 자동 검증이
-구현되어 있다.
+Android, 웹 콘솔, Python 배포 패키지와 운영 스크립트의 활성 제품 식별자를 새 체계로
+전환했다. 녹음·STT·Gemma·OAuth cloud-first/local-fallback 동작과 독립 OAuth LLM SDK
+artifact 계약은 재설계하지 않았다.
 
-다만 다음 항목은 구현 완료 주장에 포함하지 않는다.
+| 영역 | 현재 정본 |
+|---|---|
+| Android release/debug/QA/deviceTest | `com.coreline.ai.voice` / `.debug` / `.qa` / `.deviceTest` |
+| Android source root | `com.coreline.ai.voice` |
+| cloud/on-device/LiteRT package | `.cloudsummary` / `.ondevice` / `.ondevice.summary.litert` |
+| 앱 표시명 | `AI R Voice` |
+| Android DB/DataStore/scheme | `airvoice.db` / `airvoice_settings` / `airvoice` |
+| 웹 | `AI R Voice Console`, `AI R Voice · LAN Console` |
+| Python distribution/import | `ai-r-voice` / `airvoice` |
+| Python runtime/vault | `~/.airvoice` / `~/ai-r-voice-vault` |
+| APK/release zip | `ai-r-voice.apk` / `ai-r-voice-release.zip` |
 
-- Anthropic/Codex/xAI 실계정 로그인·refresh·generate·logout E2E
-- Provider 승인 ThinkTank 소유 OAuth registration 교체
-- release APK 정식 서명과 배포
-- 30분·1시간·2시간 실음원 장시간 성능·열·배터리 검증
-- Cloud worker/GCP staging 전체 E2E
+현재 판단은 **리브랜딩 소스 구현과 자동 회귀 검증 완료**다. 아래 항목은 완료에 포함하지
+않는다.
 
-즉, 상태는 **구현 완료 / 실계정 및 출시 운영 gate 대기**다.
+- Anthropic/Codex/xAI 실계정 OAuth E2E
+- Provider 승인 production registration 전환
+- release APK 정식 서명과 스토어 배포
+- Samsung 실기기 설치·재설치 지속성·녹음·로컬 AI smoke
+- Room instrumentation migration 1→10 재실행
+- Cloud/GCP staging E2E
+- GitHub 저장소 rename, 최종 commit/push
 
 ## 2. 새 환경에서 시작하기
 
+현재 GitHub rename이 아직 실행되지 않았으므로 clone URL은 원격 rename 완료 후 확정한다.
+기존 checkout을 인계받은 경우 다음 순서로 시작한다.
+
 ```bash
-git clone https://github.com/coreline-ai/voice-tracker-find.git
-cd voice-tracker-find
 git switch main
+git status --short
 git pull --ff-only origin main
 
 cd android-app
-# JDK 17과 Android SDK 35가 필요하다.
-# local.properties에는 이 환경의 sdk.dir만 설정한다.
-./gradlew --no-configuration-cache --no-parallel \
+JAVA_HOME="/path/to/jdk17" ./gradlew --no-configuration-cache --no-parallel \
   :feature-cloud-summary:testDebugUnitTest \
   :feature-ondevice:testDebugUnitTest \
   :app:testDebugUnitTest \
+  :app:lintDebug \
   :app:assembleDebug
+```
+
+Python:
+
+```bash
+uv sync --extra dev --extra server --extra tls
+uv run pytest --tb=short -q
+uv run ruff check .
+uv build
+python -m airvoice.main --help
 ```
 
 호환 기준:
@@ -47,172 +74,174 @@ cd android-app
 | AGP | 8.9.1 |
 | compileSdk / targetSdk | 35 |
 | minSdk | 26 |
-| Java/JVM | 17 |
+| Java/JVM target | 17 |
 | Coroutines | 1.9.0 |
 | OkHttp | 4.12.0 |
 | AppAuth | 0.11.1 |
 
-`android-app/local.properties`는 Git에 포함하지 않는다. OAuth public client/model 기본값은
-`android-app/oauth-llm.defaults.properties`에 추적되므로 새 clone에서도 계정 연결 버튼이
-활성화된다. 환경별 override만 `local.properties`, 환경 변수 또는 Gradle property로 전달한다.
+`android-app/local.properties`는 로컬 Android SDK 경로와 선택적 override 전용이며 Git에
+포함하지 않는다. 공개 OAuth client/model 기본값은 추적되는
+`android-app/oauth-llm.defaults.properties`에서 주입된다. client secret은 APK에 넣지 않는다.
 
 ## 3. 핵심 구조
 
 | 경로 | 역할 |
 |---|---|
-| `android-app/app` | Compose 앱, Activity Result, 설정/계정 화면, DI 조립 |
-| `android-app/feature-cloud-summary` | OAuth SDK adapter, 구조화 prompt/parser, typed 실패 변환 |
-| `android-app/feature-ondevice` | SenseVoice/Gemma 실행, cloud-first 정책, Room, 장시간 checkpoint |
+| `android-app/app` | Compose 앱, 녹음, 설정과 OAuth 계정 화면, DI 조립 |
+| `android-app/feature-cloud-summary` | OAuth SDK adapter, prompt/parser, typed 실패 변환 |
+| `android-app/feature-ondevice` | SenseVoice/Gemma, Room, 장시간 checkpoint와 fallback |
 | `android-app/litert-bridge` | LiteRT 연동 경계 |
 | `android-app/local-maven` | 독립 proprietary OAuth LLM SDK 0.1.0 Maven artifact |
-| `src/thinktank` | Python 서버·receiver·cloud API |
-| `dev-plan` | 구현 단계와 미실행 gate 기록 |
-| `docs/qa` | 검증 보고서와 실계정 E2E 런북 |
+| `src/airvoice` | Python pipeline, receiver, cloud API와 안전한 legacy migration |
+| `web/dashboard` | LAN receiver 웹 콘솔과 sessionStorage migration |
+| `scripts/verify_rebrand.py` | 활성 영역 identity 및 legacy literal allowlist gate |
+| `dev-plan/implement_20260813_205318.md` | 전체 리브랜딩 계획과 실제 진행 상태 |
+| `docs/qa/ai-r-voice-rebrand-implementation-20260813.md` | 이번 구현·검증 증적 |
 
-OAuth SDK 좌표:
+OAuth SDK 좌표는 변경하지 않았다.
 
 ```text
 ai.coreline.oauthllm:oauth-llm-api:0.1.0
 ai.coreline.oauthllm:oauth-llm-android:0.1.0
 ```
 
-ThinkTank는 `android-app/local-maven`의 artifact만 소비하며 독립 SDK source project에 Gradle
-의존하지 않는다.
+## 4. 데이터와 호환 정책
 
-## 4. OAuth 클라우드 요약 동작
+### Android
+
+- 새 application ID는 신규 앱 sandbox를 사용한다.
+- 이전 application ID의 private data를 자동 복제하거나 이전 앱을 자동 삭제하지 않는다.
+- 새 `.qa` package 안에서는 `adb install -r`에 의한 녹음·설정·모델 지속성을 검증해야 한다.
+- Room table/column과 on-device migration 1→10 계약은 유지했고 schema class 경로만 새 package로
+  이동했다.
+
+### Python
+
+- 기본 경로는 `~/.airvoice`, `~/ai-r-voice-vault`다.
+- `python -m airvoice.legacy_migration`은 기본 dry-run이며 `--apply`를 명시해야 복사한다.
+- legacy source는 삭제하지 않으며, target이 이미 차 있으면 merge/overwrite하지 않고 실패한다.
+- 기존 환경변수로 명시적 경로를 준 환경은 강제 이동하지 않는다.
+
+### 웹
+
+- canonical sessionStorage key는 `airvoice-receiver-dashboard-token`이다.
+- 새 key가 없고 legacy key만 있을 때만 1회 복사한다.
+- 새 key가 있으면 legacy 값으로 덮어쓰지 않으며 clear 시 두 key를 모두 제거한다.
+- token은 DOM, console, server log, 오류 본문에 출력하지 않는다.
+
+## 5. OAuth 클라우드 요약 경계
 
 ```text
 활성 OAuth profile 있음
-  → 선택 Provider에 제한된 전사 텍스트만 전송
-  → 성공: Provider/model/request ID/latency/usage 저장
-  → fallbackEligible 실패: Gemma를 정확히 한 번 실행
-  → UserCancelled/InvalidRequest: 자동 Gemma 폴백 없음
+  -> 선택 Provider에 제한된 전사 텍스트만 전송
+  -> 성공: provider/model/request ID/latency/usage 저장
+  -> fallbackEligible 실패: Gemma를 정확히 한 번 실행
+  -> UserCancelled/InvalidRequest: 자동 Gemma fallback 없음
 
 활성 profile 없음
-  → 기존 로컬 Gemma 경로
+  -> 로컬 Gemma 경로
 ```
 
-- Provider A 실패 후 Provider B로 자동 전환하지 않는다.
+- Provider A 실패 후 Provider B를 자동 호출하지 않는다.
 - 오디오 원본은 OAuth SDK나 Provider에 전달하지 않는다.
 - token, authorization code, PKCE verifier, cookie, raw Provider 오류 본문을 UI·로그·DB에
   노출하지 않는다.
-- OAuth 우선 라우팅은 현재 immediate/manual summary 진입점에 적용된다.
-- 장시간 background 계층형 요약은 기존 Gemma checkpoint 경로를 유지한다.
+- 현재 public client ID와 model 정본은 `android-app/oauth-llm.defaults.properties`에 있다.
+- 실계정 E2E는 `executed=false`, `DEFERRED_BY_OWNER`다.
 
-## 5. 현재 public OAuth 호환 설정
+## 6. 2026-08-13 자동 검증 결과
 
-정본은 `android-app/oauth-llm.defaults.properties`다.
+### Python/Web
 
-| Provider | Public client ID | 기본 model |
-|---|---|---|
-| Anthropic | `9d1c250a-e61b-44d9-88ed-5944d1962f5e` | `claude-haiku-4-5` |
-| Codex | `app_EMoamEEZ73f0CkXaXp7hrann` | `gpt-5.6-luna` |
-| xAI | `b1a00492-073a-47ea-816f-4c329264a828` | `grok-4.5` |
+```text
+pytest: 645 passed, 14 skipped, 4 deselected
+ruff: All checks passed
+uv lock --check: pass
+uv build: pass
+wheel zip-import + `python -m airvoice.main --help`: pass
+```
 
-이 값은 비밀 credential이 아니라 source-controlled compatibility registration이다. 그러나
-public client ID라는 사실이 registration 소유권이나 production 사용 승인을 의미하지 않는다.
-정식 배포 전 Provider-approved ThinkTank registration과 callback/scopes를 다시 확인한다.
-Client secret은 APK에 포함하지 않는다.
+### Android
 
-고정 loopback callback:
-
-| Provider | Callback |
-|---|---|
-| Anthropic | `http://localhost:54545/callback` |
-| Codex | `http://localhost:1455/auth/callback` |
-| xAI | `http://127.0.0.1:56121/callback` |
-
-## 6. 검증 기준선
-
-### 2026-08-10 smoke verification
-
-다음 작업을 현재 `main`에서 다시 실행했다.
+다음 작업을 한 clean build에서 실행했다.
 
 ```text
 :feature-cloud-summary:testDebugUnitTest
 :feature-ondevice:testDebugUnitTest
 :app:testDebugUnitTest
-:app:assembleDebug
+:app:lintDebug
+:app:verifyVariantTransportPolicy
+:app:assembleDevicePreview
+:app:assembleDeviceTest
+:app:assembleRelease
 
-BUILD SUCCESSFUL in 27s
-172 actionable tasks: 21 executed, 151 up-to-date
+BUILD SUCCESSFUL in 31s
+472 actionable tasks: 63 executed, 409 up-to-date
 ```
 
-이 과정에서 다음 gate도 통과했다.
+Gradle gate에서 OAuth SDK checksum, license asset, tracked OAuth defaults, cloud/on-device package
+boundary와 native/network boundary가 함께 검증됐다. third-party LiteRT Kotlin metadata와 기존 API
+deprecation warning은 출력됐지만 빌드는 성공했다.
 
-- OAuth SDK artifact checksum
-- cloud/on-device 모듈 경계
-- source-controlled public OAuth default와 confidential field 부재
-- on-device network/native artifact 경계
-- SDK NOTICE/license asset
+### 산출물
 
-### 2026-08-02 전체 검증 기준선
-
-| 항목 | 결과 |
-|---|---|
-| app unit tests | 47/47 pass |
-| feature-ondevice unit tests | 94/94 pass |
-| feature-cloud-summary unit tests | 5/5 pass |
-| lint | 0 errors |
-| clean debug/release build | pass |
-| Room 9→10 migration | Samsung SM-S931N 7/7, PD20 7/7 pass |
-| 실계정 E2E | `executed=false` |
-
-현재 로컬 산출물:
-
-| Artifact | SHA-256 | 상태 |
+| Artifact | Package / 상태 | SHA-256 |
 |---|---|---|
-| `android-app/app/build/outputs/apk/debug/app-debug.apk` | `454e57e4cdf8ae537ab8b7e0b6d7ff3e57beaac26810c25b3483a3a2c1ac72b1` | debug signed |
-| `android-app/app/build/outputs/apk/release/app-release-unsigned.apk` | `c3ce1e9020653321d84df68e75c624ce60fa9aa6a2567eb7ecd569dde994480a` | unsigned |
+| `ai-r-voice.apk` | QA `.qa`, debug signed | `2cbfeb540ea71b86e64a26e0decd48814963cfa76ef042c053b5691b561c848c` |
+| `app-debug.apk` | `.debug`, debug signed | `72c25185cb2fcad2756c7f55015051e8201d0fb6cb7475237921a85db9496b5b` |
+| `app-deviceTest.apk` | `.deviceTest`, debug signed | `5ef73a1dd15137df7b2cf0f1516000052cd1f7e9b66ae6b8f75f3b49c588eb2a` |
+| `app-release-unsigned.apk` | release, unsigned | `f5820f357d89a796b957af558b809115b4ba076d71c6d50c153b4fcb65d6859b` |
+| `ai_r_voice-0.1.0-py3-none-any.whl` | Python wheel | `d52304a3592c25e942b475d692a715ed650f9c45ee1acb9eb1a5450284d50df8` |
+| `ai_r_voice-0.1.0.tar.gz` | Python sdist | `abf0bcbb0a0934ba5b24d7a1f98420a78fe7ce5e830bc5da17a92c94bb15561f` |
+| `ai-r-voice-release.zip` | allowlisted source + QA APK | `4f2c78b954a095a66e0d8341425b7fae7ec845468d643f821107c890337c8eea` |
 
-APK는 Git 추적 대상이 아니므로 다른 환경에서는 재빌드한다.
+`aapt` 기준 네 APK는 모두 compile/target SDK 35, min SDK 26, label `AI R Voice`, launcher
+`com.coreline.ai.voice.MainActivity`다. APK DEX/resource/entry와 wheel package/identifier scan,
+구체 secret marker scan 및 legacy allowlist 검사를 통과했다. release zip은
+`scripts/make_release.py`로 재현하며 내부 `RELEASE-MANIFEST.sha256`과 민감 파일명 gate를 둔다.
 
-## 7. 남은 gate와 권장 진행 순서
+## 7. 실기기 결과
 
-### OAuth/출시 필수
+`adb devices -l`에는 `PD20` 한 대만 연결되어 있었다. Samsung 단말은 아니지만 사용자의
+명시적 요청에 따라 QA APK를 수동 update-install하고 cold start, 메인 UI, Receiver 연결을
+검증했다. `adb reverse tcp:8765`로 임시 local Receiver에 연결했으며 UI는
+`서버와 안전하게 연결되었습니다`를 표시했다. OAuth 계정 UI(Anthropic/Codex/xAI)도 렌더링을
+확인했다. PD20은 사용 가능한 마이크 입력이 없어서 녹음은 실행하지 못했다.
 
-1. Provider별 QA 계정과 승인된 public registration을 준비한다.
-2. `docs/qa/oauth-llm-e2e-runbook.md`를 Anthropic/Codex/xAI별로 실행한다.
-3. 재시작 후 profile 선택 복원, refresh rotation, reauth, disconnect를 확인한다.
-4. 원격 성공/실패의 Provider/model/fallback 사유가 DB와 UI에 일치하는지 확인한다.
-5. 실제 token/raw callback을 남기지 않은 sanitized evidence만 기록한다.
-6. ThinkTank 소유 production registration으로 교체한다.
-7. release signing configuration을 준비하고 signed release를 검증한다.
+실제 browser 새 세션에서도 `AI R Voice · LAN Console` title, token 인증 후 `정상 연결`과
+`정상 운영` 상태, console error/warning 0건을 확인했다. API는 인증 없이는 401, 임시 token으로
+200이며 응답에는 token/절대 로컬 경로가 포함되지 않았다. 테스트 token은 세션에서 제거하고
+임시 Receiver를 종료한다.
 
-### 전체 제품 후속 gate
+Samsung launcher/cold-start/녹음/local-AI/재설치 지속성과 Room instrumentation은 여전히
+미실행이다. 제조사 확인을 강제하는 다음 스크립트가 정식 Samsung gate다.
 
-- Samsung 30분·1시간·2시간 STT→Gemma 풀런 및 중단·재개
-- peak PSS, thermal, battery, working storage 측정
-- 합성 TTS 품질 5/5 확보. 현재 `tts_05`는 안전 거절되지만 가용성은 4/5다.
-- Cloud outbox/worker 실행 주체와 GCP staging E2E
+실행 재개 시:
 
-위 항목은 현재 OAuth 통합 코드의 결함을 의미하지 않으며 실제 운영·출시 범위의 후속
-검증 또는 별도 개발 항목이다.
+```bash
+cd android-app
+./scripts/install_samsung_preview.sh
+./scripts/run_device_qa.sh --case core
+```
 
-## 8. 중요 문서
+스크립트 자체가 Samsung 제조사 확인과 `.qa`/`.deviceTest` package 격리를 강제한다.
 
-- `android-app/docs/oauth-cloud-summary.md`: 통합·빌드 설정
-- `docs/qa/oauth-cloud-summary-implementation-20260802.md`: 구현/자동 검증 보고서
-- `docs/qa/oauth-cloud-summary-handoff.md`: OAuth 범위 인수인계
-- `docs/qa/oauth-llm-e2e-runbook.md`: 실계정 E2E와 증적 양식
-- `dev-plan/implement_20260802_204022.md`: ThinkTank OAuth 통합 계획
-- `dev-plan/implement_20260802_190531.md`: 독립 SDK와 소비 앱 전체 계획
-- `dev-plan/implement_20260801_213348.md`: Gemma/TTS 품질 gate
-- `dev-plan/implement_20260731_193413.md`: 장시간 처리와 Cloud 후속 gate
+## 8. 다음 작업 순서
 
-## 9. 작업 재개 시 주의사항
+1. Samsung 단말만 연결하고 Phase 9 smoke와 Room migration instrumentation을 실행한다.
+2. `docs/qa/oauth-llm-e2e-runbook.md`로 사용자 승인 시에만 Provider별 실계정 E2E를 실행한다.
+3. production OAuth registration과 release signing을 준비한다.
+4. GitHub 저장소를 `coreline-ai/ai-r-voice`로 rename하고 origin/fresh clone을 검증한다.
+5. 현재 변경을 리뷰한 뒤 의미 단위 commit과 push를 수행한다.
 
-- `main`에서 시작하기 전에 `git status`와 `git pull --ff-only origin main`을 확인한다.
-- `android-app/local.properties`와 signing credential을 커밋하지 않는다.
-- client secret, access/refresh token, authorization code, PKCE verifier, raw Provider body를
-  source, Gradle 설정, 로그, 스크린샷, 테스트 fixture에 추가하지 않는다.
-- SDK artifact 갱신 시 version/checksum/POM/license/API compatibility를 한 변경으로 검증한다.
-- 실계정 실행 전까지 E2E를 완료로 표시하지 않는다.
-- 기존 `feature-ondevice` 네트워크 금지 경계와 로컬 전용 동작을 유지한다.
+PowerShell은 현재 macOS 환경에 `pwsh`가 없어 parser/Pester를 실행하지 못했다. shell script는
+`bash -n`을 통과했고 Windows script는 새 module/path/task 이름으로 정적 갱신했다.
 
-## 10. 완료 판단
+## 9. 보안 주의사항
 
-- **현재 판단:** 프로덕션급 구현 기준선 완료
-- **아직 아님:** 실계정 검증 완료, production OAuth 승인 완료, signed release 배포 완료
-- **다음 담당자가 가장 먼저 할 일:** `docs/qa/oauth-llm-e2e-runbook.md`를 읽고 Provider별 QA
-  registration/계정을 준비한 뒤 실계정 E2E를 실행한다.
+- `local.properties`, `.env`, signing credential, DB, 녹음, token, cert를 commit하지 않는다.
+- client secret, access/refresh token, authorization code, PKCE verifier, raw Provider body를 source,
+  Gradle 설정, 로그, 스크린샷, fixture에 추가하지 않는다.
+- public client ID는 비밀이 아니지만 registration 소유권이나 production 승인을 의미하지 않는다.
+- SDK artifact 갱신은 version/checksum/POM/license/API 호환성을 한 변경으로 검증한다.
+- 실계정·서명·Samsung·GitHub gate를 자동 테스트 성공과 혼동해 완료로 표시하지 않는다.

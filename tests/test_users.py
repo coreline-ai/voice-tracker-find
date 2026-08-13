@@ -8,8 +8,8 @@ from pathlib import Path
 
 import pytest
 
-from thinktank.config import ConfigError, Settings
-from thinktank.users import is_multi_user, load_users
+from airvoice.config import ConfigError, Settings
+from airvoice.users import is_multi_user, load_users
 
 
 @pytest.fixture
@@ -68,16 +68,16 @@ def test_경로를_명시하면_그대로_쓴다(base: Settings, tmp_path: Path)
             {
                 "name": "alice",
                 "token": "a",
-                "ingest_dir": "D:/thinktank",
-                "vault": "~/thinktank-vault",
+                "ingest_dir": "D:/airvoice",
+                "vault": "~/ai-r-voice-vault",
             }
         ],
     )
 
     [alice] = load_users(base, users_file=path)
 
-    assert alice.settings.ingest_dir == Path("D:/thinktank")
-    assert alice.settings.obsidian_vault == Path("~/thinktank-vault").expanduser()
+    assert alice.settings.ingest_dir == Path("D:/airvoice")
+    assert alice.settings.obsidian_vault == Path("~/ai-r-voice-vault").expanduser()
 
 
 def test_AI_설정은_기본값을_물려받는다(base: Settings, tmp_path: Path) -> None:

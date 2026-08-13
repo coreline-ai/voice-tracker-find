@@ -3,7 +3,7 @@
 # @TEST tests/test_topic_note.py
 from __future__ import annotations
 
-from thinktank.notes.topic import TopicEntry, render_topic_note
+from airvoice.notes.topic import TopicEntry, render_topic_note
 
 
 def _entries(*pairs: tuple[str, list[str]]) -> list[TopicEntry]:

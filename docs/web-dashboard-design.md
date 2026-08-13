@@ -1,8 +1,8 @@
-# ThinkTank Receiver 웹 대시보드 디자인 결정
+# AI R Voice Console 웹 대시보드 디자인 결정
 
 ## 목적
 
-맥미니에서 실행 중인 기존 `thinktank.receiver`의 상태를 같은 LAN에서 확인한다. 이 문서와 구현은 별도 클라우드, 별도 웹 서버, 외부 모니터링 SaaS를 추가하지 않는 것을 전제로 한다.
+맥미니에서 실행 중인 기존 `airvoice.receiver`의 상태를 같은 LAN에서 확인한다. 이 문서와 구현은 별도 클라우드, 별도 웹 서버, 외부 모니터링 SaaS를 추가하지 않는 것을 전제로 한다.
 
 ## 유사 서비스 검토
 
@@ -15,7 +15,7 @@
 
 ## 확정 디자인
 
-이름은 **ThinkTank Receiver / LAN Console**로 정했다. 기존 앱의 archive/ink 계열 시각 언어를 이어받아 따뜻한 종이색 배경, 짙은 잉크색 본문, copper 강조색, sage 정상 상태색을 사용한다.
+표시 이름은 **AI R Voice Console**, 브라우저 제목은 **AI R Voice · LAN Console**로 정했다. 기존 앱의 archive/ink 계열 시각 언어를 이어받아 따뜻한 종이색 배경, 짙은 잉크색 본문, copper 강조색, sage 정상 상태색을 사용한다.
 
 정보 우선순위는 아래와 같다.
 

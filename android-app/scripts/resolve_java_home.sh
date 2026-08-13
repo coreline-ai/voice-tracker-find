@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Shared Java runtime selection for LiteRT-LM builds.
 
-thinktank_java_major() {
+airvoice_java_major() {
   local java_home="$1"
   local version_line version major
   [[ -x "$java_home/bin/java" ]] || return 1
@@ -17,10 +17,10 @@ thinktank_java_major() {
   printf '%s\n' "$major"
 }
 
-thinktank_require_java21() {
+airvoice_require_java21() {
   local candidate major
   local -a candidates=()
-  [[ -n "${THINKTANK_JAVA_HOME:-}" ]] && candidates+=("$THINKTANK_JAVA_HOME")
+  [[ -n "${AIRVOICE_JAVA_HOME:-}" ]] && candidates+=("$AIRVOICE_JAVA_HOME")
   [[ -n "${JAVA_HOME:-}" ]] && candidates+=("$JAVA_HOME")
   candidates+=(
     "$HOME/.local/cbot-tools/jdk-21.0.11+10/Contents/Home"
@@ -28,7 +28,7 @@ thinktank_require_java21() {
   )
 
   for candidate in "${candidates[@]}"; do
-    major="$(thinktank_java_major "$candidate" 2>/dev/null || true)"
+    major="$(airvoice_java_major "$candidate" 2>/dev/null || true)"
     if [[ -n "$major" && "$major" -ge 21 ]]; then
       export JAVA_HOME="$candidate"
       export PATH="$JAVA_HOME/bin:$PATH"
@@ -37,7 +37,7 @@ thinktank_require_java21() {
   done
 
   echo "Java 21+ is required for LiteRT-LM 0.14.0." >&2
-  echo "Set THINKTANK_JAVA_HOME or install Temurin 21 at:" >&2
+  echo "Set AIRVOICE_JAVA_HOME or install Temurin 21 at:" >&2
   echo "  $HOME/.local/cbot-tools/jdk-21.0.11+10/Contents/Home" >&2
   return 1
 }

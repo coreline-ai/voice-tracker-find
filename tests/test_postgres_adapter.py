@@ -20,21 +20,21 @@ from alembic import command
 from alembic.config import Config
 from sqlalchemy.exc import IntegrityError
 
-from thinktank.adapters.cloud_receiver import CloudReceiverV1Adapter
-from thinktank.adapters.postgres import (
+from airvoice.adapters.cloud_receiver import CloudReceiverV1Adapter
+from airvoice.adapters.postgres import (
     _OUTBOX_NAMESPACE,
     PostgresDataStore,
 )
-from thinktank.receiver_v1 import V1Error
-from thinktank.server.ports import ReceiptRecord, StoredUpload, UploadIdentity
-from thinktank.server.object_keys import recording_object_key
-from thinktank.server.schema import (
+from airvoice.receiver_v1 import V1Error
+from airvoice.server.ports import ReceiptRecord, StoredUpload, UploadIdentity
+from airvoice.server.object_keys import recording_object_key
+from airvoice.server.schema import (
     note_events,
     outbox_events,
     processing_jobs,
     upload_receipts,
 )
-from thinktank.server.security import token_digest
+from airvoice.server.security import token_digest
 
 pytestmark = pytest.mark.postgres
 ROOT = Path(__file__).resolve().parents[1]
@@ -97,9 +97,9 @@ class FailOnceDataStore:
 
 @pytest.fixture
 def postgres_engine():
-    database_url = os.environ.get("THINKTANK_TEST_POSTGRES_URL", "").strip()
+    database_url = os.environ.get("AIRVOICE_TEST_POSTGRES_URL", "").strip()
     if not database_url:
-        pytest.skip("THINKTANK_TEST_POSTGRES_URL is not configured")
+        pytest.skip("AIRVOICE_TEST_POSTGRES_URL is not configured")
     config = Config(str(ROOT / "alembic.ini"))
     config.set_main_option("sqlalchemy.url", database_url)
     command.downgrade(config, "base")

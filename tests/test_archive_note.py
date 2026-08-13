@@ -3,7 +3,7 @@
 # @TEST tests/test_archive_note.py
 from pathlib import Path
 
-from thinktank.notes.archive import (
+from airvoice.notes.archive import (
     Segment,
     Transcript,
     render_archive_note,

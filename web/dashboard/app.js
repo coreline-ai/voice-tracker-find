@@ -1,7 +1,7 @@
 (() => {
-  const TOKEN_KEY = 'thinktank-receiver-dashboard-token';
+  const tokenStorage = window.AirVoiceTokenStorage;
   const state = {
-    token: sessionStorage.getItem(TOKEN_KEY) || '',
+    token: tokenStorage.read(),
     timer: null,
     audioUrl: null,
   };
@@ -239,7 +239,7 @@
       const response = await authorizedFetch('/api/v1/dashboard/summary');
       if (response.status === 401) {
         state.token = '';
-        sessionStorage.removeItem(TOKEN_KEY);
+        tokenStorage.clear();
         authCard.classList.remove('connected');
         showError('인증이 만료되었거나 토큰이 올바르지 않습니다. 앱 설정의 Receiver token을 다시 입력해 주세요.');
         setConnection('error', '인증 실패');
@@ -272,7 +272,7 @@
     const token = tokenInput.value.trim();
     if (!token) return;
     state.token = token;
-    sessionStorage.setItem(TOKEN_KEY, token);
+    tokenStorage.write(token);
     requestSummary();
   });
 
@@ -280,7 +280,7 @@
     clearAudio();
     setAudioState('대기', '수신 파일의 M4A에서 듣기를 누르면 이 브라우저에서만 재생합니다.');
     state.token = '';
-    sessionStorage.removeItem(TOKEN_KEY);
+    tokenStorage.clear();
     tokenInput.value = '';
     authCard.classList.remove('connected');
     setConnection('', '연결 대기');

@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-from thinktank.db import (
+from airvoice.db import (
     Recording,
     Status,
     get_recordings,
@@ -15,7 +15,7 @@ from thinktank.db import (
     insert_recording,
     update_recording_status,
 )
-from thinktank.vad import (
+from airvoice.vad import (
     AUDIBLE_FALLBACK_MIN_RMS,
     VAD_CHUNK_SECONDS,
     VadSegment,
@@ -291,7 +291,7 @@ except ImportError:
     reason="torch/silero-vad/pydub 미설치 - 실 모델 검증은 P5 E2E에서 수행",
 )
 def test_load_speech_detector_returns_callable_with_real_model():
-    from thinktank.vad import load_speech_detector
+    from airvoice.vad import load_speech_detector
 
     detector = load_speech_detector()
 

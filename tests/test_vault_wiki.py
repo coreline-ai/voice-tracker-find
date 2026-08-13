@@ -6,7 +6,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from thinktank.vault_wiki import (
+from airvoice.vault_wiki import (
     Member,
     build_wiki_prompt,
     clusters_with_claims,

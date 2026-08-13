@@ -3,7 +3,7 @@
 # @TEST tests/test_renderer.py
 import pytest
 
-from thinktank.notes.renderer import (
+from airvoice.notes.renderer import (
     archive_filename,
     daily_filename,
     emerged_idea_filename,

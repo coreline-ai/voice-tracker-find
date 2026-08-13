@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from thinktank.config import ConfigError, Settings, load_settings
+from airvoice.config import ConfigError, Settings, load_settings
 
 MINIMAL_ENV = {"CLAUDE_API_KEY": "sk-test-123"}
 
@@ -21,10 +21,10 @@ def test_defaults_applied_for_optional_values():
     """선택 항목은 기본값이 적용된다."""
     settings = load_settings(env=MINIMAL_ENV)
 
-    assert settings.ingest_dir == Path("~/.thinktank/inbox").expanduser()
-    assert settings.obsidian_vault == Path("~/thinktank-vault").expanduser()
-    assert settings.db_path == Path("~/.thinktank/db/pipeline.db").expanduser()
-    assert settings.temp_dir == Path("~/.thinktank/temp").expanduser()
+    assert settings.ingest_dir == Path("~/.airvoice/inbox").expanduser()
+    assert settings.obsidian_vault == Path("~/ai-r-voice-vault").expanduser()
+    assert settings.db_path == Path("~/.airvoice/db/pipeline.db").expanduser()
+    assert settings.temp_dir == Path("~/.airvoice/temp").expanduser()
     assert settings.whisper_model == "large-v3"
     assert settings.vad_sample_rate == 16000
     assert settings.vad_threshold == 0.5

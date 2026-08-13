@@ -9,7 +9,7 @@ plugins {
 }
 
 android {
-    namespace = "com.thinktank.recorder.ondevice"
+    namespace = "com.coreline.ai.voice.ondevice"
     compileSdk = libs.versions.compileSdk.get().toInt()
 
     defaultConfig {

@@ -1,0 +1,512 @@
+package com.coreline.ai.voice.ondevice.data
+
+import androidx.room.Dao
+import androidx.room.Insert
+import androidx.room.OnConflictStrategy
+import androidx.room.Query
+import androidx.room.Update
+import kotlinx.coroutines.flow.Flow
+
+@Dao
+interface OnDeviceSessionDao {
+    @Query("SELECT * FROM ondevice_sessions ORDER BY createdAt DESC")
+    fun observeAll(): Flow<List<OnDeviceSessionEntity>>
+
+    @Query("SELECT * FROM ondevice_sessions WHERE id = :id")
+    suspend fun get(id: String): OnDeviceSessionEntity?
+
+    @Insert(onConflict = OnConflictStrategy.ABORT)
+    suspend fun insert(session: OnDeviceSessionEntity)
+
+    @Update
+    suspend fun update(session: OnDeviceSessionEntity)
+
+    @Query("DELETE FROM ondevice_sessions WHERE id = :id")
+    suspend fun delete(id: String)
+
+    @Query(
+        """
+        SELECT * FROM ondevice_sessions
+        WHERE state IN (
+            'STARTING',
+            'LISTENING',
+            'TRANSCRIBING',
+            'SUMMARIZING',
+            'CANCELLING',
+            'DELETING'
+        )
+          AND activeProcessingJobId IS NULL
+        """,
+    )
+    suspend fun interrupted(): List<OnDeviceSessionEntity>
+
+    @Query(
+        """
+        UPDATE ondevice_sessions
+        SET state = :targetState,
+            updatedAt = :now,
+            operationToken = NULL,
+            failureStage = :failureStage,
+            error = :error
+        WHERE id = :id
+          AND state = :expectedState
+          AND (
+              operationToken = :expectedToken
+              OR (operationToken IS NULL AND :expectedToken IS NULL)
+          )
+        """,
+    )
+    suspend fun recover(
+        id: String,
+        expectedState: String,
+        expectedToken: String?,
+        targetState: String,
+        now: Long,
+        failureStage: String?,
+        error: String?,
+    ): Int
+
+    @Query(
+        """
+        UPDATE ondevice_sessions
+        SET audioPath = NULL,
+            updatedAt = :now
+        WHERE id = :id
+        """,
+    )
+    suspend fun clearAudio(id: String, now: Long): Int
+
+    @Query(
+        """
+        UPDATE ondevice_sessions
+        SET state = :targetState,
+            updatedAt = :now,
+            operationToken = :token,
+            failureStage = NULL,
+            error = NULL
+        WHERE id = :id
+          AND state IN (:allowedStates)
+          AND operationToken IS NULL
+        """,
+    )
+    suspend fun startOperation(
+        id: String,
+        allowedStates: List<String>,
+        targetState: String,
+        token: String,
+        now: Long,
+    ): Int
+
+    @Query(
+        """
+        UPDATE ondevice_sessions
+        SET state = :targetState,
+            updatedAt = :now,
+            failureStage = NULL,
+            error = NULL
+        WHERE id = :id
+          AND operationToken = :token
+          AND state IN (:allowedStates)
+        """,
+    )
+    suspend fun advanceOperation(
+        id: String,
+        token: String,
+        allowedStates: List<String>,
+        targetState: String,
+        now: Long,
+    ): Int
+
+    @Query(
+        """
+        UPDATE ondevice_sessions
+        SET state = :targetState,
+            updatedAt = :now,
+            operationToken = NULL,
+            failureStage = :failureStage,
+            error = :error
+        WHERE id = :id
+          AND operationToken = :token
+        """,
+    )
+    suspend fun finishOperation(
+        id: String,
+        token: String,
+        targetState: String,
+        now: Long,
+        failureStage: String?,
+        error: String?,
+    ): Int
+
+    @Query(
+        """
+        UPDATE ondevice_sessions
+        SET audioPath = :audioPath,
+            updatedAt = :now
+        WHERE id = :id
+          AND operationToken = :token
+        """,
+    )
+    suspend fun attachAudioForOperation(
+        id: String,
+        token: String,
+        audioPath: String,
+        now: Long,
+    ): Int
+
+    @Query(
+        """
+        UPDATE ondevice_sessions
+        SET audioPath = NULL,
+            state = :targetState,
+            updatedAt = :now,
+            operationToken = NULL,
+            failureStage = :failureStage,
+            error = :error
+        WHERE id = :id
+          AND operationToken = :token
+        """,
+    )
+    suspend fun finishCaptureWithoutAudio(
+        id: String,
+        token: String,
+        targetState: String,
+        now: Long,
+        failureStage: String?,
+        error: String?,
+    ): Int
+
+    @Query(
+        """
+        UPDATE ondevice_sessions
+        SET transcript = :transcript,
+            sttInputDurationMs = :inputDurationMs,
+            sttProcessedThroughMs = :processedThroughMs,
+            sttSegmentCount = :segmentCount,
+            sttRecognizedSegmentCount = :recognizedSegmentCount,
+            sttRetryCount = :retryCount,
+            sttMeaningfulChars = :meaningfulChars,
+            sttCharsPerSecond = :charsPerSecond,
+            sttQualityStatus = :qualityStatus,
+            sttSegmentDiagnostics = :segmentDiagnostics,
+            sttCoverageStatus = :coverageStatus,
+            sttRecognitionQualityStatus = :recognitionQualityStatus,
+            sttRecognitionDiagnostics = :recognitionDiagnostics,
+            state = 'TRANSCRIPT_READY',
+            updatedAt = :now,
+            operationToken = NULL,
+            failureStage = NULL,
+            error = NULL
+        WHERE id = :id
+          AND operationToken = :token
+        """,
+    )
+    suspend fun saveTranscriptForOperation(
+        id: String,
+        token: String,
+        transcript: String,
+        inputDurationMs: Long?,
+        processedThroughMs: Long?,
+        segmentCount: Int?,
+        recognizedSegmentCount: Int?,
+        retryCount: Int?,
+        meaningfulChars: Int?,
+        charsPerSecond: Float?,
+        qualityStatus: String?,
+        segmentDiagnostics: String?,
+        coverageStatus: String?,
+        recognitionQualityStatus: String?,
+        recognitionDiagnostics: String?,
+        now: Long,
+    ): Int
+
+    @Query(
+        """
+        UPDATE ondevice_sessions
+        SET transcript = '',
+            sttInputDurationMs = :inputDurationMs,
+            sttProcessedThroughMs = :processedThroughMs,
+            sttSegmentCount = :segmentCount,
+            sttRecognizedSegmentCount = :recognizedSegmentCount,
+            sttRetryCount = :retryCount,
+            sttMeaningfulChars = :meaningfulChars,
+            sttCharsPerSecond = :charsPerSecond,
+            sttQualityStatus = :qualityStatus,
+            sttSegmentDiagnostics = :segmentDiagnostics,
+            sttCoverageStatus = :coverageStatus,
+            sttRecognitionQualityStatus = :recognitionQualityStatus,
+            sttRecognitionDiagnostics = :recognitionDiagnostics,
+            state = 'FAILED_RECOVERABLE',
+            updatedAt = :now,
+            operationToken = NULL,
+            failureStage = 'TRANSCRIBE',
+            error = :error
+        WHERE id = :id
+          AND operationToken = :token
+        """,
+    )
+    suspend fun finishTranscriptQualityFailureForOperation(
+        id: String,
+        token: String,
+        inputDurationMs: Long,
+        processedThroughMs: Long,
+        segmentCount: Int,
+        recognizedSegmentCount: Int,
+        retryCount: Int,
+        meaningfulChars: Int,
+        charsPerSecond: Float,
+        qualityStatus: String,
+        segmentDiagnostics: String,
+        coverageStatus: String,
+        recognitionQualityStatus: String,
+        recognitionDiagnostics: String,
+        error: String,
+        now: Long,
+    ): Int
+
+    @Query(
+        """
+        UPDATE ondevice_sessions
+        SET state = 'COMPLETE',
+            title = :title,
+            summary = :summary,
+            actionItems = :actionItems,
+            summaryEngine = 'GEMMA_LOCAL',
+            requestedSummaryEngine = 'GEMMA_LOCAL',
+            summaryModelVersion = :modelVersion,
+            summaryValidationStatus = :validationStatus,
+            requestedSummaryModelId = :requestedModelId,
+            actualSummaryModelId = :actualModelId,
+            summaryRuntimeType = :runtimeType,
+            summaryGenerationProfile = :generationProfile,
+            summaryDurationMs = :durationMs,
+            summaryInputChars = :inputChars,
+            summaryOutputChars = :outputChars,
+            summarySourceHash = :sourceHash,
+            summaryGeneratedAt = :generatedAt,
+            updatedAt = :now,
+            operationToken = NULL,
+            failureStage = NULL,
+            error = NULL
+        WHERE id = :id
+          AND operationToken = :token
+          AND state = 'SUMMARIZING'
+        """,
+    )
+    suspend fun saveGemmaSummaryForOperation(
+        id: String,
+        token: String,
+        title: String,
+        summary: String,
+        actionItems: String,
+        modelVersion: String?,
+        validationStatus: String?,
+        requestedModelId: String?,
+        actualModelId: String?,
+        runtimeType: String?,
+        generationProfile: String?,
+        durationMs: Long?,
+        inputChars: Int?,
+        outputChars: Int?,
+        sourceHash: String,
+        generatedAt: Long,
+        now: Long,
+    ): Int
+
+    @Query(
+        """
+        UPDATE ondevice_sessions
+        SET state = 'COMPLETE',
+            title = :title,
+            summary = :summary,
+            actionItems = :actionItems,
+            summaryEngine = :actualEngine,
+            requestedSummaryEngine = :requestedEngine,
+            summaryFallbackReason = :fallbackReason,
+            summaryModelVersion = :modelVersion,
+            summaryValidationStatus = :validationStatus,
+            requestedSummaryModelId = :requestedModelId,
+            actualSummaryModelId = :actualModelId,
+            summaryRuntimeType = :runtimeType,
+            summaryGenerationProfile = :generationProfile,
+            summaryDurationMs = :durationMs,
+            summaryInputChars = :inputChars,
+            summaryOutputChars = :outputChars,
+            summaryProviderId = :providerId,
+            summaryProviderRequestId = :providerRequestId,
+            summaryInputTokens = :inputTokens,
+            summaryOutputTokens = :outputTokens,
+            summarySourceHash = :sourceHash,
+            summaryGeneratedAt = :generatedAt,
+            dataPolicy = :dataPolicy,
+            updatedAt = :now,
+            operationToken = NULL,
+            failureStage = NULL,
+            error = NULL
+        WHERE id = :id
+          AND operationToken = :token
+          AND state = 'SUMMARIZING'
+        """,
+    )
+    suspend fun saveSummaryForOperation(
+        id: String,
+        token: String,
+        title: String,
+        summary: String,
+        actionItems: String,
+        actualEngine: String,
+        requestedEngine: String,
+        fallbackReason: String?,
+        modelVersion: String?,
+        validationStatus: String?,
+        requestedModelId: String?,
+        actualModelId: String?,
+        runtimeType: String?,
+        generationProfile: String?,
+        durationMs: Long?,
+        inputChars: Int?,
+        outputChars: Int?,
+        providerId: String?,
+        providerRequestId: String?,
+        inputTokens: Long?,
+        outputTokens: Long?,
+        sourceHash: String,
+        generatedAt: Long,
+        dataPolicy: String,
+        now: Long,
+    ): Int
+
+    @Query(
+        """
+        UPDATE ondevice_sessions
+        SET state = 'COMPLETE',
+            title = :title,
+            summary = :summary,
+            actionItems = :actionItems,
+            summaryEngine = 'GEMMA_LOCAL',
+            requestedSummaryEngine = 'GEMMA_LOCAL',
+            summaryModelVersion = :modelVersion,
+            summaryValidationStatus = :validationStatus,
+            requestedSummaryModelId = :requestedModelId,
+            actualSummaryModelId = :actualModelId,
+            summaryRuntimeType = :runtimeType,
+            summaryGenerationProfile = :generationProfile,
+            summaryDurationMs = :durationMs,
+            summaryInputChars = :inputChars,
+            summaryOutputChars = :outputChars,
+            summarySourceHash = :sourceHash,
+            summaryGeneratedAt = :generatedAt,
+            summaryRootNodeId = :rootNodeId,
+            processingVersion = :processingVersion,
+            activeProcessingJobId = NULL,
+            updatedAt = :now,
+            operationToken = NULL,
+            failureStage = NULL,
+            error = NULL
+        WHERE id = :id
+          AND operationToken = :token
+          AND state = 'SUMMARIZING'
+          AND activeProcessingJobId = :jobId
+        """,
+    )
+    suspend fun saveHierarchicalSummaryForOperation(
+        id: String,
+        jobId: String,
+        token: String,
+        rootNodeId: String,
+        processingVersion: Int,
+        title: String,
+        summary: String,
+        actionItems: String,
+        modelVersion: String?,
+        validationStatus: String?,
+        requestedModelId: String?,
+        actualModelId: String?,
+        runtimeType: String?,
+        generationProfile: String?,
+        durationMs: Long?,
+        inputChars: Int?,
+        outputChars: Int?,
+        sourceHash: String,
+        generatedAt: Long,
+        now: Long,
+    ): Int
+
+    @Query(
+        """
+        UPDATE ondevice_sessions
+        SET state = :state,
+            operationToken = NULL,
+            failureStage = :failureStage,
+            error = :error,
+            activeProcessingJobId = CASE WHEN :clearJob = 1 THEN NULL ELSE activeProcessingJobId END,
+            updatedAt = :now
+        WHERE id = :id
+        """,
+    )
+    suspend fun finishLongProcessingSession(
+        id: String,
+        state: String,
+        failureStage: String?,
+        error: String?,
+        clearJob: Boolean,
+        now: Long,
+    ): Int
+
+    @Query(
+        """
+        UPDATE ondevice_sessions
+        SET activeProcessingJobId = :jobId,
+            processingVersion = :processingVersion,
+            updatedAt = :now,
+            failureStage = NULL,
+            error = NULL
+        WHERE id = :id
+          AND transcript != ''
+          AND activeProcessingJobId IS NULL
+          AND operationToken IS NULL
+          AND state IN ('TRANSCRIPT_READY', 'FAILED_RECOVERABLE', 'COMPLETE')
+        """,
+    )
+    suspend fun attachSummaryOnlyJob(
+        id: String,
+        jobId: String,
+        processingVersion: Int,
+        now: Long,
+    ): Int
+
+    @Query(
+        """
+        UPDATE ondevice_sessions
+        SET state = 'COMPLETE',
+            updatedAt = :now,
+            failureStage = NULL,
+            error = NULL
+        WHERE id = :id
+          AND operationToken IS NULL
+          AND state IN ('TRANSCRIPT_READY', 'FAILED_RECOVERABLE')
+        """,
+    )
+    suspend fun completeWithoutSummary(id: String, now: Long): Int
+
+    @Query(
+        """
+        UPDATE ondevice_sessions
+        SET state = 'DELETING',
+            updatedAt = :now,
+            failureStage = NULL,
+            error = NULL
+        WHERE id = :id
+          AND operationToken IS NULL
+          AND state NOT IN (
+              'STARTING',
+              'LISTENING',
+              'TRANSCRIBING',
+              'SUMMARIZING',
+              'CANCELLING',
+              'DELETING'
+          )
+        """,
+    )
+    suspend fun markDeleting(id: String, now: Long): Int
+}

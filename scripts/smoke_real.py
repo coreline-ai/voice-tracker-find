@@ -42,12 +42,12 @@ if _SRC.is_dir() and str(_SRC) not in sys.path:
 
 from dotenv import load_dotenv  # noqa: E402  (경로 세팅 후 import)
 
-from thinktank.config import (  # noqa: E402
+from airvoice.config import (  # noqa: E402
     DEFAULT_VAD_SAMPLE_RATE,
     DEFAULT_VAD_THRESHOLD,
     DEFAULT_WHISPER_MODEL,
 )
-from thinktank.extract import ExtractedItem  # noqa: E402  (anthropic 미포함, 안전)
+from airvoice.extract import ExtractedItem  # noqa: E402  (anthropic 미포함, 안전)
 
 # 오디오 없이 3단계(추출)를 검증할 때 쓰는 canned 전사문.
 # render_transcript_text 와 동일한 `[MM:SS-MM:SS] "텍스트"` 형식 — 실제 파이프라인이
@@ -110,7 +110,7 @@ def stage_vad(
         if not _has(mod):
             return StageResult("1. VAD", "SKIP", _missing(mod, "audio"))
     try:
-        from thinktank.vad import load_speech_detector, remove_silence
+        from airvoice.vad import load_speech_detector, remove_silence
 
         detect = load_speech_detector(sample_rate, threshold)
         segments = detect(audio_path)
@@ -165,9 +165,9 @@ def stage_transcribe(audio_path: Path, work_dir: Path,
     if not _has("faster_whisper"):
         return StageResult("2. STT", "SKIP", _missing("faster_whisper", "audio"))
     try:
-        from thinktank.main import _SEGMENT_LINE_RE
-        from thinktank.notes.archive import Segment, Transcript
-        from thinktank.transcribe import (
+        from airvoice.main import _SEGMENT_LINE_RE
+        from airvoice.notes.archive import Segment, Transcript
+        from airvoice.transcribe import (
             format_timestamp,
             load_transcriber,
             render_transcript_text,
@@ -256,12 +256,12 @@ def stage_extract(transcript_text: str, api_key: str | None,
     if resolved is None:
         return StageResult("3. 추출", "SKIP", "AI 백엔드 없음 (claude 로그인/키 필요)")
     try:
-        from thinktank.extract import _VALID_CATEGORIES
+        from airvoice.extract import _VALID_CATEGORIES
 
         if resolved == "claude_cli":
             if shutil.which("claude") is None:
                 return StageResult("3. 추출", "SKIP", "claude 명령 없음 (PATH 확인)")
-            from thinktank.extract import load_cli_extractor
+            from airvoice.extract import load_cli_extractor
 
             extract = load_cli_extractor(model=model)
             label = "claude CLI"
@@ -270,7 +270,7 @@ def stage_extract(transcript_text: str, api_key: str | None,
                 return StageResult("3. 추출", "SKIP", _missing("anthropic", "llm"))
             if not api_key:
                 return StageResult("3. 추출", "SKIP", "CLAUDE_API_KEY 없음")
-            from thinktank.extract import load_extractor
+            from airvoice.extract import load_extractor
 
             extract = (
                 load_extractor(api_key, model=model)
@@ -307,13 +307,13 @@ def stage_emerge(work_dir: Path, api_key: str | None,
     if resolved is None:
         return StageResult("4. 창발", "SKIP", "AI 백엔드 없음")
     try:
-        from thinktank.emerge import run_emerge
-        from thinktank.topics import merge_topics
+        from airvoice.emerge import run_emerge
+        from airvoice.topics import merge_topics
 
         if resolved == "claude_cli":
             if shutil.which("claude") is None:
                 return StageResult("4. 창발", "SKIP", "claude 명령 없음 (PATH 확인)")
-            from thinktank.emerge import load_cli_emerger
+            from airvoice.emerge import load_cli_emerger
 
             emerge = load_cli_emerger(model=model)
             label = "claude CLI"
@@ -322,7 +322,7 @@ def stage_emerge(work_dir: Path, api_key: str | None,
                 return StageResult("4. 창발", "SKIP", _missing("anthropic", "llm"))
             if not api_key:
                 return StageResult("4. 창발", "SKIP", "CLAUDE_API_KEY 없음")
-            from thinktank.emerge import load_emerger
+            from airvoice.emerge import load_emerger
 
             emerge = (
                 load_emerger(api_key, model=model)
@@ -448,9 +448,9 @@ def main(argv: list[str] | None = None) -> int:
     load_dotenv()
     api_key = os.environ.get("CLAUDE_API_KEY", "").strip() or None
 
-    work_dir = Path(tempfile.mkdtemp(prefix="thinktank-smoke-"))
+    work_dir = Path(tempfile.mkdtemp(prefix="airvoice-smoke-"))
     print("=" * 68)
-    print("thinktank Level 2 실물 이음새 스모크")
+    print("AI R Voice Level 2 실물 이음새 스모크")
     resolved_ai = _resolve_backend(args.ai, api_key)
     print(f"  오디오 : {audio_path or '(없음 — AI 단계만)'}")
     print(f"  AI     : {resolved_ai or '없음 (키/claude 로그인 필요)'}"

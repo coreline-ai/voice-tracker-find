@@ -1,8 +1,8 @@
 from pathlib import Path
 
-from thinktank.extract import ExtractedItem
-from thinktank.notes.archive import Segment, Transcript
-from thinktank.notes.recording_memo import render_recording_memo, write_recording_memo
+from airvoice.extract import ExtractedItem
+from airvoice.notes.archive import Segment, Transcript
+from airvoice.notes.recording_memo import render_recording_memo, write_recording_memo
 
 
 def _transcript() -> Transcript:

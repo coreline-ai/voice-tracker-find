@@ -13,7 +13,7 @@ import subprocess
 
 import pytest
 
-from thinktank.claude_cli import run_claude_cli
+from airvoice.claude_cli import run_claude_cli
 
 
 class _FakeCompletedProcess:
@@ -25,7 +25,7 @@ class _FakeCompletedProcess:
 
 def test_run_claude_cli_returns_stdout_on_success(monkeypatch):
     monkeypatch.setattr(
-        "thinktank.claude_cli.shutil.which", lambda name: "C:/fake/claude.cmd"
+        "airvoice.claude_cli.shutil.which", lambda name: "C:/fake/claude.cmd"
     )
 
     captured_cmd: list[str] = []
@@ -36,7 +36,7 @@ def test_run_claude_cli_returns_stdout_on_success(monkeypatch):
         captured_kwargs.update(kwargs)
         return _FakeCompletedProcess(returncode=0, stdout="응답 텍스트")
 
-    monkeypatch.setattr("thinktank.claude_cli.subprocess.run", _fake_run)
+    monkeypatch.setattr("airvoice.claude_cli.subprocess.run", _fake_run)
 
     result = run_claude_cli("프롬프트")
 
@@ -50,10 +50,10 @@ def test_run_claude_cli_returns_stdout_on_success(monkeypatch):
 
 def test_run_claude_cli_raises_on_nonzero_returncode(monkeypatch):
     monkeypatch.setattr(
-        "thinktank.claude_cli.shutil.which", lambda name: "C:/fake/claude.cmd"
+        "airvoice.claude_cli.shutil.which", lambda name: "C:/fake/claude.cmd"
     )
     monkeypatch.setattr(
-        "thinktank.claude_cli.subprocess.run",
+        "airvoice.claude_cli.subprocess.run",
         lambda cmd, **kwargs: _FakeCompletedProcess(returncode=1, stderr="뭔가 실패함"),
     )
 
@@ -62,7 +62,7 @@ def test_run_claude_cli_raises_on_nonzero_returncode(monkeypatch):
 
 
 def test_run_claude_cli_raises_when_claude_not_found(monkeypatch):
-    monkeypatch.setattr("thinktank.claude_cli.shutil.which", lambda name: None)
+    monkeypatch.setattr("airvoice.claude_cli.shutil.which", lambda name: None)
 
     with pytest.raises(RuntimeError):
         run_claude_cli("프롬프트")
@@ -70,7 +70,7 @@ def test_run_claude_cli_raises_when_claude_not_found(monkeypatch):
 
 def test_run_claude_cli_includes_model_flag_when_given(monkeypatch):
     monkeypatch.setattr(
-        "thinktank.claude_cli.shutil.which", lambda name: "C:/fake/claude.cmd"
+        "airvoice.claude_cli.shutil.which", lambda name: "C:/fake/claude.cmd"
     )
 
     captured_cmd: list[str] = []
@@ -79,7 +79,7 @@ def test_run_claude_cli_includes_model_flag_when_given(monkeypatch):
         captured_cmd.extend(cmd)
         return _FakeCompletedProcess(returncode=0, stdout="ok")
 
-    monkeypatch.setattr("thinktank.claude_cli.subprocess.run", _fake_run)
+    monkeypatch.setattr("airvoice.claude_cli.subprocess.run", _fake_run)
 
     run_claude_cli("프롬프트", model="claude-sonnet-5")
 
@@ -89,7 +89,7 @@ def test_run_claude_cli_includes_model_flag_when_given(monkeypatch):
 
 def test_run_claude_cli_passes_timeout_to_subprocess_run(monkeypatch):
     monkeypatch.setattr(
-        "thinktank.claude_cli.shutil.which", lambda name: "C:/fake/claude.cmd"
+        "airvoice.claude_cli.shutil.which", lambda name: "C:/fake/claude.cmd"
     )
 
     captured_kwargs: dict = {}
@@ -98,7 +98,7 @@ def test_run_claude_cli_passes_timeout_to_subprocess_run(monkeypatch):
         captured_kwargs.update(kwargs)
         return _FakeCompletedProcess(returncode=0, stdout="ok")
 
-    monkeypatch.setattr("thinktank.claude_cli.subprocess.run", _fake_run)
+    monkeypatch.setattr("airvoice.claude_cli.subprocess.run", _fake_run)
 
     run_claude_cli("프롬프트", timeout=42.0)
 

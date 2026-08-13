@@ -13,8 +13,8 @@ pytest.importorskip("sqlalchemy")
 from alembic import command
 from alembic.config import Config
 
-from thinktank.server.schema import metadata
-from thinktank.server.security import token_digest, token_digest_matches
+from airvoice.server.schema import metadata
+from airvoice.server.security import token_digest, token_digest_matches
 
 ROOT = Path(__file__).resolve().parents[1]
 

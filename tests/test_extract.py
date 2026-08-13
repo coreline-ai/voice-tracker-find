@@ -8,7 +8,7 @@ from pathlib import Path
 
 import pytest
 
-from thinktank.db import (
+from airvoice.db import (
     Recording,
     Status,
     get_recordings,
@@ -17,7 +17,7 @@ from thinktank.db import (
     insert_recording,
     update_recording_status,
 )
-from thinktank.extract import (
+from airvoice.extract import (
     ExtractedItem,
     chunk_transcript_text,
     extract_items,
@@ -444,7 +444,7 @@ def test_run_extract_batch_is_idempotent_on_rerun(db_path, temp_dir):
 
 def test_extract_module_importable_without_anthropic_installed():
     """anthropic 미설치 환경에서도 모듈 최상단 임포트는 성공해야 한다."""
-    import thinktank.extract as extract_module
+    import airvoice.extract as extract_module
 
     assert hasattr(extract_module, "load_extractor")
 
@@ -454,7 +454,7 @@ def test_extract_module_importable_without_anthropic_installed():
     reason="anthropic 이 설치된 환경에서는 이 미설치 케이스를 검증할 수 없음",
 )
 def test_load_extractor_raises_when_anthropic_not_installed():
-    from thinktank.extract import load_extractor
+    from airvoice.extract import load_extractor
 
     with pytest.raises(ModuleNotFoundError):
         load_extractor(api_key="test-key")
@@ -465,7 +465,7 @@ def test_load_extractor_raises_when_anthropic_not_installed():
     reason="anthropic 미설치 - 실 API 검증은 P5 E2E에서 수행",
 )
 def test_load_extractor_returns_callable_with_real_client():
-    from thinktank.extract import load_extractor
+    from airvoice.extract import load_extractor
 
     extractor = load_extractor(api_key="test-key")
 
@@ -479,7 +479,7 @@ def test_load_extractor_returns_callable_with_real_client():
 
 def test_load_cli_extractor_returns_parsed_items(monkeypatch):
     """CLI 응답(JSON 문자열)을 올바른 ExtractedItem 목록으로 파싱한다."""
-    from thinktank.extract import load_cli_extractor
+    from airvoice.extract import load_cli_extractor
 
     raw_response = json.dumps(
         [
@@ -505,7 +505,7 @@ def test_load_cli_extractor_returns_parsed_items(monkeypatch):
         return raw_response
 
     monkeypatch.setattr(
-        "thinktank.claude_cli.run_claude_cli", _fake_run_claude_cli
+        "airvoice.claude_cli.run_claude_cli", _fake_run_claude_cli
     )
 
     extractor = load_cli_extractor()
@@ -531,7 +531,7 @@ def test_load_cli_extractor_returns_parsed_items(monkeypatch):
 
 def test_load_cli_extractor_strips_code_fence(monkeypatch):
     """코드펜스로 감싸인 CLI 응답도 방어적으로 파싱된다."""
-    from thinktank.extract import load_cli_extractor
+    from airvoice.extract import load_cli_extractor
 
     fenced = "```json\n" + json.dumps(
         [
@@ -548,7 +548,7 @@ def test_load_cli_extractor_strips_code_fence(monkeypatch):
     def _fake_run_claude_cli(prompt: str, model=None, timeout=120.0) -> str:
         return fenced
 
-    monkeypatch.setattr("thinktank.claude_cli.run_claude_cli", _fake_run_claude_cli)
+    monkeypatch.setattr("airvoice.claude_cli.run_claude_cli", _fake_run_claude_cli)
 
     extractor = load_cli_extractor()
     items = extractor("전사 텍스트")

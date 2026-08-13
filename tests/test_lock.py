@@ -10,7 +10,7 @@ from pathlib import Path
 
 import pytest
 
-from thinktank.lock import AlreadyRunning, PipelineLock
+from airvoice.lock import AlreadyRunning, PipelineLock
 
 
 def test_잠금을_잡으면_파일이_생긴다(tmp_path: Path) -> None:
@@ -64,7 +64,7 @@ def test_프로세스가_죽으면_OS_가_잠금을_푼다(tmp_path: Path) -> No
     script = textwrap.dedent(f"""
         import sys
         sys.path.insert(0, {str(src)!r})
-        from thinktank.lock import PipelineLock
+        from airvoice.lock import PipelineLock
         lock = PipelineLock({str(db)!r})
         lock.__enter__()
         sys.stdout.write("locked")
@@ -87,8 +87,8 @@ def test_프로세스가_죽으면_OS_가_잠금을_푼다(tmp_path: Path) -> No
 
 def test_실행_중이면_두_번째_파이프라인이_거부된다(tmp_path: Path) -> None:
     """야간 작업과 수동 실행이 겹쳐 상태 전이가 어긋나던 문제를 막는다."""
-    from thinktank.config import Settings
-    from thinktank.main import run_pipeline
+    from airvoice.config import Settings
+    from airvoice.main import run_pipeline
 
     settings = Settings(
         claude_api_key="k",

@@ -8,7 +8,7 @@ ADB_BIN="${ADB_BIN:-${ANDROID_SDK_ROOT:-${ANDROID_HOME:-$HOME/Library/Android/sd
 APPROVED_SERIAL="R3CY40PXCAP"
 APPROVED_MANUFACTURER="samsung"
 APPROVED_MODEL="SM-S931N"
-TEST_CLASS="com.thinktank.recorder.ondevice.modelpack.SenseVoiceWifiDownloadDeviceTest"
+TEST_CLASS="com.coreline.ai.voice.ondevice.modelpack.SenseVoiceWifiDownloadDeviceTest"
 
 [[ -x "$ADB_BIN" ]] || { echo "adb not found: $ADB_BIN" >&2; exit 2; }
 [[ "$("$ADB_BIN" -s "$APPROVED_SERIAL" get-state 2>/dev/null || true)" == "device" ]] || {

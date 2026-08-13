@@ -8,8 +8,8 @@ from pathlib import Path
 
 import pytest
 
-from thinktank.db import Recording, Status, get_recordings, init_db
-from thinktank.ingest import (
+from airvoice.db import Recording, Status, get_recordings, init_db
+from airvoice.ingest import (
     register_recording,
     scan_ingest_folder,
     sync_ingest_folder,

@@ -1,7 +1,7 @@
 # @TASK P0-T0.1 - 프로젝트 초기화 (uv 기반 패키지 설정)
 # @SPEC docs/planning/06-tasks.md#P0-T0.1
 [project]
-name = "thinktank"
+name = "ai-r-voice"
 version = "0.1.0"
 description = "Automated voice-note pipeline: ingest -> VAD -> transcribe -> extract -> organize"
 readme = "README.md"
@@ -62,7 +62,7 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/thinktank"]
+packages = ["src/airvoice"]
 
 [tool.pytest.ini_options]
 pythonpath = ["src"]

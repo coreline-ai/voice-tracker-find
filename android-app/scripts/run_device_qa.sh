@@ -29,7 +29,7 @@ PD20 and every other device are rejected before a device command is executed.
   native     Run connected instrumentation including optional installed-model smoke tests.
   all        Alias for native.
 
-This script refuses destructive commands against com.thinktank.recorder.next.qa. It never reads
+This script refuses destructive commands against com.coreline.ai.voice.qa. It never reads
 preview recordings/transcripts, toggles radios, deletes preview models, or pulls user content.
 USAGE
 }
@@ -93,8 +93,8 @@ write_device_facts() {
     echo "android_sdk=$("${ADB[@]}" shell getprop ro.build.version.sdk | tr -d '\r')"
     echo "battery=$("${ADB[@]}" shell dumpsys battery | awk '/^  level:|^  status:/{printf "%s%s", sep, $0; sep="; "}' | tr -d '\r')"
     echo "data_fs=$("${ADB[@]}" shell 'df -k /data | tail -1' | tr -d '\r')"
-    echo "preview_package=$("${ADB[@]}" shell 'pm path com.thinktank.recorder.next.qa' | tr -d '\r')"
-    echo "test_package=$("${ADB[@]}" shell 'pm path com.thinktank.recorder.next.deviceTest' | tr -d '\r')"
+    echo "preview_package=$("${ADB[@]}" shell 'pm path com.coreline.ai.voice.qa' | tr -d '\r')"
+    echo "test_package=$("${ADB[@]}" shell 'pm path com.coreline.ai.voice.deviceTest' | tr -d '\r')"
   } > "$EVIDENCE_DIR/device.txt"
 }
 
@@ -121,14 +121,14 @@ fi
 
 cleanup() {
   capture_safe_logcat
-  printf 'preview_package_after=%s\n' "$("${ADB[@]}" shell 'pm path com.thinktank.recorder.next.qa' | tr -d '\r')" >> "$EVIDENCE_DIR/device.txt"
-  printf 'test_package_after=%s\n' "$("${ADB[@]}" shell 'pm path com.thinktank.recorder.next.deviceTest' | tr -d '\r')" >> "$EVIDENCE_DIR/device.txt"
+  printf 'preview_package_after=%s\n' "$("${ADB[@]}" shell 'pm path com.coreline.ai.voice.qa' | tr -d '\r')" >> "$EVIDENCE_DIR/device.txt"
+  printf 'test_package_after=%s\n' "$("${ADB[@]}" shell 'pm path com.coreline.ai.voice.deviceTest' | tr -d '\r')" >> "$EVIDENCE_DIR/device.txt"
 }
 trap cleanup EXIT
 
 cd "$ROOT_DIR"
 export ANDROID_SERIAL="$SERIAL"
-thinktank_require_java21
+airvoice_require_java21
 
 # STT model tests use JUnit assumptions and are reported as skipped when the approved local
 # model/fixture is not present. The runner never downloads or imports a model on its own.
