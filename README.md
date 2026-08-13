@@ -1,4 +1,27 @@
-# AI R Voice
+<p align="center">
+  <img src="./web/dashboard/favicon.svg" width="88" alt="AI R Voice icon">
+</p>
+
+<h1 align="center">AI R Voice</h1>
+
+<p align="center">
+  Android 음성 기록 앱 · 개인 LAN Receiver · 로컬 AI · 읽기 전용 Web Console
+</p>
+
+<p align="center">
+  <img src="https://img.shields.io/badge/Android-26%2B-3DDC84?style=for-the-badge&logo=android&logoColor=white" alt="Android API 26 or later">
+  <img src="https://img.shields.io/badge/Kotlin-1.9.24-7F52FF?style=for-the-badge&logo=kotlin&logoColor=white" alt="Kotlin 1.9.24">
+  <img src="https://img.shields.io/badge/Python-3.12%2B-3776AB?style=for-the-badge&logo=python&logoColor=white" alt="Python 3.12 or later">
+  <img src="https://img.shields.io/badge/tests-645%20passed-2EA44F?style=for-the-badge&logo=pytest&logoColor=white" alt="645 tests passed">
+  <img src="https://img.shields.io/badge/license-Proprietary-111827?style=for-the-badge" alt="Proprietary license">
+</p>
+
+<p align="center">
+  <a href="#빠른-시작--개발-환경">빠른 시작</a> ·
+  <a href="#시스템-흐름">구조</a> ·
+  <a href="#개발검증">검증</a> ·
+  <a href="#문서">문서</a>
+</p>
 
 **AI R Voice**는 Android 음성 기록 앱과 개인 PC/LAN 수신기, 로컬 AI 처리 파이프라인,
 읽기 전용 웹 콘솔을 연결하는 개인 음성 노트 시스템입니다.
@@ -21,12 +44,12 @@ Android 녹음 → LAN Receiver → VAD/STT/정리 → Obsidian Vault → Web Co
 | LAN Receiver / Web Console | 완료 | Android·browser 인증 연결 smoke 확인 |
 | OAuth 클라우드 요약 구현 | 완료 | Anthropic/Codex/xAI 연결 UI와 typed failure/fallback 경계 포함 |
 | 실계정 OAuth 로그인 | 보류 | 소유자 승인 전까지 `DEFERRED_BY_OWNER` |
-| Samsung 정식 실기기 QA | 미실행 | 승인된 Samsung 단말 연결 필요 |
+| Android 실기기 QA | 예정 | 승인된 Android 디바이스 환경에서 추가 검증 예정 |
 | release 서명·스토어 배포 | 미실행 | 배포 credential 미제공 |
 
-최근 PD20에서 최신 QA APK의 update-install, cold start, 메인 화면, Receiver 연결 확인과
-OAuth Provider UI를 수동 확인했습니다. 이 검증은 Samsung 전용 QA gate를 대체하지 않습니다.
-PD20에는 사용 가능한 마이크 입력이 없어 실제 녹음·전사 smoke는 실행하지 못했습니다.
+최근 Android 디바이스에서 최신 QA APK의 update-install, cold start, 메인 화면, Receiver 연결
+확인과 OAuth Provider UI를 수동 확인했습니다. 정식 실기기 E2E 항목은 승인된 Android 디바이스
+환경에서 추가 진행할 예정입니다.
 
 ## 제품 identity와 빌드 variant
 
@@ -210,7 +233,7 @@ http://<PC-IP>:8765/dashboard
 PC와 기기가 서로 다른 Wi-Fi에 있으면 LAN IP로 연결되지 않습니다. 개발용 USB 테스트에서만
 `adb reverse tcp:8765 tcp:8765`를 사용할 수 있으며, 운영 연결에는 사용하지 않습니다.
 
-Samsung 정식 preview 설치는 승인된 기기만 대상으로 하는 다음 스크립트를 사용합니다.
+승인된 Android preview 설치는 기기 격리 보호가 있는 다음 스크립트를 사용합니다.
 
 ```bash
 cd android-app
@@ -296,7 +319,7 @@ Gradle build에서 확인됩니다.
 | 검증 | 결과 |
 |---|---|
 | QA APK install/update + cold start | PASS |
-| PD20 앱 → 임시 Receiver 연결 확인 | PASS |
+| Android 앱 → 임시 Receiver 연결 확인 | PASS |
 | Web Console browser token 인증 | PASS |
 | Dashboard API 무인증 / 인증 | 401 / 200 |
 | Browser console | error/warning 0건 |
@@ -343,7 +366,7 @@ forwarding을 제거했습니다. 증적과 SHA-256은
 ## 아직 완료로 표시하지 않은 항목
 
 - Anthropic/Codex/xAI **실계정** OAuth 로그인·generate E2E
-- 승인된 Samsung 기기의 녹음·재생·모델·Room migration instrumentation
+- 승인된 Android 디바이스의 실기기 E2E 및 Room migration instrumentation
 - 1시간·2시간 실음원 장기 안정성 시험
 - release signing, 스토어 배포, production OAuth registration
 - Cloud/GCP staging end-to-end
