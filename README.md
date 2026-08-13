@@ -1,5 +1,6 @@
 <p align="center">
-  <img src="./web/dashboard/favicon.svg" width="88" alt="AI R Voice icon">
+  <img src="./web/dashboard/favicon.svg" width="88" alt="AI R Voice icon"><br>
+  <img width="2752" height="1536" alt="똑똑한_나만의_음성_비서" src="https://github.com/user-attachments/assets/ff9699a6-7265-47e5-adfc-fa95eaf3459d" />
 </p>
 
 <h1 align="center">AI R Voice</h1>
