@@ -6,7 +6,8 @@
 <h1 align="center">AI R Voice</h1>
 
 <p align="center">
-  Android 음성 기록 앱 · 개인 LAN Receiver · 로컬 AI · 읽기 전용 Web Console
+  <strong>개인 음성 기록을 로컬 AI와 노트로 연결하는 Android-first workspace</strong><br>
+  <em>An Android-first workspace that turns private voice notes into local AI-assisted notes.</em>
 </p>
 
 <p align="center">
@@ -24,8 +25,21 @@
   <a href="#문서">문서</a>
 </p>
 
-**AI R Voice**는 Android 음성 기록 앱과 개인 PC/LAN 수신기, 로컬 AI 처리 파이프라인,
-읽기 전용 웹 콘솔을 연결하는 개인 음성 노트 시스템입니다.
+<p align="center">
+  <a href="https://github.com/topics/android"><img src="https://img.shields.io/badge/android-3DDC84?style=flat-square&logo=android&logoColor=white" alt="android topic"></a>
+  <a href="https://github.com/topics/kotlin"><img src="https://img.shields.io/badge/kotlin-7F52FF?style=flat-square&logo=kotlin&logoColor=white" alt="kotlin topic"></a>
+  <a href="https://github.com/topics/voice-notes"><img src="https://img.shields.io/badge/voice--notes-2563EB?style=flat-square" alt="voice notes topic"></a>
+  <a href="https://github.com/topics/speech-to-text"><img src="https://img.shields.io/badge/speech--to--text-0F766E?style=flat-square" alt="speech to text topic"></a>
+  <a href="https://github.com/topics/local-ai"><img src="https://img.shields.io/badge/local--ai-9333EA?style=flat-square" alt="local AI topic"></a>
+  <a href="https://github.com/topics/obsidian"><img src="https://img.shields.io/badge/obsidian-7C3AED?style=flat-square&logo=obsidian&logoColor=white" alt="obsidian topic"></a>
+  <a href="https://github.com/topics/fastapi"><img src="https://img.shields.io/badge/fastapi-009688?style=flat-square&logo=fastapi&logoColor=white" alt="fastapi topic"></a>
+</p>
+
+**한국어** — **AI R Voice**는 Android 음성 기록, 개인 LAN Receiver, 로컬 AI 처리,
+Obsidian 노트 및 읽기 전용 웹 콘솔을 하나의 개인 음성 노트 흐름으로 연결합니다.
+
+**English** — **AI R Voice** connects Android voice capture, a private LAN receiver, local AI
+processing, Obsidian notes, and a read-only web console into one private voice-note workflow.
 
 ```text
 Android 녹음 → LAN Receiver → VAD/STT/정리 → Obsidian Vault → Web Console / Android 노트
