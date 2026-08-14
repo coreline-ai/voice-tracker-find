@@ -4,6 +4,7 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+source "$ROOT_DIR/scripts/resolve_java_home.sh"
 ADB_BIN="${ADB_BIN:-${ANDROID_SDK_ROOT:-${ANDROID_HOME:-$HOME/Library/Android/sdk}}/platform-tools/adb}"
 APPROVED_SERIAL="R3CY40PXCAP"
 APPROVED_MANUFACTURER="samsung"
@@ -25,7 +26,7 @@ model="$("$ADB_BIN" -s "$APPROVED_SERIAL" shell getprop ro.product.model | tr -d
 
 cd "$ROOT_DIR"
 export ANDROID_SERIAL="$APPROVED_SERIAL"
-export JAVA_HOME="${JAVA_HOME:-/Applications/Android Studio.app/Contents/jbr/Contents/Home}"
+airvoice_require_java21
 
 ./gradlew :feature-ondevice:connectedDebugAndroidTest \
   -Pandroid.testInstrumentationRunnerArguments.class="$TEST_CLASS" \

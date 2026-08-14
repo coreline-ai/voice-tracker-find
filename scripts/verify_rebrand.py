@@ -68,6 +68,28 @@ def active_files() -> list[Path]:
     return files
 
 
+def has_active_path_content(path: Path) -> bool:
+    """Return whether a forbidden path contains active files.
+
+    A stale ignored cache such as ``src/thinktank/__pycache__`` must not make the
+    rebrand gate fail. Source files and non-ignored nested content still fail the
+    gate, while empty directories and generated cache content are ignored.
+    """
+    if not path.exists():
+        return False
+    if path.is_file():
+        return True
+    try:
+        candidates = path.rglob("*")
+    except OSError:
+        return True
+    return any(
+        candidate.is_file()
+        and not any(part in SKIP_PARTS for part in candidate.relative_to(path).parts)
+        for candidate in candidates
+    )
+
+
 def verify_legacy_literals() -> list[str]:
     failures: list[str] = []
     seen_allowed: dict[str, set[str]] = {key: set() for key in ALLOWED_LEGACY_LINES}
@@ -120,7 +142,7 @@ def verify_identity_contract() -> list[str]:
         ROOT / "thinktank-recorder.apk",
     )
     for path in forbidden_paths:
-        if path.exists():
+        if has_active_path_content(path):
             failures.append(f"legacy active path still exists: {path.relative_to(ROOT)}")
     if not (ROOT / "src/airvoice").is_dir():
         failures.append("missing canonical Python package: src/airvoice")

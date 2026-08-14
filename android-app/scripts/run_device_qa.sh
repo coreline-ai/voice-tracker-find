@@ -100,8 +100,24 @@ write_device_facts() {
 
 capture_safe_logcat() {
   # AndroidRuntime errors are diagnostic-only and avoid application INFO output that may contain
-  # user-entered transcript text.
-  "${ADB[@]}" logcat -d -v threadtime AndroidRuntime:E '*:S' > "$EVIDENCE_DIR/android-runtime-errors.log" || true
+  # user-entered transcript text. Keep only crash blocks whose Process line belongs to this
+  # product; the device log may contain unrelated stale crashes from other installed apps.
+  "${ADB[@]}" logcat -d -v threadtime AndroidRuntime:E '*:S' |
+    awk '
+      /^---------/ {
+        if (matched) printf "%s", block
+        block = $0 "\n"
+        matched = 0
+        next
+      }
+      {
+        block = block $0 "\n"
+        if ($0 ~ /Process: com\.coreline\.ai\.voice\.(qa|deviceTest|debug)/) matched = 1
+      }
+      END {
+        if (matched) printf "%s", block
+      }
+    ' > "$EVIDENCE_DIR/android-runtime-errors.log" || true
 }
 
 write_device_facts
