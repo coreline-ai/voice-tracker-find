@@ -129,7 +129,7 @@ ai.coreline.oauthllm:oauth-llm-android:0.1.0
 client secret은 APK나 저장소에 포함하지 않습니다. OAuth 실계정 검증은
 [`docs/qa/oauth-llm-e2e-runbook.md`](docs/qa/oauth-llm-e2e-runbook.md)를 따릅니다.
 
-## 앱 미리보기
+## 화면 미리보기
 
 ### 첫 실행 소개
 
@@ -156,6 +156,24 @@ client secret은 APK나 저장소에 포함하지 않습니다. OAuth 실계정 
     <td align="center"><img src="./docs/readme/app/tab-local-ai.png" width="220" alt="로컬 AI 탭"><br><sub><b>로컬 AI</b></sub></td>
   </tr>
 </table>
+
+### Web Console
+
+<table>
+  <tr>
+    <td width="50%" align="center">
+      <img src="./docs/readme/console/receiver-connect.png" alt="AI R Voice Web Console의 Receiver token 연결 화면"><br>
+      <sub><b>1. Receiver token으로 브라우저 세션 연결</b></sub>
+    </td>
+    <td width="50%" align="center">
+      <img src="./docs/readme/console/receiver-overview.png" alt="AI R Voice Web Console의 인증된 수신 파일과 최근 노트 운영 현황"><br>
+      <sub><b>2. 인증 후 수신 파일·노트·런타임 운영 현황</b></sub>
+    </td>
+  </tr>
+</table>
+
+예시 데이터로 캡처한 화면입니다. Web Console은 동일 LAN의 Receiver에서 읽기 전용으로 동작하며,
+토큰은 해당 브라우저 세션에만 보관합니다.
 
 ## 빠른 시작 — 개발 환경
 
